@@ -29,8 +29,8 @@ function computeMonthlySummary(values, opts) {
   const usualKeys = [1, 2, 3].map(k => monthKeyOf(new Date(month.getFullYear(), month.getMonth() - k, 1, 12)));
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const toDop = (amount, cur) => (Number(amount) || 0) * ({ USD: rates.USD, EUR: rates.EUR, COP: rates.COP }[cur] || 1);
-  const cardRate = {};
-  (opts.cards || []).forEach(c => { if (c.rate > 0) cardRate[c.bank] = c.rate; });
+  const cardRate = {}, cardName = {};
+  (opts.cards || []).forEach(c => { if (c.rate > 0) { cardRate[c.bank] = c.rate; cardName[c.bank] = c.name || ''; } });
 
   const m = {
     month: month, monthKey: monthKey, prevMonth: prevMonth, daysInMonth: daysInMonth,
@@ -79,7 +79,8 @@ function computeMonthlySummary(values, opts) {
           const rule = CARD_TIP_RULES.find(x => x.test.test(normalizeKeyword(merchant)));
           if (rule && cardRate[rule.bank] && bank !== rule.bank) {
             const k = rule.label + '|' + bank + '|' + rule.bank;
-            const e = m.missed.byRule[k] || (m.missed.byRule[k] = { label: rule.label, paidWith: bank, best: rule.bank, spent: 0, cashback: 0 });
+            const e = m.missed.byRule[k] || (m.missed.byRule[k] = { label: rule.label, paidWith: bank,
+              best: rule.bank + (cardName[rule.bank] ? ' ' + cardName[rule.bank] : ''), spent: 0, cashback: 0 });
             e.spent += amt; e.cashback += amt * cardRate[rule.bank];
             m.missed.total += amt * cardRate[rule.bank];
           }

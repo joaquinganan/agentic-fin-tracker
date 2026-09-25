@@ -2,6 +2,22 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.27 (Sept 25, 2026) — other income, credit cards in the Setup Wizard, wizard closes while saving
+- **Other monthly income** (Setup Wizard): an amount in DOP or USD, added in full to net income with no
+  deductions — in the Dashboard's income box (its own row), the KPI card, and both summary emails.
+- **Credit-card table showed no data** (reported from the live Dashboard): since v1.1.24 the defaults were
+  bank names with empty cells, so unless an older table had values, nothing showed. Cards are now set in the
+  Setup Wizard — per bank, the card you hold (LAFISE Clásica Mastercard, BANESCO Super Cashback, BHD Mi País,
+  or "Other card" with a name and rate), the statement-close day and the payment-due day. Rates and notes
+  come from a catalogue of public product facts (`CARD_PRODUCTS`); your cards and days live in Configuration,
+  never in the code. The same cards drive the cashback tips, which now name the card ("your BHD Mi País").
+  An older Dashboard's typed rows are kept until cards are set in the wizard.
+- **Setup Wizard no longer sits frozen while saving:** the window closes after 1.5 s (like Monitor by Date
+  Range); the sheet shows progress toasts, rebuilds the Dashboard, and ends with a summary (net income, emails,
+  cards) — or the error, which is now always shown even with the window closed. Saving runs under the run lock.
+- Found by the new tests: the server rejected a bank marked "No credit card" as an unknown card (the form
+  filtered those rows, so it hadn't surfaced yet). Tests: 69.
+
 ### v1.1.26 (Sept 25, 2026) — redesigned daily email, new monthly summary
 - **Daily email redesign** (shared email kit, table layout + inline styles so Gmail renders it): hero number
   with a status chip, KPI tiles (month so far, month-end pace, daily average), "net income used" vs.

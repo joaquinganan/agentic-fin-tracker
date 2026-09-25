@@ -608,7 +608,9 @@ const CONFIG_NAMED_RANGES = {
   taxRate:        { name: 'CFG_TAX_RATE',        fallback: 0 },
   incomeCurrency: { name: 'CFG_INCOME_CURRENCY', fallback: 'USD' },
   ISR:            { name: 'CFG_ISR',             fallback: 0 },         // v1.1.24
-  deductionMode:  { name: 'CFG_DEDUCTION_MODE',  fallback: 'manual' }   // v1.1.24
+  deductionMode:  { name: 'CFG_DEDUCTION_MODE',  fallback: 'manual' },  // v1.1.24
+  otherIncome:         { name: 'CFG_OTHER_INCOME',   fallback: 0 },      // v1.1.27
+  otherIncomeCurrency: { name: 'CFG_OTHER_CURRENCY', fallback: 'DOP' }   // v1.1.27
 };
 
 /**
@@ -704,16 +706,54 @@ const OLD_DEFAULT_CARD_NOTES = [
     'with caps per category and RD$7,000/month in total. See "Which card for what" below.'  // v1.1.22-23
 ];
 /**
- * v1.1.24: default card rows come from the banks selected in the Setup Wizard
- * (up to 3), with every other cell empty — nobody's rates, statement dates or
- * payment days are baked into the code. Whatever you type is kept (DASH_CARDS).
+ * v1.1.27: card PRODUCTS — public facts about each cashback program (name,
+ * headline rate, how it works). Which card you hold, and its statement and
+ * payment days, are yours: they're chosen in the Setup Wizard and stored in
+ * Configuration ("cards"), never in the code.
  */
-function defaultDashboardCards(config) {
-  const selected = Object.keys(BANK_PATTERNS)
-    .filter(b => !(config && config.banksToTrack) || config.banksToTrack[b]).slice(0, 3);
-  const rows = selected.map(b => [b, '', '', '', '']);
-  while (rows.length < 3) rows.push(['', '', '', '', '']);
-  return rows;
+const CARD_PRODUCTS = {
+  LAFISE_CLASICA:        { bank: 'LAFISE',  name: 'Clásica Mastercard', cashback: 0.10, note: CARD_NOTES.LAFISE },
+  BANESCO_SUPERCASHBACK: { bank: 'BANESCO', name: 'Super Cashback',     cashback: 0.07, note: CARD_NOTES.BANESCO },
+  BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD }
+};
+
+/**
+ * Configured cards → [{bank, name, cashback, closeDay, dueDay, note}]. A card
+ * from the catalogue takes its name, rate and note from there; "other" keeps
+ * what was typed. Pure — see tests/.
+ */
+function resolveCards(cards) {
+  return (Array.isArray(cards) ? cards : []).filter(c => c && c.bank && c.product && c.product !== 'none').map(c => {
+    const p = CARD_PRODUCTS[c.product];
+    return {
+      bank: String(c.bank).toUpperCase(),
+      name: p ? p.name : String(c.name || '').trim(),
+      cashback: p ? p.cashback : (Number(c.cashback) > 0 ? Number(c.cashback) / 100 : 0),
+      closeDay: Number(c.closeDay) || null,
+      dueDay: Number(c.dueDay) || null,
+      note: p ? p.note : ''
+    };
+  });
+}
+
+/**
+ * v1.1.27: rows of the Dashboard's credit-card table. From the Setup Wizard
+ * when cards are configured; before that, whatever an older Dashboard had in
+ * its table (DASH_CARDS), so nothing typed there is lost; otherwise a single
+ * row pointing to the wizard. The table used to fall back to bank names with
+ * every other cell empty (v1.1.24), which is why it showed no data.
+ */
+function dashboardCardRows(config, legacyRows) {
+  if (config && Array.isArray(config.cards)) {
+    const cards = resolveCards(config.cards);
+    if (cards.length) {
+      return cards.map(c => [c.bank + (c.name ? ' · ' + c.name : ''), c.cashback || '',
+        c.closeDay ? 'Day ' + c.closeDay : '—', c.dueDay ? 'Day ' + c.dueDay : '—', c.note]);
+    }
+  }
+  const filled = (legacyRows || []).filter(r => r.some(v => v !== '' && v !== null));
+  if (filled.length) return filled.map(r => r.slice(0, 5));
+  return [['No credit cards set up yet', '', '', '', 'Add them in 📊 Tracker › Setup Wizard.']];
 }
 
 /** Replaces a card note only while it is still one of the old built-in defaults. */
@@ -859,16 +899,18 @@ function buildOrRefreshDashboard() {
   R.catLast = R.catFirst + n - 1;
   R.transfers = R.catLast + 1;
   R.total = R.transfers + 1;
-  R.income = 12; R.netDop = 17;                                   // right block: 12..17
-  R.fvHead = 19; R.fvFirst = 20;                                  // 20..22
-  R.bankHead = 24; R.bankFirst = 25; R.bankLast = R.bankFirst + banks.length - 1;
+  R.income = 12; R.netDop = 18;                                   // right block: 12..18 (v1.1.27: + other income)
+  R.fvHead = 20; R.fvFirst = 21;                                  // 21..23
+  R.bankHead = 25; R.bankFirst = 26; R.bankLast = R.bankFirst + banks.length - 1;
   R.monthsHead = Math.max(R.total, R.bankLast) + 2;
   R.monthsCols = R.monthsHead + 1; R.monthsFirst = R.monthsCols + 1; R.monthsLast = R.monthsFirst + 11;
   R.gridHead = R.monthsLast + 2; R.gridCols = R.gridHead + 1; R.gridFirst = R.gridCols + 1;
   R.gridLastCat = R.gridFirst + n - 1; R.gridTransfers = R.gridLastCat + 1; R.gridTotal = R.gridTransfers + 1;
   R.gridPct = R.gridTotal + 1; R.gridFixed = R.gridPct + 1; R.gridVar = R.gridFixed + 1;
-  R.cardsHead = R.gridVar + 2; R.cardsCols = R.cardsHead + 1; R.cardsFirst = R.cardsCols + 1; R.cardsLast = R.cardsFirst + 2;
-  R.mxHead = R.cardsLast + 2; R.mxCols = R.mxHead + 1; R.mxFirst = R.mxCols + 1;
+  const cardRows = dashboardCardRows(config, inputs.cards);       // v1.1.27: from the Setup Wizard
+  R.cardsHead = R.gridVar + 2; R.cardsCols = R.cardsHead + 1; R.cardsFirst = R.cardsCols + 1;
+  R.cardsLast = R.cardsFirst + cardRows.length - 1; R.cardsHint = R.cardsLast + 1;
+  R.mxHead = R.cardsHint + 2; R.mxCols = R.mxHead + 1; R.mxFirst = R.mxCols + 1;
   R.mxLast = R.mxFirst + CASHBACK_MATRIX.length - 1;
   R.notesFirst = R.mxLast + 2; R.notesLast = R.notesFirst + CASHBACK_NOTES.length - 1;
   ensureRowCapacity(sheet, R.notesLast + 2);
@@ -964,7 +1006,8 @@ function buildOrRefreshDashboard() {
   const gt = R.gridTotal;
   const kpis = [
     { c1: 2, c2: 2, label: 'NET INCOME', value: `=${NET_DOP}`, fmt: moneyFmt,
-      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & " / month"' },
+      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & IF(CFG_OTHER_INCOME>0," + " & ' +
+        'TEXT(CFG_OTHER_INCOME,"#,##0") & " " & CFG_OTHER_CURRENCY & " other","") & " / month"' },
     { c1: 3, c2: 5, label: `="SPENT  ·  " & UPPER(TEXT(${PERIOD},"mmm yyyy"))`, value: `=$C$${R.total}`, fmt: moneyFmt,
       note: `=IF(${MONTH_NUM}=1,"vs. previous month: n/a",IFERROR("vs. previous month: "&TEXT(INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM})/INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM}-1)-1,"+0%;-0%;0%"),"vs. previous month: —"))` },
     { c1: 6, c2: 8, label: 'REMAINING', value: `=${NET_DOP}-$C$${R.total}`, fmt: moneyFmt,
@@ -1026,7 +1069,7 @@ function buildOrRefreshDashboard() {
   // ---- 11+ right: income & deductions
   section(R.sec1, 10, 15, 'Income & deductions');
   const incomeRows = [
-    ['="Monthly income (" & CFG_INCOME_CURRENCY & ")"', '=CFG_MONTHLY_INCOME', '#,##0.00'],
+    ['="Monthly salary, gross (" & CFG_INCOME_CURRENCY & ")"', '=CFG_MONTHLY_INCOME', '#,##0.00'],
     ['="ARS (" & CFG_INCOME_CURRENCY & ")"', '=CFG_ARS', '#,##0.00'],
     ['="AFP (" & CFG_INCOME_CURRENCY & ")"', '=CFG_AFP', '#,##0.00'],
     // v1.1.24: DOP salaries show ISR as an amount (automatic or entered); other
@@ -1034,8 +1077,11 @@ function buildOrRefreshDashboard() {
     ['=IF(CFG_INCOME_CURRENCY="DOP","ISR — Impuesto Sobre la Renta" & IF(CFG_DEDUCTION_MODE="auto","  (auto)",""),' +
        '"Income tax (" & TEXT(CFG_TAX_RATE,"0.##") & "%)")',
      `=IF(CFG_INCOME_CURRENCY="DOP",CFG_ISR,N${R.income}*CFG_TAX_RATE/100)`, '#,##0.00'],
-    ['="Net income (" & CFG_INCOME_CURRENCY & ")"', `=N${R.income}-N${R.income + 1}-N${R.income + 2}-N${R.income + 3}`, '#,##0.00'],
-    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})`, moneyFmt]
+    ['="Net salary (" & CFG_INCOME_CURRENCY & ")"', `=N${R.income}-N${R.income + 1}-N${R.income + 2}-N${R.income + 3}`, '#,##0.00'],
+    // v1.1.27: other income, added in full (no deductions), in its own currency
+    ['="Other income (" & CFG_OTHER_CURRENCY & ", no deductions)"', '=CFG_OTHER_INCOME', '#,##0.00'],
+    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})+` +
+      `IF(CFG_OTHER_CURRENCY="DOP",N${R.income + 5},N${R.income + 5}*${USD})`, moneyFmt]
   ];
   sheet.getRange(R.income, 10, incomeRows.length, 4).mergeAcross();
   sheet.getRange(R.income, 14, incomeRows.length, 2).mergeAcross();
@@ -1151,18 +1197,20 @@ function buildOrRefreshDashboard() {
   totalRow(R.gridTotal, 2, 14);
   sheet.getRange(R.gridPct, 2, 3, 14).setFontSize(8).setFontColor(T.muted);
 
-  // ---- credit cards (editable)
+  // ---- credit cards (v1.1.27: from the Setup Wizard + the card catalogue)
   section(R.cardsHead, 2, 15, '💳  Credit cards');
   tableHead(R.cardsCols, 2, ['Card', 'Cashback', 'Statement close', 'Payment due', 'Notes']);
-  sheet.getRange(R.cardsCols, 6, 4, 10).mergeAcross();
-  const cards = inputs.cards || defaultDashboardCards(config);
-  sheet.getRange(R.cardsFirst, 2, 3, 5).setValues(cards).setBackground(T.input).setFontColor(T.navy);
-  sheet.getRange(R.cardsFirst, 2, 3, 1).setFontWeight('bold');
-  sheet.getRange(R.cardsFirst, 3, 3, 1).setNumberFormat('0%').setHorizontalAlignment('center');
-  sheet.getRange(R.cardsFirst, 4, 3, 2).setHorizontalAlignment('center');
-  sheet.getRange(R.cardsFirst, 6, 3, 10).setWrap(true).setFontSize(9).setBackground(T.input);
-  sheet.setRowHeights(R.cardsFirst, 3, 36);
-  setNamedRangeSafe(ss, DASH_NAMES.cards, sheet.getRange(R.cardsFirst, 2, 3, 5));
+  sheet.getRange(R.cardsCols, 6, cardRows.length + 1, 10).mergeAcross();
+  sheet.getRange(R.cardsFirst, 2, cardRows.length, 5).setValues(cardRows).setFontColor(T.navy);
+  stripe(R.cardsFirst, 2, cardRows.length, 14);
+  sheet.getRange(R.cardsFirst, 2, cardRows.length, 1).setFontWeight('bold');
+  sheet.getRange(R.cardsFirst, 3, cardRows.length, 1).setNumberFormat('0%').setHorizontalAlignment('center');
+  sheet.getRange(R.cardsFirst, 4, cardRows.length, 2).setHorizontalAlignment('center');
+  sheet.getRange(R.cardsFirst, 6, cardRows.length, 10).setWrap(true).setFontSize(9);
+  sheet.setRowHeights(R.cardsFirst, cardRows.length, 36);
+  sheet.getRange(R.cardsHint, 2, 1, 14).merge().setValue('Cards, statement and payment days are set in 📊 Tracker › Setup Wizard.')
+    .setFontSize(8).setFontStyle('italic').setFontColor(T.muted);
+  setNamedRangeSafe(ss, DASH_NAMES.cards, sheet.getRange(R.cardsFirst, 2, cardRows.length, 5));
 
   // ---- which card for what (v1.1.22 — replaces the LAFISE-only table of v1.1.21)
   section(R.mxHead, 2, 15, '🧭  Which card for what — cashback by kind of spending (per each program\'s terms)');

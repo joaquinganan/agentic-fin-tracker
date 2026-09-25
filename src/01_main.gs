@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.26"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.27"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -130,8 +130,12 @@ function openSetupWizard() {
     taxRate: existing.deductions.taxRate, ISR: existing.deductions.ISR,
     banksToTrack: existing.banksToTrack || {},
     notifyEnabled: existing.notifyEnabled, notifyMonthly: existing.notifyMonthly, notifyEmail: existing.notifyEmail,
-    notifyHour: existing.notifyHour, notifySections: existing.notifySections
+    notifyHour: existing.notifyHour, notifySections: existing.notifySections,
+    otherIncome: existing.otherIncome, otherIncomeCurrency: existing.otherIncomeCurrency, cards: existing.cards
   } : { email: defaultEmail };
+  // v1.1.27: card catalogue for the "Credit Cards" section (public product facts only)
+  const catalogJson = JSON.stringify(Object.keys(CARD_PRODUCTS).map(id =>
+    ({ id: id, bank: CARD_PRODUCTS[id].bank, name: CARD_PRODUCTS[id].name }))).replace(/</g, '\\u003c');
   const prefillJson = JSON.stringify(prefill).replace(/</g, '\\u003c');
   const html = HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
@@ -178,6 +182,15 @@ function openSetupWizard() {
         .status { text-align: center; margin-top: 20px; padding: 15px; border-radius: 8px; display: none; }
         .status.success { background: #d4edda; color: #155724; display: block; }
         .status.error { background: #f8d7da; color: #721c24; display: block; }
+        .status.info { background: #eaf1fe; color: #1d4ed8; display: block; }
+        .card-row { display: grid; grid-template-columns: 84px 1fr 96px 96px; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .card-row .card-bank { font-weight: 700; font-size: 13px; color: #333; }
+        .card-row .c-other { grid-column: 1 / -1; display: none; grid-template-columns: 84px 1fr 120px; gap: 8px; align-items: center; }
+        .card-head { display: grid; grid-template-columns: 84px 1fr 96px 96px; gap: 8px; margin-bottom: 4px;
+          font-size: 11px; font-weight: 600; color: #777; text-transform: uppercase; letter-spacing: .4px; }
+        .c-other .c-label { font-size: 12px; color: #777; }
+        .card-row input, .card-row select { padding: 9px; }
+        button:disabled { opacity: 0.6; cursor: default; transform: none; }
       </style>
     </head>
     <body>
@@ -200,10 +213,25 @@ function openSetupWizard() {
               </select>
             </div>
             <div class="form-group">
-              <label>💵 Monthly Gross Income (<span class="curLabel">USD</span>)</label>
+              <label>💵 Monthly Gross Salary (<span class="curLabel">USD</span>)</label>
               <input type="number" id="monthlyIncome" placeholder="0.00" step="0.01" min="0" required oninput="refresh()">
             </div>
           </div>
+
+          <div class="row">
+            <div class="form-group">
+              <label>➕ Other Monthly Income</label>
+              <input type="number" id="otherIncome" placeholder="0.00" step="0.01" min="0">
+            </div>
+            <div class="form-group">
+              <label>Other income currency</label>
+              <select id="otherIncomeCurrency">
+                <option value="DOP">DOP</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+          </div>
+          <div class="hint" style="margin:-6px 0 4px">Freelance work, rent you receive, etc. Added in full to your net income — no deductions.</div>
 
           <div class="section-title">📊 Monthly Deductions</div>
           <div id="dopModeGroup" class="radio-group">
@@ -242,12 +270,17 @@ function openSetupWizard() {
 
           <div class="section-title">🏦 Banks to Track</div>
           <div class="checkbox-group">
-            <div class="checkbox-item"><input type="checkbox" id="bank_lafise" checked><label for="bank_lafise">LAFISE</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_banesco" checked><label for="bank_banesco">BANESCO</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bhd" checked><label for="bank_bhd">BHD</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_popular" checked><label for="bank_popular">POPULAR</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bdi" checked><label for="bank_bdi">BDI</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="bank_lafise" checked onchange="renderCards()"><label for="bank_lafise">LAFISE</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="bank_banesco" checked onchange="renderCards()"><label for="bank_banesco">BANESCO</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="bank_bhd" checked onchange="renderCards()"><label for="bank_bhd">BHD</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="bank_popular" checked onchange="renderCards()"><label for="bank_popular">POPULAR</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="bank_bdi" checked onchange="renderCards()"><label for="bank_bdi">BDI</label></div>
           </div>
+
+          <div class="section-title">💳 Credit Cards</div>
+          <div class="hint" style="margin:-4px 0 10px">The credit card you have with each bank (if any), and the day its statement
+            closes and the day payment is due. They feed the Dashboard's card table and the cashback tips.</div>
+          <div id="cardsBox"></div>
 
           <div class="section-title">📬 Summary Emails</div>
           <div class="checkbox-item" style="margin-bottom:8px">
@@ -289,7 +322,7 @@ function openSetupWizard() {
           </div>
 
           <div class="buttons">
-            <button type="submit" class="btn-primary">✅ Save Configuration</button>
+            <button type="submit" class="btn-primary" id="saveBtn">✅ Save Configuration</button>
             <button type="button" class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
           </div>
           <div id="status" class="status"></div>
@@ -341,12 +374,68 @@ function openSetupWizard() {
             .previewDrPayroll(gross);
         }
 
+        const CATALOG = ${catalogJson};
+        const BANKS = ['LAFISE', 'BANESCO', 'BHD', 'POPULAR', 'BDI'];
+        function cardRows() { return Array.prototype.slice.call(document.querySelectorAll('.card-row')); }
+        function readCards() {
+          return cardRows().map(function(r) {
+            const q = function(c) { return r.querySelector(c); };
+            return { bank: r.getAttribute('data-bank'), product: q('.c-product').value,
+              closeDay: parseInt(q('.c-close').value, 10) || null, dueDay: parseInt(q('.c-due').value, 10) || null,
+              name: q('.c-name').value.trim(), cashback: parseFloat(q('.c-cashback').value) || 0 };
+          });
+        }
+        function applyCards(list) {
+          (list || []).forEach(function(c) {
+            const r = document.querySelector('.card-row[data-bank="' + c.bank + '"]');
+            if (!r) return;
+            const q = function(x) { return r.querySelector(x); };
+            if (c.product) q('.c-product').value = c.product;
+            if (c.closeDay) q('.c-close').value = c.closeDay;
+            if (c.dueDay) q('.c-due').value = c.dueDay;
+            if (c.name) q('.c-name').value = c.name;
+            if (c.cashback) q('.c-cashback').value = c.cashback;
+            refreshCardRow(q('.c-product'));
+          });
+        }
+        function refreshCardRow(sel) {
+          const r = sel.parentNode;
+          const has = sel.value !== 'none';
+          r.querySelector('.c-close').style.visibility = has ? 'visible' : 'hidden';
+          r.querySelector('.c-due').style.visibility = has ? 'visible' : 'hidden';
+          r.querySelector('.c-other').style.display = sel.value === 'other' ? 'grid' : 'none';
+        }
+        function renderCards() {
+          const keep = readCards();
+          let html = '';
+          BANKS.forEach(function(b) {
+            if (!el('bank_' + b.toLowerCase()).checked) return;
+            const opts = ['<option value="none">No credit card</option>']
+              .concat(CATALOG.filter(function(c) { return c.bank === b; })
+                .map(function(c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }))
+              .concat(['<option value="other">Other card…</option>']).join('');
+            html += '<div class="card-row" data-bank="' + b + '"><div class="card-bank">' + b + '</div>' +
+              '<select class="c-product" onchange="refreshCardRow(this)">' + opts + '</select>' +
+              '<input class="c-close" type="number" min="1" max="31" placeholder="Closes (day)" title="Statement closes (day of month)">' +
+              '<input class="c-due" type="number" min="1" max="31" placeholder="Due (day)" title="Payment due (day of month)">' +
+              '<div class="c-other"><span class="c-label">↳ name / %</span><input class="c-name" placeholder="Card name" title="Card name">' +
+              '<input class="c-cashback" type="number" min="0" max="100" step="0.1" placeholder="% cashback" title="% cashback"></div></div>';
+          });
+          el('cardsBox').innerHTML = html
+            ? '<div class="card-head"><div>Bank</div><div>Card</div><div>Closes (day)</div><div>Due (day)</div></div>' + html
+            : '<div class="hint">Select a bank above to add its card.</div>';
+          cardRows().forEach(function(r) { refreshCardRow(r.querySelector('.c-product')); });
+          applyCards(keep);
+        }
+
         const EXISTING = ${prefillJson};
         (function prefill() {
           const setVal = function(id, v) { if (v !== undefined && v !== null && v !== '') el(id).value = v; };
           setVal('email', EXISTING.email);
           setVal('incomeCurrency', EXISTING.incomeCurrency);
           setVal('monthlyIncome', EXISTING.monthlyIncome);
+          setVal('otherIncome', EXISTING.otherIncome);
+          setVal('otherIncomeCurrency', EXISTING.otherIncomeCurrency);
           if (EXISTING.deductionMode === 'manual') el('dedManual').checked = true;
           if (EXISTING.deductionMode !== 'auto' || EXISTING.incomeCurrency !== 'DOP') {
             setVal('arsAmount', EXISTING.ARS);
@@ -366,6 +455,8 @@ function openSetupWizard() {
           if (EXISTING.notifySections) {
             SECTIONS.forEach(function(k) { if (k in EXISTING.notifySections) el('sec_' + k).checked = !!EXISTING.notifySections[k]; });
           }
+          renderCards();
+          applyCards(EXISTING.cards);
           refresh();
         })();
 
@@ -382,10 +473,18 @@ function openSetupWizard() {
           if (el('notifyEnabled').checked && !SECTIONS.some(function(k) { return sections[k]; })) {
             return fail('Pick at least one thing to include in the daily summary.');
           }
+          const cards = readCards().filter(function(c) { return c.product !== 'none'; });
+          const badDay = cards.find(function(c) { return [c.closeDay, c.dueDay].some(function(d) { return d !== null && (d < 1 || d > 31); }); });
+          if (badDay) return fail(badDay.bank + ': statement and payment days must be between 1 and 31.');
+          const noName = cards.find(function(c) { return c.product === 'other' && !c.name; });
+          if (noName) return fail(noName.bank + ': give the other card a name.');
           const config = {
             email: el('email').value.trim(),
             incomeCurrency: cur,
             monthlyIncome: income,
+            otherIncome: num('otherIncome'),
+            otherIncomeCurrency: el('otherIncomeCurrency').value,
+            cards: cards,
             deductionMode: mode(),
             deductions: {
               ARS: num('arsAmount'), AFP: num('afpAmount'),
@@ -402,16 +501,16 @@ function openSetupWizard() {
             },
             timestamp: new Date().toISOString()
           };
+          // v1.1.27: like the other long actions, the window closes right away and the
+          // sheet shows the progress (toasts) and a summary when it finishes.
+          el('saveBtn').disabled = true;
+          statusEl.className = 'status info';
+          statusEl.textContent = '⏳ Saving and rebuilding the Dashboard in the background — follow the progress at ' +
+            'the bottom-right of the sheet; a summary pops up when it finishes. This window will close.';
           google.script.run
-            .withSuccessHandler(function() {
-              statusEl.className = 'status success';
-              const mails = [config.notify.enabled ? 'daily' : '', config.notify.monthly ? 'monthly (on the 1st)' : ''].filter(Boolean);
-              statusEl.textContent = '✅ Configuration saved! Your data updates every morning around 6 AM' +
-                (mails.length ? '; the ' + mails.join(' and ') + ' summary arrives around ' + config.notify.hour + ':00 AM.' : '.');
-              setTimeout(function() { google.script.host.close(); }, 2200);
-            })
-            .withFailureHandler(function(error) { fail('Error: ' + error); })
+            .withFailureHandler(function(error) { fail('Error: ' + error); el('saveBtn').disabled = false; })
             .saveSetupConfig(config);
+          setTimeout(function() { google.script.host.close(); }, 1500);
         });
       </script>
     </body>
@@ -523,6 +622,21 @@ function validateSetupInput(config) {
   if (!(tax >= 0 && tax <= 100)) return "Tax rate must be between 0 and 100.";
   if (!config.banksToTrack || typeof config.banksToTrack !== 'object') return "Select at least one bank.";
   if (!Object.keys(config.banksToTrack).some(b => config.banksToTrack[b])) return "Select at least one bank.";
+  // v1.1.27: other income and cards
+  if (Number(config.otherIncome || 0) < 0) return "Other income can't be negative.";
+  if (config.otherIncomeCurrency && ['USD', 'DOP'].indexOf(config.otherIncomeCurrency) === -1) return "Other income currency must be USD or DOP.";
+  const cards = config.cards || [];
+  if (!Array.isArray(cards)) return "Cards must be a list.";
+  for (const c of cards) {
+    if (!c || c.product === 'none') continue;          // "No credit card" — nothing to check
+    if (c.product !== 'other' && !CARD_PRODUCTS[c.product]) return c.bank + ": unknown card.";
+    if (c.product === 'other' && !String(c.name || '').trim()) return c.bank + ": give the other card a name.";
+    for (const d of [c.closeDay, c.dueDay]) {
+      if (d !== null && d !== undefined && d !== '' && !(Number(d) >= 1 && Number(d) <= 31)) {
+        return c.bank + ": statement and payment days must be between 1 and 31.";
+      }
+    }
+  }
   const n = config.notify || {};
   if (n.enabled || n.monthly) {
     if (n.email && !EMAIL_RE.test(String(n.email).trim())) {
@@ -538,91 +652,94 @@ function validateSetupInput(config) {
 }
 
 function saveSetupConfig(config) {
-  try {
-    const problem = validateSetupInput(config);
-    if (problem) throw new Error(problem);
-    // Ensure sheet exists
-    getOrCreateSheet(CONFIG_SHEET);
-    
-    // Save config to sheet
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET);
-    sheet.clear();
-    
-    // v1.1.24: new keys (deductionMode, ISR, daily summary). Row order no
-    // longer matters — the Dashboard finds values through named ranges.
-    const dop = config.incomeCurrency === 'DOP';
-    const auto = dop && config.deductionMode === 'auto';
-    const calc = auto ? computeDrPayroll(config.monthlyIncome) : null;
-    const d = config.deductions || {};
-    const n = config.notify || {};
-    const rows = [
-      ["Key", "Value"],
-      ["email", String(config.email).trim()],
-      ["incomeCurrency", config.incomeCurrency],
-      ["monthlyIncome", Number(config.monthlyIncome)],
-      ["deductionMode", auto ? 'auto' : 'manual'],
-      ["ARS", auto ? calc.sfs : Number(d.ARS) || 0],
-      ["AFP", auto ? calc.afp : Number(d.AFP) || 0],
-      ["ISR", auto ? calc.isr : (dop ? Number(d.ISR) || 0 : 0)],
-      ["taxRate", dop ? 0 : Number(d.taxRate) || 0],
-      ["banksToTrack", JSON.stringify(config.banksToTrack)],
-      ["setupDate", config.timestamp || new Date().toISOString()],
-      ["notifyEnabled", !!n.enabled],
-      ["notifyMonthly", !!n.monthly],
-      ["notifyEmail", String(n.email || '').trim()],
-      ["notifyHour", Number(n.hour) || 8],
-      ["notifySections", JSON.stringify(Object.assign({}, SUMMARY_SECTIONS_DEFAULT, n.sections || {}))]
-    ];
-    sheet.getRange(1, 1, rows.length, 2).setValues(rows);
-    ensureConfigNamedRanges();
-    
-    Logger.log("✅ Config saved successfully");
-    
-    // Initialize transactions sheet
-    getOrCreateSheet(TRANSACTIONS_SHEET);
-    initializeTransactionsSheet();
-    
-    // Initialize custom rules sheet (used by 02_categorizer.gs)
-    // v1.1.12: added a documentation row about the reserved "Exclude"
-    // category — a Transfer matching that rule (e.g. your own name, for a
-    // self-transfer between your own accounts) is left out of every
-    // Dashboard total, including the new "Transfers Not Yet Categorized"
-    // row (04_sheetsWriter.gs).
-    const customRulesSheet = getOrCreateSheet(CUSTOM_RULES_SHEET);
-    if (customRulesSheet.getLastRow() < 1) {
-      customRulesSheet.appendRow(["UserEmail", "Category", "Keyword", "Timestamp"]);
-      customRulesSheet.appendRow(["(example — delete this row)", "Exclude", "YOUR OWN NAME HERE",
-        "Category=\"Exclude\" leaves a matching Transfer out of every Dashboard total (self-transfers)"]);
-    }
-
-    // v1.1.3: BUG FIX — the dialog's success message always claimed "Gmail
-    // monitoring will start automatically," but nothing ever actually
-    // created the daily trigger (createTrigger() existed but was never
-    // called from here). Calling it now makes that message true.
-    createTrigger();
-
-    // v1.1.4: arrange sheets in the requested canonical order now that the
-    // core ones (Configuration, Transactions, Custom Rules) exist.
-    ensureSheetOrder();
-
-    // v1.1.6: land on Dashboard if it already exists (a re-run of Setup
-    // Wizard on an existing system), otherwise Configuration (first-time
-    // setup — Dashboard has nothing to show yet until a monitor run
-    // populates Transactions).
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const dashboardSheet = ss.getSheetByName("Dashboard");
-    if (dashboardSheet) {
-      ss.setActiveSheet(dashboardSheet);
-    } else {
-      const configSheet = ss.getSheetByName(CONFIG_SHEET);
-      if (configSheet) ss.setActiveSheet(configSheet);
-    }
-    
-    return true;
-  } catch (error) {
-    Logger.log("❌ Error saving config: " + error);
-    throw error;
+  // v1.1.27: the wizard window closes right away (like Monitor by Date Range), so
+  // everything the user needs to know is reported here: toasts while it works, and
+  // a summary alert (or the error) at the end. Runs under the run lock and rebuilds
+  // the Dashboard so new income, deductions and cards show at once.
+  const problem = validateSetupInput(config);
+  if (problem) {
+    safeAlert("❌ Setup not saved: " + problem);
+    return false;
   }
+  return withRunLock(() => {
+    try {
+      safeToast("Saving your configuration...", "📊 Financial Tracker", -1);
+      getOrCreateSheet(CONFIG_SHEET);
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName(CONFIG_SHEET);
+      sheet.clear();
+
+      const dop = config.incomeCurrency === 'DOP';
+      const auto = dop && config.deductionMode === 'auto';
+      const calc = auto ? computeDrPayroll(config.monthlyIncome) : null;
+      const d = config.deductions || {};
+      const n = config.notify || {};
+      const rows = [
+        ["Key", "Value"],
+        ["email", String(config.email).trim()],
+        ["incomeCurrency", config.incomeCurrency],
+        ["monthlyIncome", Number(config.monthlyIncome)],
+        ["otherIncome", Number(config.otherIncome) || 0],
+        ["otherIncomeCurrency", config.otherIncomeCurrency || 'DOP'],
+        ["deductionMode", auto ? 'auto' : 'manual'],
+        ["ARS", auto ? calc.sfs : Number(d.ARS) || 0],
+        ["AFP", auto ? calc.afp : Number(d.AFP) || 0],
+        ["ISR", auto ? calc.isr : (dop ? Number(d.ISR) || 0 : 0)],
+        ["taxRate", dop ? 0 : Number(d.taxRate) || 0],
+        ["banksToTrack", JSON.stringify(config.banksToTrack)],
+        ["cards", JSON.stringify((config.cards || []).filter(c => c && c.product && c.product !== 'none').map(c => ({ bank: c.bank, product: c.product,
+          closeDay: Number(c.closeDay) || null, dueDay: Number(c.dueDay) || null,
+          name: c.product === 'other' ? String(c.name || '').trim() : '', cashback: c.product === 'other' ? Number(c.cashback) || 0 : null })))],
+        ["setupDate", config.timestamp || new Date().toISOString()],
+        ["notifyEnabled", !!n.enabled],
+        ["notifyMonthly", !!n.monthly],
+        ["notifyEmail", String(n.email || '').trim()],
+        ["notifyHour", Number(n.hour) || 8],
+        ["notifySections", JSON.stringify(Object.assign({}, SUMMARY_SECTIONS_DEFAULT, n.sections || {}))]
+      ];
+      sheet.getRange(1, 1, rows.length, 2).setValues(rows);
+      ensureConfigNamedRanges();
+      Logger.log("✅ Config saved successfully");
+
+      safeToast("Preparing sheets and daily triggers...", "📊 Financial Tracker", -1);
+      getOrCreateSheet(TRANSACTIONS_SHEET);
+      initializeTransactionsSheet();
+      // Custom Rules starts with one example row: Category "Exclude" leaves a
+      // matching transfer (e.g. between your own accounts) out of every total.
+      const customRulesSheet = getOrCreateSheet(CUSTOM_RULES_SHEET);
+      if (customRulesSheet.getLastRow() < 1) {
+        customRulesSheet.appendRow(["UserEmail", "Category", "Keyword", "Timestamp"]);
+        customRulesSheet.appendRow(["(example — delete this row)", "Exclude", "YOUR OWN NAME HERE",
+          "Category=\"Exclude\" leaves a matching Transfer out of every Dashboard total (self-transfers)"]);
+      }
+      createTrigger();
+      ensureSheetOrder();
+
+      safeToast("Rebuilding the Dashboard...", "📊 Financial Tracker", -1);
+      buildOrRefreshDashboard();          // also lands on the Dashboard
+      safeToast("Done.", "📊 Financial Tracker", 3);
+      safeAlert(setupSavedMessage(getConfig(), ss));
+      return true;
+    } catch (error) {
+      Logger.log("❌ Error saving config: " + error);
+      safeAlert("❌ Setup could not finish: " + error + "\nWhatever was saved before the error is kept — run the Setup Wizard again.");
+      return false;
+    }
+  });
+}
+
+/** v1.1.27: what the user sees after saving the Setup Wizard. */
+function setupSavedMessage(config, ss) {
+  const rates = readDashboardRates(ss);
+  const lines = ["✅ Configuration saved and Dashboard updated.", "",
+    "💵 Net income: " + summaryMoney(computeNetIncomeDop(config, rates)) + " / month (DOP-equivalent)" +
+      (config.otherIncome > 0 ? ", including other income" : ""),
+    "🔄 Bank emails are read every morning around 6 AM."];
+  if (config.notifyEnabled) lines.push("📬 Daily summary around " + config.notifyHour + ":00.");
+  if (config.notifyMonthly) lines.push("🗓️ Monthly summary on the 1st around " + config.notifyHour + ":00.");
+  const cards = resolveCards(config.cards);
+  lines.push("💳 Credit cards: " + (cards.length ? cards.map(c => c.bank + (c.name ? ' ' + c.name : '')).join(', ') : 'none set'));
+  return lines.join("\n");
 }
 
 /**
@@ -1040,6 +1157,9 @@ Monthly Income: ${config.monthlyIncome} ${config.incomeCurrency}
   AFP: ${config.deductions.AFP} ${config.incomeCurrency}
   ${config.incomeCurrency === 'DOP' ? 'ISR: ' + config.deductions.ISR + ' DOP' : 'Tax rate: ' + config.deductions.taxRate + '%'}
 
+➕ Other income: ${config.otherIncome} ${config.otherIncomeCurrency} (no deductions)
+💳 Cards: ${resolveCards(config.cards).map(c => c.bank + (c.name ? ' ' + c.name : '') + (c.closeDay ? ' · closes day ' + c.closeDay : '') + (c.dueDay ? ' · due day ' + c.dueDay : '')).join('; ') || 'none set'}
+
 📬 Daily summary: ${config.notifyEnabled ? 'on — around ' + config.notifyHour + ':00 to ' + (config.notifyEmail || config.email) : 'off'}
 🗓️ Monthly summary: ${config.notifyMonthly ? 'on — the 1st, around ' + config.notifyHour + ':00' : 'off'}
 
@@ -1128,6 +1248,11 @@ function getConfig() {
       } else if (key === 'monthlyIncome') {
         const n = parseFloat(value);
         config.monthlyIncome = isNaN(n) ? 0 : n;
+      } else if (key === 'otherIncome') {
+        config.otherIncome = parseFloat(value) || 0;
+      } else if (key === 'cards') {
+        try { config.cards = JSON.parse(value); } catch (e) { config.cards = []; }
+        if (!Array.isArray(config.cards)) config.cards = [];
       } else if (key === 'notifyEnabled') {
         config.notifyEnabled = asBool(value);
       } else if (key === 'notifyMonthly') {
@@ -1141,6 +1266,8 @@ function getConfig() {
       }
     }
     if (!config.incomeCurrency) config.incomeCurrency = 'USD';
+    config.otherIncome = Number(config.otherIncome) || 0;                  // v1.1.27
+    if (config.otherIncomeCurrency !== 'USD') config.otherIncomeCurrency = 'DOP';
     if (config.deductionMode !== 'auto') config.deductionMode = 'manual';
     config.notifyEnabled = !!config.notifyEnabled;
     config.notifyMonthly = !!config.notifyMonthly;

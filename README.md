@@ -72,7 +72,9 @@ The full history — what was wrong, how it was found and what changed — is in
 - **Dashboard** with KPI cards, categories by month, fixed vs. variable, spend by bank, a year heat map, and a
   "Which card for what" cashback matrix. It converts USD/EUR/COP to DOP at editable rates.
 - **Dominican payroll deductions** for DOP salaries: automatic ARS/SFS, AFP (with 2026 caps) and ISR (DGII
-  scale), or entered manually.
+  scale), or entered manually — plus other monthly income, added with no deductions.
+- **Your credit cards** (set in the Setup Wizard): card, statement and payment days, with cashback rates and
+  rules from a catalogue of each program's public terms.
 - **Daily email:** yesterday's spending, month pace against income, last 7 days, categories against their usual
   month, transfers to review, rule-based recommendations, card tips and a data-health line.
 - **Monthly email** (on the 1st): left over and savings rate, comparisons, a day-by-day heat calendar,
@@ -150,6 +152,7 @@ npm test            # node --test tests/*.test.js  (Node 18+)
 | `integration.test.js` | full runs against the mock; Dashboard lint, wiring and migrations |
 | `v124.test.js` | DR payroll, Setup Wizard, privacy, column auto-fit, daily email |
 | `v126.test.js` | email redesign, monthly summary, triggers, data health |
+| `v127.test.js` | other income, credit cards from the Setup Wizard, save flow and messages |
 
 Adding a real email as a new fixture, and the manual checks a mock can't cover, are described in
 [tests/README.md](tests/README.md).

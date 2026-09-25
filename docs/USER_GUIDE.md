@@ -35,9 +35,9 @@ This script uses `SpreadsheetApp.getActiveSpreadsheet()` and an `onOpen()` menu 
 4. Refresh your Google Sheet
 5. Click menu: **📊 Tracker** > **🔧 Setup Wizard**
 6. Fill in your information:
-   - Email, income currency and monthly gross income
+   - Email, income currency, monthly gross salary and any other monthly income (no deductions)
    - Deductions: automatic (DOP salary, DR payroll rules) or entered manually
-   - Banks to track (LAFISE, BANESCO, BHD, POPULAR, BDI)
+   - Banks to track (LAFISE, BANESCO, BHD, POPULAR, BDI) and, for each, your credit card with its statement and payment days
    - Optionally, summary emails: daily and/or monthly (on the 1st), recipient, hour, and what the daily one includes
 7. Click **✅ Save Configuration**
 

@@ -72,8 +72,12 @@ function keyToDate(key) {
 function computeNetIncomeDop(config, rates) {
   const d = config.deductions || {};
   const gross = Number(config.monthlyIncome) || 0;
-  if (config.incomeCurrency === 'DOP') return gross - (d.ARS || 0) - (d.AFP || 0) - (d.ISR || 0);
-  return (gross - (d.ARS || 0) - (d.AFP || 0) - gross * (d.taxRate || 0) / 100) * rates.USD;
+  const salary = config.incomeCurrency === 'DOP'
+    ? gross - (d.ARS || 0) - (d.AFP || 0) - (d.ISR || 0)
+    : (gross - (d.ARS || 0) - (d.AFP || 0) - gross * (d.taxRate || 0) / 100) * rates.USD;
+  // v1.1.27: other income is added in full, in its own currency
+  const other = Number(config.otherIncome) || 0;
+  return salary + (config.otherIncomeCurrency === 'USD' ? other * rates.USD : other);
 }
 
 /**
@@ -211,8 +215,8 @@ function summaryRecommendations(s) {
 
 /** Card tips for yesterday's purchases, only for banks with a cashback rate in the card table. */
 function summaryCardTips(items, cards) {
-  const rateByBank = {};
-  cards.forEach(c => { if (c.rate > 0) rateByBank[c.bank] = c.rate; });
+  const rateByBank = {}, nameByBank = {};
+  cards.forEach(c => { if (c.rate > 0) { rateByBank[c.bank] = c.rate; nameByBank[c.bank] = c.name || ''; } });
   const tips = [];
   const seen = {};
   items.forEach(it => {
@@ -223,7 +227,7 @@ function summaryCardTips(items, cards) {
     seen[it.merchant] = true;
     const rate = rateByBank[rule.bank];
     tips.push({ text: it.merchant + ' (' + summaryMoney(it.amount) + ' on ' + it.bank + '): ' + rule.label.toLowerCase() +
-      ' earn ' + summaryPct(rate) + ' with your ' + rule.bank + ' card — about ' + summaryMoney(it.amount * rate) + ' back.' });
+      ' earn ' + summaryPct(rate) + ' with your ' + rule.bank + (nameByBank[rule.bank] ? ' ' + nameByBank[rule.bank] : '') + ' card — about ' + summaryMoney(it.amount * rate) + ' back.' });
   });
   return tips;
 }
@@ -547,8 +551,16 @@ function readDashboardRates(ss) {
   return { USD: get('RATE_USD', 'usd'), EUR: get('RATE_EUR', 'eur'), COP: get('RATE_COP', 'cop') };
 }
 
-/** Card rows from the Dashboard: [{bank, rate}]. */
+/**
+ * The user's cards: [{bank, rate, name}]. v1.1.27: from the Setup Wizard
+ * (Configuration "cards" + the card catalogue); before the wizard has cards, from
+ * an older Dashboard's card table.
+ */
 function readDashboardCards(ss) {
+  const config = getConfig();
+  if (config && Array.isArray(config.cards)) {
+    return resolveCards(config.cards).map(c => ({ bank: c.bank, rate: c.cashback, name: c.name }));
+  }
   const r = ss.getRangeByName('DASH_CARDS');
   if (!r) return [];
   return r.getValues()

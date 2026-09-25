@@ -45,7 +45,8 @@ test('Setup Wizard contains no personal values; a first run suggests the current
   // generic checks — they don't name anyone, so the test itself leaks nothing
   assert.ok(!/value="[^"]*@/.test(html), 'no email hard-coded as a field value');
   const placeholders = [...html.matchAll(/placeholder="([^"]*)"/g)].map(m => m[1]);
-  assert.deepEqual([...new Set(placeholders)].sort(), ['0', '0.00', 'Same as the email above', 'you@example.com']);
+  assert.deepEqual([...new Set(placeholders)].sort(), ['% cashback', '0', '0.00', 'Card name', 'Closes (day)', 'Due (day)',
+    'Same as the email above', 'you@example.com'], 'only neutral placeholders — no numbers anyone could mistake for real data');
   assert.ok(html.includes('placeholder="you@example.com"') && html.includes('placeholder="0.00"'));
   assert.ok(html.includes('"email":"new.user@example.com"'), 'prefill = the Google account opening the wizard');
   assert.ok(html.includes('id="dedAuto"') && html.includes('id="isrAmount"') && html.includes('id="notifyEnabled"'));
@@ -89,7 +90,7 @@ test('saving DOP + automatic: stores the calculated ARS/AFP/ISR and creates both
   assert.deepEqual(mock.triggers.map(t => t.handler), ['runGmailMonitor'], 'summary trigger removed when turned off');
 });
 
-test('Dashboard income box: ISR row for DOP, rate row for USD; defaults cards from the selected banks', () => {
+test('Dashboard income box: ISR row for DOP, rate row for USD; card table points to the wizard until cards are set', () => {
   const { h, mock } = configured();
   h.ctx.saveSetupConfig(wizardInput());
   h.ctx.buildOrRefreshDashboard();
@@ -99,7 +100,7 @@ test('Dashboard income box: ISR row for DOP, rate row for USD; defaults cards fr
   assert.ok(all.some(v => v.includes('"ISR — Impuesto Sobre la Renta"')));
   assert.equal(mock.ss.getRangeByName('CFG_ISR').getValue(), 1854);
   assert.deepEqual(h.plain(mock.ss.getRangeByName('DASH_CARDS').getValues()),
-    [['LAFISE', '', '', '', ''], ['BANESCO', '', '', '', ''], ['BHD', '', '', '', '']]);
+    [['No credit cards set up yet', '', '', '', 'Add them in 📊 Tracker › Setup Wizard.']], 'v1.1.27: no empty bank rows');
   assert.ok(dash.getColumnWidth(2) >= 300, 'column B fits the longest category label');
 });
 

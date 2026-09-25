@@ -14,6 +14,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `parsing.test.js` | Type detection, every fixture end-to-end through `parseEmailMessage()`, declined rows, balances, IsCredit, garbled text, filters. |
 | `v124.test.js` | DR payroll (published RD$50,000 example, caps, top bracket, 2027 flag), setup validation, wizard with no personal data, save → Configuration + triggers, ISR row, generic default cards, column auto-fit, daily summary (numbers, email, delivery on/off). |
 | `v126.test.js` | Day-to-day comparison without bills, redesigned daily email (blocks, preheader, links, data health), monthly summary (totals, comparisons, subscriptions, missed cashback, year to date, calendar), monthly trigger and on/off, run status recorded. |
+| `v127.test.js` | Other income (Dashboard, emails), card catalogue and configured cards, Setup Wizard save flow (toasts, summary, errors after the window closes). |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 
