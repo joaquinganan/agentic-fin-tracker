@@ -1,0 +1,3 @@
+Notificación de Consumo
+Monto	Moneda	Fecha	Comercio	Estatus
+RD$1,230.00	RD	30/04/2026	LA CASITA DE	Aprobada

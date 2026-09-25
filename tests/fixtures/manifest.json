@@ -1,0 +1,293 @@
+[
+  {
+    "name": "bhd_consumo_cacharepa",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      3,
+      18,
+      20,
+      12
+    ],
+    "expected": [
+      {
+        "merchant": "CACHAREPA CHURCHILL",
+        "amount": 642,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Dining/Delivery + Entertainment + Other"
+      }
+    ]
+  },
+  {
+    "name": "bhd_consumo_cacharepa_spaced",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      3,
+      18,
+      20,
+      12
+    ],
+    "expected": [
+      {
+        "merchant": "CACHAREPA CHURCHILL",
+        "amount": 642,
+        "currency": "DOP",
+        "type": "Transaction"
+      }
+    ]
+  },
+  {
+    "name": "bhd_consumo_pedidosya",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      5,
+      6,
+      11,
+      47
+    ],
+    "expected": [
+      {
+        "merchant": "PedidosYa*Som Cafe",
+        "amount": 488,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Dining/Delivery + Entertainment + Other"
+      }
+    ]
+  },
+  {
+    "name": "bhd_consumo_medicar",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      3,
+      24,
+      17,
+      3
+    ],
+    "expected": [
+      {
+        "merchant": "FCIA MEDICAR GBC 30 DE MA",
+        "amount": 163,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Health + Vet + Pharmacy"
+      }
+    ]
+  },
+  {
+    "name": "bhd_transfer_self",
+    "synthetic": false,
+    "subject": "Transacciones entre mis productos",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      9,
+      3,
+      18,
+      12
+    ],
+    "expected": [
+      {
+        "merchant": "JUAN PEREZ",
+        "amount": 91.37,
+        "currency": "DOP",
+        "type": "Transfer",
+        "category": ""
+      }
+    ]
+  },
+  {
+    "name": "banesco_consumo_hola_plaza",
+    "synthetic": false,
+    "subject": "Alerta de Consumo Banesco RD",
+    "from": "notificaciones@banesco.com.do",
+    "date": [
+      2026,
+      2,
+      16,
+      12,
+      0
+    ],
+    "expected": [
+      {
+        "merchant": "HOLA PLAZA LAS AMERICAS",
+        "amount": 387.45,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Groceries + Barbershop"
+      }
+    ]
+  },
+  {
+    "name": "banesco_consumo_declined",
+    "synthetic": true,
+    "subject": "Alerta de Consumo Banesco RD",
+    "from": "notificaciones@banesco.com.do",
+    "date": [
+      2026,
+      2,
+      16,
+      12,
+      0
+    ],
+    "expected": []
+  },
+  {
+    "name": "bhd_consumo_multirow_mixed",
+    "synthetic": true,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      3,
+      24,
+      17,
+      50
+    ],
+    "expected": [
+      {
+        "merchant": "FCIA MEDICAR GBC 30 DE MA",
+        "amount": 163,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Health + Vet + Pharmacy"
+      }
+    ]
+  },
+  {
+    "name": "lafise_consumo_ubereats",
+    "synthetic": true,
+    "subject": "Servicio de Alerta - Nuevo Consumo",
+    "from": "LAFISE CF <notificaciones@bancolafise.com>",
+    "date": [
+      2026,
+      9,
+      2,
+      20,
+      14
+    ],
+    "expected": [
+      {
+        "merchant": "UBER EATS-W*UBER EATS- SANTO DOMINGO DOM",
+        "amount": 297.25,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Dining/Delivery + Entertainment + Other"
+      }
+    ]
+  },
+  {
+    "name": "popular_consumo_casita",
+    "synthetic": true,
+    "subject": "Notificación de Consumo",
+    "from": "notificaciones@popularenlinea.com",
+    "date": [
+      2026,
+      4,
+      30,
+      12,
+      0
+    ],
+    "expected": [
+      {
+        "merchant": "LA CASITA DE",
+        "amount": 1230,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Health + Vet + Pharmacy"
+      }
+    ]
+  },
+  {
+    "name": "bhd_consumo_reversal_original",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      5,
+      6,
+      11,
+      47
+    ],
+    "expected": [
+      {
+        "merchant": "PedidosYa*Som Cafe",
+        "amount": 488,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Dining/Delivery + Entertainment + Other"
+      }
+    ]
+  },
+  {
+    "name": "bhd_consumo_reversal",
+    "synthetic": false,
+    "subject": "BHD Notificación de Transacciones",
+    "from": "BHD <Alertas@bhd.com.do>",
+    "date": [
+      2026,
+      5,
+      6,
+      11,
+      47
+    ],
+    "expected": [
+      {
+        "merchant": "Reversal (original purchase not found)",
+        "amount": -488,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": ""
+      }
+    ]
+  },
+  {
+    "name": "banesco_transfer_ref",
+    "synthetic": true,
+    "subject": "Notificación de Transferencia Realizada",
+    "from": "Notificaciones Banesco <notificaciones@banesco.com.do>",
+    "date": [
+      2026,
+      9,
+      5,
+      12,
+      21
+    ],
+    "expected": [
+      {
+        "merchant": "MARIA PRUEBA GOMEZ",
+        "amount": 1000,
+        "currency": "DOP",
+        "type": "Transfer",
+        "category": ""
+      }
+    ]
+  },
+  {
+    "name": "popular_payroll_deposit",
+    "synthetic": true,
+    "subject": "Notificación Depósito de Nómina",
+    "from": "notificaciones@popularenlinea.com",
+    "date": [
+      2026,
+      5,
+      7,
+      9,
+      0
+    ],
+    "expected": []
+  }
+]

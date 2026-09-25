@@ -1,0 +1,22 @@
+Estimado(a):
+JUAN PEREZ PRUEBA
+A continuación la información relacionada a tu transacción:
+Producto origen:
+DO00BCBH000000000XXXXXXX0000
+Producto destino:
+XXXXXXXXXXXX1111
+Descripción:
+Monto:
+RD$ 91.37
+Beneficiario:
+JUAN PEREZ
+Número de confirmación:
+M00-0000-0000-0000-0
+Fecha y hora de la transacción:
+03/09/2026 - 6:12 PM
+Tipo de transacción:
+Transacciones entre mis productos
+Nota:
+Este correo electrónico es generado de manera automática por el sistema, por favor no responder a este mensaje. En caso de no reconocer esta transacción, favor llamar al 809-243-5282.
+Cordialmente,
+Banco BHD

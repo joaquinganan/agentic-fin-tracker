@@ -1,0 +1,10 @@
+{
+  "name": "agentic-fin-tracker",
+  "version": "1.1.26",
+  "private": true,
+  "description": "Gmail → Google Sheets tracker for Dominican bank notifications (Google Apps Script). AI-built, human-QA'd.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": { "node": ">=18" }
+}

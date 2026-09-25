@@ -1,0 +1,4 @@
+# clasp pushes only the Apps Script sources and the manifest
+**/**
+!*.gs
+!appsscript.json

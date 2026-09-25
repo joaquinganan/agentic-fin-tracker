@@ -1,0 +1,12 @@
+Servicio de Alerta - Nuevo Consumo
+Estimado cliente:
+Comercio/Ciudad/País:
+UBER EATS-W*UBER EATS- SANTO DOMINGO DOM
+Fecha:
+02/09/2026 20:14
+Tarjeta:
+XXXX-XXXX-XXXX-0000
+Autorización:
+000000
+Monto:
+DOP 297.25

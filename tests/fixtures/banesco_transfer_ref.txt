@@ -1,0 +1,14 @@
+Notificación de
+transferencia enviada
+Hola ,
+Nos place informarte que la transacción vía pago al instante realizada en fecha 05/09/2026 12:14 PM fue enviada al beneficiario de manera satisfactoria.
+A continuación, detalles de la transacción:
+Monto: DOP1,000.00
+Cuenta Origen: DO00BANS****************0000
+Fecha de la Transacción: 07/09/2026
+No. Referencia: E000000.A0000001
+Banco Beneficiario: QIK BANCO DIGITAL DOMINICANO, S.A. BANCO MULTIPLE
+Cuenta Destino: DO00QDDM****************0000
+Nombre del Beneficiario: MARIA PRUEBA GOMEZ
+Concepto: LBTR MARIA PRUEBA GOMEZ
+NOTA: Las transferencias realizadas luego de las 4:00 PM serán reflejadas con fecha del próximo día laborable.

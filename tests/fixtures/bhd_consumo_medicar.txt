@@ -1,0 +1,21 @@
+BHD Notificación de Transacciones
+Visa Mi País # 1111
+Detalle de Criterios
+Te notificamos la transacción realizada con tu Tarjeta Visa Mi País # 1111
+En caso de no reconocer esta transacción, por favor llama de inmediato al 809-243-5282.
+Detalle de Transacciones
+Fecha
+Moneda
+Monto
+Comercio
+Estado
+Tipo
+24/03/2026 05:03 pm
+RD
+$163.00
+FCIA MEDICAR GBC 30 DE MA
+Aprobada
+Compra
+Ahora, tus Tarjetas BHD cuentan con un nuevo sistema de seguridad para tus compras por internet en comercios locales e internacionales. Conoce más visitando bhd.com.do en la sección Tarjetas.
+Recuerda que puedes realizar tus consultas y transacciones de forma rápida y confiable a través de Internet Banking BHD y Móvil Banking BHD.
+Este mensaje contiene información legalmente considerada confidencial y privilegiada, con la intención de que sea utilizada exclusivamente por las personas u organizaciones a quienes está dirigido. De haber recibido este mensaje por error, debes eliminarlo e informarnos de inmediato al número indicado más arriba.
