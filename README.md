@@ -13,7 +13,7 @@ paid services.
 > essentially, everything a QA engineer does: defined what the system had to do, tested it against real data,
 > found and documented the defects, decided what "fixed" meant, and verified every release.
 
-### ▶ Demo (50 s)
+### ▶ Demo (under a minute)
 
 <p align="center">
   <a href="https://joaquinganan.dev/demos/agentic-fin-tracker.html">
