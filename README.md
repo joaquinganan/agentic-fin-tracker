@@ -13,6 +13,20 @@ paid services.
 > essentially, everything a QA engineer does: defined what the system had to do, tested it against real data,
 > found and documented the defects, decided what "fixed" meant, and verified every release.
 
+### ▶ Demo (50 s)
+
+<p align="center">
+  <a href="https://joaquinganan.dev/demos/agentic-fin-tracker.html">
+    <img src="docs/demo/agentic-fin-tracker-demo-poster.png" width="80%" alt="Watch the 50-second demo of Agentic Finance Tracker">
+  </a>
+</p>
+<p align="center"><sub>
+  <a href="https://joaquinganan.dev/demos/agentic-fin-tracker.html">Watch on joaquinganan.dev</a> ·
+  <a href="docs/demo/agentic-fin-tracker-demo.mp4">MP4 in this repo</a> —
+  all data is synthetic; the parser output, Setup Wizard, emails and test run are renders of the real code, and the
+  Dashboard scene recreates its layout (Google Sheets can't be rendered outside Sheets).
+</sub></p>
+
 <p align="center">
   <img src="docs/images/daily-email.png" width="46%" alt="Daily summary email">
   &nbsp;
