@@ -2,6 +2,22 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.28 (Sept 26, 2026) — formatting of the data sheets
+- **Category colours** (one source: `color` in `DEFAULT_CATEGORIES`): each category shows as a coloured chip in
+  Transactions, Bank Transfers, every Raw_ sheet, Custom Rules and Categories. "Exclude" is muted; your own
+  Custom Rules categories take colours from a rotation. Every text/background pair is tested for WCAG AA contrast
+  (4.5:1) — the test caught the first "Exclude" grey at 4.39:1.
+- **Rows that need you** stand out: transfers still without a category (amber), rows whose merchant couldn't be
+  read or reversals without their purchase (red). Negative amounts (reversals, refunds) are green; alternate rows
+  are striped. All of it is conditional formatting, so it follows the data when rows are recategorized or added.
+- **Bank Transfers shows each transfer's Category** (new column D) — the sheet for reviewing transfers didn't show
+  which ones still had none. Existing sheets are migrated on the next run; the filter is recreated, since filter
+  criteria are kept by column number and one on "Amount" would have landed on "Category".
+- Navy, frozen headers on every data sheet; date and amount formats applied to whole columns.
+- **Custom Rules**: a dropdown of every category in the Category column (typing a new name still creates one);
+  the example row is muted. **Configuration**: keys highlighted, a note that settings are edited in the Setup Wizard.
+- The Dashboard is unchanged. Tests: 74 (the mock now records styles, so a preview of each sheet can be rendered).
+
 ### v1.1.27 (Sept 25, 2026) — other income, credit cards in the Setup Wizard, wizard closes while saving
 - **Other monthly income** (Setup Wizard): an amount in DOP or USD, added in full to net income with no
   deductions — in the Dashboard's income box (its own row), the KPI card, and both summary emails.

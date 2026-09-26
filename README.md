@@ -83,6 +83,8 @@ The full history — what was wrong, how it was found and what changed — is in
   between your own accounts). Card payments are excluded automatically; reversals are saved as negative rows that
   cancel the original purchase.
 - **Deduplicates** by Gmail message id and by the bank's own reference number.
+- **Readable data sheets:** a coloured chip per category, and the rows that need attention — transfers without a
+  category, unreadable merchants — highlighted automatically.
 - **Dashboard** with KPI cards, categories by month, fixed vs. variable, spend by bank, a year heat map, and a
   "Which card for what" cashback matrix. It converts USD/EUR/COP to DOP at editable rates.
 - **Dominican payroll deductions** for DOP salaries: automatic ARS/SFS, AFP (with 2026 caps) and ISR (DGII

@@ -51,7 +51,7 @@ class FakeRange {
       throw new Error(`Mock: range R${row}C${col}:${numRows}x${numCols} is outside the dimensions of sheet "${sheet.name}" (${sheet.maxRows}x${sheet.maxCols})`);
     }
     Object.assign(this, { sheet, row, col, numRows, numCols });
-    STYLE_METHODS.forEach(m => { this[m] = () => this; });
+    STYLE_METHODS.forEach(m => { this[m] = v => { this.sheet.styles.push({ m, rect: this._rect(), v }); return this; }; });
   }
   _rect() { return { r1: this.row, c1: this.col, r2: this.getLastRow(), c2: this.getLastColumn() }; }
   _addMerge(rect) {
@@ -68,7 +68,8 @@ class FakeRange {
     return this;
   }
   breakApart() { const me = this._rect(); this.sheet.merges = this.sheet.merges.filter(m => !overlaps(m, me)); return this; }
-  setBackgrounds(colors) { this._checkShape(colors, 'setBackgrounds'); return this; }
+  setBackgrounds(colors) { this._checkShape(colors, 'setBackgrounds'); this.sheet.styles.push({ m: 'setBackgrounds', rect: this._rect(), v: colors }); return this; }
+  setFontColors(colors) { this._checkShape(colors, 'setFontColors'); this.sheet.styles.push({ m: 'setFontColors', rect: this._rect(), v: colors }); return this; }
   getSheet() { return this.sheet; }
   getRow() { return this.row; }
   getColumn() { return this.col; }
@@ -134,7 +135,7 @@ class FakeRange {
 class FakeSheet {
   constructor(ss, name) {
     Object.assign(this, { ss, name, maxRows: 1000, maxCols: 26, cells: new Map(), filter: null, frozenRows: 0,
-      hidden: [], hiddenRows: new Set(), merges: [], charts: [], cfRules: [], rowHeights: {}, widths: {},
+      hidden: [], hiddenRows: new Set(), merges: [], charts: [], cfRules: [], rowHeights: {}, widths: {}, styles: [],
       id: 1000 + ss.sheets.length });
   }
   /** A write into a cell hidden under a merge would be invisible in Sheets — treat it as a layout bug. */
@@ -257,15 +258,17 @@ function makeServices(options) {
   const triggers = [];
   const props = {};
   const validationBuilder = () => {
-    const b = { requireValueInList: () => b, requireNumberBetween: () => b, requireNumberGreaterThan: () => b,
-      setAllowInvalid: () => b, build: () => ({}) };
+    const rule = {};
+    const b = { requireValueInList: (list, dropdown) => { rule.list = list.slice(); rule.dropdown = dropdown; return b; },
+      requireNumberBetween: () => b, requireNumberGreaterThan: () => b,
+      setAllowInvalid: v => { rule.allowInvalid = v; return b; }, setHelpText: t => { rule.helpText = t; return b; }, build: () => rule };
     return b;
   };
   const cfBuilder = () => {
     const rule = { ranges: [] };
     const b = {};
     ['whenNumberLessThan', 'whenNumberGreaterThan', 'whenFormulaSatisfied', 'whenTextEqualTo',
-     'setGradientMinpoint', 'setGradientMaxpoint', 'setBackground', 'setFontColor', 'setBold']
+     'setGradientMinpoint', 'setGradientMaxpoint', 'setBackground', 'setFontColor', 'setBold', 'setItalic']
       .forEach(m => { b[m] = v => { rule[m] = v; return b; }; });
     b.setRanges = ranges => { rule.ranges = ranges; return b; };
     b.build = () => rule;

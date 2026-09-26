@@ -34,11 +34,13 @@ const DEFAULT_CATEGORIES = {
     // A landlord is matched by a Custom Rule (e.g. the landlord's name),
     // which is how real rent payments have been categorized all along.
     keywords: ['ALQUILER', 'ARRENDAMIENTO'],
-    icon: '🏠'
+    icon: '🏠',
+    color: ['#EDE9E4', '#57534E']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Gym + Calisthenics': {
     keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR'],
-    icon: '💪'
+    icon: '💪',
+    color: ['#CCFBF1', '#0F766E']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Telecommunications': {
     // v1.1.5: merged Internet + Mobile Data. 'CLARO' bare (not just
@@ -46,7 +48,8 @@ const DEFAULT_CATEGORIES = {
     // merchant descriptor) matches too.
     keywords: ['INTERNET', 'WIFI', 'BANDA ANCHA', 'CLARO INTERNET',
                'DATOS MOVILES', 'RECARGA', 'PLAN MOVIL', 'CLARO MOVIL', 'CLARO', 'PREPAGO'],
-    icon: '📶'
+    icon: '📶',
+    color: ['#F3E8FF', '#7E22CE']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Streaming & Subscriptions': {
     // v1.1.15: BUG FIX — bare 'AMAZON' here caught EVERY Amazon purchase
@@ -59,20 +62,23 @@ const DEFAULT_CATEGORIES = {
     // v1.1.23: 'GOOGLE' — real POPULAR USD rows "Google" / "GOOGLE *Google" (Google One/Play)
     keywords: ['NETFLIX', 'SPOTIFY', 'DISNEY', 'HBO', 'AMAZON PRIME', 'SUSCRIPCION',
                'YOUTUBE PREMIUM', 'OPENAI', 'GOOGLE'],
-    icon: '🎬'
+    icon: '🎬',
+    color: ['#E0E7FF', '#3730A3']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Electricity': {
     // v1.1.19: removed bare 'LUZ' — "LUZ DE LUNA CAFE" landed here
     // (verified). The three distributors below cover every real bill.
     keywords: ['EDESUR', 'EDENORTE', 'EDEESTE', 'ELECTRICIDAD'],
-    icon: '💡'
+    icon: '💡',
+    color: ['#FEF9C3', '#854D0E']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Groceries + Barbershop': {
     // v1.1.23: 'POLA' — Supermercados Pola ("SM POLA INDEPENDENCIA"); whole word
     keywords: ['SUPER', 'CARREFOUR', 'JUMBO', 'BRAVO', 'MERCADO', 'FRUTAS', 'BARBERIA', 'SALON',
                'SUPERMERCADOS NACIONAL', 'SM NACIONAL', 'LA SIRENA', 'PLAZA LAMA', 'IBERIA',
                'APREZIO', 'LA FUENTE', 'PRICESMART', 'HIPER OLE', '365 EL CACIQUE', 'HOLA PLAZA', 'POLA'],
-    icon: '🛒'
+    icon: '🛒',
+    color: ['#FFF4E5', '#B45309']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Dining/Delivery + Entertainment + Other': {
     // v1.1.5: absorbed Clothing's keywords and the old 'Other' fallback role
@@ -97,7 +103,8 @@ const DEFAULT_CATEGORIES = {
                'COMEDOR', 'WENDYS', 'JADE TERIYAKI', 'SWEETFROG', 'SWEET FROG',
                'PEDIDOSYA', 'KRISPY KREME', 'IKEA REST', 'AMAZON',
                'ROPA', 'ZAPATOS', 'ADIDAS', 'NIKE', 'PUMA STORE', 'ZARA', 'FASHION', 'BOUTIQUE', 'TIENDA', 'ALISS', 'METRO PZA', 'METRO PLZA', 'METRO PLAZA'],
-    icon: '🍽️'
+    icon: '🍽️',
+    color: ['#FFE4E6', '#BE123C']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Vehicle Gas': {
     // v1.1.15: BUG FIX/CHANGE — added bare 'TOTAL' and 'NEXT LINCOLN' (a
@@ -113,7 +120,8 @@ const DEFAULT_CATEGORIES = {
     // now but harmless.
     keywords: ['SHELL', 'HESS', 'PUMA', 'TEXACO', 'GASOLINA', 'COMBUSTIBLE', 'FUEL',
                'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN'],
-    icon: '⛽'
+    icon: '⛽',
+    color: ['#E2E8F0', '#334155']   // v1.1.28: chip [background, text] in the data sheets
   },
   'Health + Vet + Pharmacy': {
     // v1.1.18: was 'LA CASITA DE BOB' — narrowed to 'LA CASITA DE' (the
@@ -126,7 +134,8 @@ const DEFAULT_CATEGORIES = {
     keywords: ['FARMACIA', 'FCIA', 'DOCTOR', 'MEDICO', 'HOSPITAL', 'CLINICA', 'SALUD',
                'MEDICINAS', 'VETERINARIA', 'VET', 'MEDICAR', 'GBC', 'LOS HIDALGOS',
                'FARMAX', 'FARMAXTRA', 'CRUZ VERDE', 'FARMATODO', 'FARMAVALUE', 'LA CASITA DE', 'FARMA', 'FARM', 'ANALISA', 'LABORATORIO', 'ESPEC MED'],
-    icon: '🏥'
+    icon: '🏥',
+    color: ['#E8F5E9', '#2E7D32']   // v1.1.28: chip [background, text] in the data sheets
   },
   // v1.1.24: 'Education' removed — not in use. Those purchases now fall to the
   // Dining/Other fallback; a Custom Rule with Category "Education" brings it
@@ -138,7 +147,8 @@ const DEFAULT_CATEGORIES = {
     // "DIDI FOOD" still goes to Dining via 'FOOD', which is checked first.
     // v1.1.23: Uber rides billed through PayPal ("PAYPAL *UBERBV", "PAYPAL *UBER BV")
     keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'BUS', 'METRO', 'PARKING', 'GUAGUA', 'MOTOCONCHO', 'UBERBV', 'UBER BV'],
-    icon: '🚗'
+    icon: '🚗',
+    color: ['#EAF1FE', '#1D4ED8']   // v1.1.28: chip [background, text] in the data sheets
   }
 };
 
@@ -317,6 +327,28 @@ function getUserCustomRules(userEmail) {
 }
 
 const EXCLUDE_CATEGORY = 'Exclude';
+
+/**
+ * v1.1.28: chip colours for categories that aren't in DEFAULT_CATEGORIES —
+ * "Exclude" (muted: it's left out of every total) and your own Custom Rules
+ * categories, which take the next colour of this rotation in order.
+ */
+const EXCLUDE_COLOR = ['#F3F4F6', '#4B5563'];   // #6B7280 was 4.39:1 — below WCAG AA (caught by v128 test)
+const CUSTOM_CATEGORY_COLORS = [
+  ['#CFFAFE', '#0E7490'], ['#FAE8FF', '#A21CAF'], ['#D1FAE5', '#047857'], ['#FEF3C7', '#92400E'], ['#FCE7F3', '#9D174D']
+];
+
+/** Every category with its chip colours, in display order: defaults, Exclude, then custom ones. */
+function categoryPalette(customNames) {
+  const list = getCategories().map(name => ({ name: name, bg: DEFAULT_CATEGORIES[name].color[0], fg: DEFAULT_CATEGORIES[name].color[1] }));
+  list.push({ name: EXCLUDE_CATEGORY, bg: EXCLUDE_COLOR[0], fg: EXCLUDE_COLOR[1] });
+  (customNames || []).filter(n => n && !DEFAULT_CATEGORIES[n] && n.toUpperCase() !== EXCLUDE_CATEGORY.toUpperCase())
+    .forEach((name, i) => {
+      const c = CUSTOM_CATEGORY_COLORS[i % CUSTOM_CATEGORY_COLORS.length];
+      list.push({ name: name, bg: c[0], fg: c[1] });
+    });
+  return list;
+}
 
 /**
  * v1.1.19: categories that exist ONLY in Custom Rules (not in

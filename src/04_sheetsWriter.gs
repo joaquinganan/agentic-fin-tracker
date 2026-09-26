@@ -109,6 +109,12 @@ function getOrCreateRawBankSheet(bank) {
 }
 
 /**
+ * v1.1.28: Bank Transfers now shows each transfer's Category (column D) — the
+ * sheet where you review transfers didn't show which ones still had none.
+ */
+const TRANSFERS_HEADERS = ["Date", "Bank", "Beneficiary / Description", "Category", "Amount", "Currency", "Email Subject"];
+
+/**
  * v1.1.2: dedicated sheet for Type = "Transfer" rows.
  * v1.1.4: renamed "Transferencias" → "Bank Transfers", English headers.
  */
@@ -117,12 +123,12 @@ function getOrCreateTransfersSheet() {
   let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(name);
-    sheet.appendRow(["Date", "Bank", "Beneficiary / Description", "Amount", "Currency", "Email Subject"]);
-    sheet.getRange(1, 1, 1, 6).setFontWeight("bold");
+    sheet.appendRow(TRANSFERS_HEADERS);
+    sheet.getRange(1, 1, 1, TRANSFERS_HEADERS.length).setFontWeight("bold");
     ensureRowCapacity(sheet, 2000); // v1.1.19: formats below cover 2,000 rows
     sheet.getRange(2, 1, 1999).setNumberFormat('yyyy-MM-dd');
-    sheet.getRange(2, 4, 1999).setNumberFormat('#,##0.00');
-    ensureAutoFilter(sheet, 6, 2000);
+    sheet.getRange(2, 5, 1999).setNumberFormat('#,##0.00');
+    ensureAutoFilter(sheet, TRANSFERS_HEADERS.length, 2000);
     sheet.setTabColor(TAB_COLORS["Bank Transfers"]);
   }
   return sheet;
@@ -145,6 +151,130 @@ function autoFitColumns(sheet, options) {
     // the cap only limits automatic growth — a width you set by hand is never reduced
     sheet.setColumnWidth(c, Math.max(before, Math.min(o.max, Math.max(o.min, fitted))));
   }
+}
+
+/**
+ * v1.1.28: LOOK OF THE DATA SHEETS. Colours come from conditional formatting,
+ * not from painting cells, so they follow the data: recategorize a row and its
+ * chip changes; add rows and they're styled already. Each run replaces the
+ * rules on these tracker-managed sheets, so it's safe to repeat.
+ *   · header: navy, white, frozen
+ *   · Category: a coloured chip per category (DEFAULT_CATEGORIES colours)
+ *   · rows needing attention: transfers with no category (amber), rows whose
+ *     merchant couldn't be read or reversals without their purchase (red)
+ *   · negative amounts (reversals, refunds): green
+ *   · alternate rows: a faint stripe
+ */
+const SHEET_THEME = {
+  headerBg: '#1F3864', headerFg: '#FFFFFF', stripe: '#F7F9FC', attention: '#FFF4D6', problem: '#FDECEC',
+  refund: '#2E7D32', keyBg: '#F3F6FB', keyFg: '#374151', example: '#9CA3AF'
+};
+const TYPE_COLORS = { 'Transfer': ['#E0F2F1', '#00695C'], 'Card Payment': ['#F3F4F6', '#4B5563'] };   // WCAG AA (was 4.39:1)
+
+/** Which column holds what (1-based) in each tracker data sheet; null for other sheets. */
+function dataSheetLayout(name) {
+  if (name === TRANSACTIONS_SHEET) {
+    return { cols: TX_NUM_COLS, merchant: TX_COL.MERCHANT + 1, category: TX_COL.CATEGORY + 1, amount: TX_COL.AMOUNT + 1,
+      currency: TX_COL.CURRENCY + 1, type: TX_COL.TYPE + 1, transfersOnlyWhenType: true };
+  }
+  if (name === 'Bank Transfers') return { cols: TRANSFERS_HEADERS.length, merchant: 3, category: 4, amount: 5, currency: 6, allTransfers: true };
+  if (name.indexOf('Raw_') === 0) return { cols: 8, merchant: 3, category: 4, amount: 5, currency: 6, type: 2 };
+  return null;
+}
+
+const colLetter = n => String.fromCharCode(64 + n);   // data sheets stay within A..Z
+const quoteForFormula = text => '"' + String(text).replace(/"/g, '""') + '"';
+
+function styleHeader(sheet, cols) {
+  sheet.getRange(1, 1, 1, cols).setBackground(SHEET_THEME.headerBg).setFontColor(SHEET_THEME.headerFg)
+    .setFontWeight('bold').setVerticalAlignment('middle');
+  sheet.setRowHeight(1, 28);
+  sheet.setFrozenRows(1);
+}
+
+/** The conditional-format rules of one data sheet, highest priority first (Sheets applies the first match). Pure. */
+function dataSheetRules(sheet, L, palette) {
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  const col = c => sheet.getRange(2, c, rows, 1);
+  const all = sheet.getRange(2, 1, rows, L.cols);
+  const M = '$' + colLetter(L.merchant) + '2', C = '$' + colLetter(L.category) + '2';
+  const rules = [];
+  const rule = () => SpreadsheetApp.newConditionalFormatRule();
+  // rows to fix: unreadable merchant / reversal whose purchase wasn't found
+  rules.push(rule().whenFormulaSatisfied('=OR(' + M + '=' + quoteForFormula(GARBLED_PLACEHOLDER) + ',' + M + '=' +
+    quoteForFormula(REVERSAL_UNMATCHED) + ')').setBackground(SHEET_THEME.problem).setRanges([all]).build());
+  // transfers still without a category (not counted as spending until they get one)
+  const noCategory = L.allTransfers ? '=AND($A2<>"",' + C + '="")'
+    : L.transfersOnlyWhenType ? '=AND($A2<>"",$' + colLetter(L.type) + '2="Transfer",' + C + '="")' : null;
+  if (noCategory) rules.push(rule().whenFormulaSatisfied(noCategory).setBackground(SHEET_THEME.attention).setRanges([all]).build());
+  palette.forEach(p => rules.push(rule().whenTextEqualTo(p.name).setBackground(p.bg).setFontColor(p.fg)
+    .setRanges([col(L.category)]).build()));
+  if (L.type && L.transfersOnlyWhenType) {
+    Object.keys(TYPE_COLORS).forEach(t => rules.push(rule().whenTextEqualTo(t).setBackground(TYPE_COLORS[t][0])
+      .setFontColor(TYPE_COLORS[t][1]).setRanges([col(L.type)]).build()));
+  }
+  rules.push(rule().whenNumberLessThan(0).setFontColor(SHEET_THEME.refund).setRanges([col(L.amount)]).build());
+  rules.push(rule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(ROW()))').setBackground(SHEET_THEME.stripe).setRanges([all]).build());
+  return rules;
+}
+
+function styleDataSheet(sheet, L, palette) {
+  styleHeader(sheet, L.cols);
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  // the whole column, so rows typed by hand or saved by older versions look the same as new ones
+  sheet.getRange(2, 1, rows, 1).setNumberFormat('yyyy-MM-dd');
+  sheet.getRange(2, L.amount, rows, 1).setNumberFormat('#,##0.00').setHorizontalAlignment('right');
+  sheet.getRange(2, L.currency, rows, 1).setHorizontalAlignment('center');
+  if (L.type) sheet.getRange(2, L.type, rows, 1).setHorizontalAlignment('center');
+  sheet.setConditionalFormatRules(dataSheetRules(sheet, L, palette));
+}
+
+/** Custom Rules: category chips + a dropdown of every category (typing a new name still works). */
+function styleCustomRulesSheet(sheet, palette) {
+  styleHeader(sheet, 4);
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  const cat = sheet.getRange(2, 2, rows, 1);
+  cat.setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(palette.map(p => p.name), true).setAllowInvalid(true)
+    .setHelpText('Pick a category — or type a new name to create your own. "Exclude" leaves matches out of every total.')
+    .build());
+  const rules = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=LEFT($A2,8)="(example"')
+    .setFontColor(SHEET_THEME.example).setItalic(true).setRanges([sheet.getRange(2, 1, rows, 4)]).build()];
+  palette.forEach(p => rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(p.name)
+    .setBackground(p.bg).setFontColor(p.fg).setRanges([cat]).build()));
+  sheet.setConditionalFormatRules(rules);
+}
+
+function styleConfigurationSheet(sheet) {
+  styleHeader(sheet, 2);
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, 1).setBackground(SHEET_THEME.keyBg).setFontColor(SHEET_THEME.keyFg).setFontWeight('bold');
+  if (last > 1) sheet.getRange(2, 2, last - 1, 1).setHorizontalAlignment('left');   // numbers and text line up
+  sheet.getRange(1, 1).setNote('Written by 📊 Tracker › Setup Wizard — change your settings there.');
+}
+
+/** v1.1.28: styles every tracker sheet except the Dashboard (built by its own code). */
+function styleTrackerSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const config = getConfig();
+  const palette = categoryPalette(config && config.email ? getCustomCategoryNames(config.email) : []);
+  ss.getSheets().forEach(sheet => {
+    const name = sheet.getName();
+    try {
+      const layout = dataSheetLayout(name);
+      if (layout) styleDataSheet(sheet, layout, palette);
+      else if (name === CUSTOM_RULES_SHEET) styleCustomRulesSheet(sheet, palette);
+      else if (name === CONFIG_SHEET) styleConfigurationSheet(sheet);
+    } catch (error) {
+      Logger.log("Could not style " + name + ": " + error);
+    }
+  });
+}
+
+/** v1.1.28: style, then fit the columns — run after each recategorize and each Dashboard build. */
+function formatDataSheets() {
+  styleTrackerSheets();
+  autoFitDataSheets();
 }
 
 /** v1.1.24: every data sheet — run after each recategorize and each Dashboard build. */
@@ -493,7 +623,7 @@ function recategorizeAllTransactions(userEmail) {
   }
 
   const rebuildCounts = rebuildDerivedSheets();
-  autoFitDataSheets();   // v1.1.24
+  formatDataSheets();   // v1.1.24; v1.1.28: styles too
   Logger.log("✅ Recategorized — " + totalChanged + " cell(s) updated | Rebuilt: " + rebuildCounts);
   return totalChanged;
 }
@@ -520,6 +650,26 @@ function rawNoteKey(date, merchant, amount, subject) {
  *    literally named "Raw_".
  *  - row capacity is ensured before bulk writes.
  */
+/**
+ * v1.1.28: a Bank Transfers sheet from before the Category column gets the new
+ * header. Its filter is recreated rather than extended: a filter's criteria are
+ * kept by column number, so one set on "Amount" (old column D) would otherwise
+ * end up on "Category".
+ */
+function migrateTransfersLayout(sheet) {
+  const width = Math.max(sheet.getLastColumn(), TRANSFERS_HEADERS.length);
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0];
+  if (header[3] === TRANSFERS_HEADERS[3]) return false;
+  const filter = sheet.getFilter();
+  if (filter) filter.remove();
+  sheet.getRange(1, 1, 1, width).clearContent();
+  sheet.getRange(1, 1, 1, TRANSFERS_HEADERS.length).setValues([TRANSFERS_HEADERS]);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, width).clearContent();   // rewritten right after, in the new layout
+  ensureAutoFilter(sheet, TRANSFERS_HEADERS.length, 2000);
+  return true;
+}
+
 function rebuildDerivedSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const txSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
@@ -541,7 +691,7 @@ function rebuildDerivedSheets() {
       ]);
     } else if (type === 'Transfer') {
       transfers.push([
-        row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.AMOUNT],
+        row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], row[TX_COL.AMOUNT],
         row[TX_COL.CURRENCY], row[TX_COL.SUBJECT]
       ]);
     }
@@ -580,13 +730,14 @@ function rebuildDerivedSheets() {
   });
 
   const transfersSheet = getOrCreateTransfersSheet();
+  migrateTransfersLayout(transfersSheet);
   const trLastRow = transfersSheet.getLastRow();
-  if (trLastRow > 1) transfersSheet.getRange(2, 1, trLastRow - 1, 6).clearContent();
+  if (trLastRow > 1) transfersSheet.getRange(2, 1, trLastRow - 1, TRANSFERS_HEADERS.length).clearContent();
   if (transfers.length > 0) {
     ensureRowCapacity(transfersSheet, transfers.length + 1);
-    transfersSheet.getRange(2, 1, transfers.length, 6).setValues(transfers);
+    transfersSheet.getRange(2, 1, transfers.length, TRANSFERS_HEADERS.length).setValues(transfers);
     transfersSheet.getRange(2, 1, transfers.length, 1).setNumberFormat('yyyy-MM-dd');
-    transfersSheet.getRange(2, 4, transfers.length, 1).setNumberFormat('#,##0.00');
+    transfersSheet.getRange(2, 5, transfers.length, 1).setNumberFormat('#,##0.00');
   }
 
   return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length;
@@ -1271,7 +1422,7 @@ function buildOrRefreshDashboard() {
   sheet.setTabColor(TAB_COLORS[DASH_SHEET]);
 
   buildOrRefreshCategoriesSheet(userEmail);
-  autoFitDataSheets();                   // v1.1.24
+  formatDataSheets();                    // v1.1.24; v1.1.28: styles too
   ensureSheetOrder();
   ss.setActiveSheet(sheet);              // LAST — creating the Categories sheet changes the active sheet
   Logger.log("✅ Dashboard built/refreshed (" + n + " categories, " + banks.length + " banks, year " + year + ")");
@@ -1319,6 +1470,11 @@ function buildOrRefreshCategoriesSheet(userEmail) {
 
   sheet.getRange(5, 1, rows.length, 4).setValues(rows);
   sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment("center");
+  // v1.1.28: each category in the colours its chip has in the data sheets
+  const colours = {};
+  categoryPalette(Object.keys(custom)).forEach(p => { colours[p.name] = p; });
+  const chip = rows.map(r => colours[r[1]] || { bg: '#FFFFFF', fg: '#1F2937' });
+  sheet.getRange(5, 2, rows.length, 1).setBackgrounds(chip.map(c => [c.bg])).setFontColors(chip.map(c => [c.fg])).setFontWeight("bold");
   sheet.getRange(5, 4, rows.length, 1).setFontSize(9).setFontStyle("italic").setWrap(true);
   sheet.setColumnWidth(1, 50);
   sheet.setColumnWidth(2, 260);
