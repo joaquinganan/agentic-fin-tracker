@@ -254,7 +254,7 @@ function makeServices(options) {
   const ss = new FakeSpreadsheet();
   const gmail = { threads: opts.threads || [], queries: [], markedRead: [], labels: {}, sent: [] };
   const lock = { held: false, refuse: !!opts.lockBusy };
-  const ui = { dialogs: [], alerts: [] };
+  const ui = { dialogs: [], alerts: [], menus: [] };
   const triggers = [];
   const props = {};
   const http = { responses: {}, requests: [] };   // UrlFetchApp: http.responses[url] = { code, body }
@@ -281,7 +281,22 @@ function makeServices(options) {
       setActiveSheet: s => ss.setActiveSheet(s),
       getUi: () => {
         if (!opts.ui) throw new Error('Cannot call SpreadsheetApp.getUi() from this context.');
-        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert: m => ui.alerts.push(m) };
+        // Ui.createMenu(caption) → Menu: addItem(caption, functionName), addSeparator(), addSubMenu(menu), addToUi()
+        const createMenu = caption => {
+          const menu = { caption, items: [] };
+          const m = {
+            addItem: (c, fn) => {
+              if (typeof fn !== 'string' || !fn) throw new Error('Mock: Menu.addItem needs a function name');
+              menu.items.push({ caption: c, fn }); return m;
+            },
+            addSeparator: () => { menu.items.push({ separator: true }); return m; },
+            addSubMenu: sub => { menu.items.push({ sub: sub._menu }); return m; },
+            addToUi: () => { ui.menus.push(menu); },
+            _menu: menu
+          };
+          return m;
+        };
+        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert: m => ui.alerts.push(m), createMenu };
       },
       newDataValidation: validationBuilder,
       newConditionalFormatRule: cfBuilder,

@@ -87,3 +87,17 @@ test('the balance dialog: fields, the accounts already used, and it closes while
   }
   assert.match(d.title, /Fund or pension balance/);
 });
+
+test('onOpen builds the 📊 Tracker menu, and every item calls a function that exists', () => {
+  const mock = makeServices({ ui: true });
+  const h = load({ services: mock.services });
+  h.ctx.onOpen();
+  assert.equal(mock.ui.menus.length, 1);
+  const menu = mock.ui.menus[0];
+  assert.equal(menu.caption, '📊 Tracker');
+  const items = menu.items.filter(i => i.fn);
+  assert.ok(items.length >= 11);
+  const missing = items.filter(i => h.get('typeof ' + i.fn) !== 'function').map(i => i.fn);
+  assert.deepEqual(missing, [], 'a menu item pointing to a missing function fails only when clicked');
+  for (const fn of ['refreshInvestmentsNow', 'openValuationDialog', 'openSetupWizard']) assert.ok(items.some(i => i.fn === fn), fn);
+});
