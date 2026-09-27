@@ -408,7 +408,11 @@ function buildHoldingsSheet(h, prices) {
   prices = prices || {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(HOLDINGS_SHEET);
-  if (sheet) { sheet.clear(); sheet.setConditionalFormatRules([]); }
+  if (sheet) {
+    sheet.clear();
+    sheet.setConditionalFormatRules([]);
+    sheet.getCharts().forEach(c => sheet.removeChart(c));   // sheet.clear() keeps embedded charts
+  }
   else sheet = ss.insertSheet(HOLDINGS_SHEET);
   const T = SHEET_THEME, usd = '"US$"#,##0.00', pct = '0.00%';
   const nPos = Math.max(h.positions.length, 1), nCash = h.cash.length, nVal = Math.max(h.valuations.length, 1);
@@ -475,6 +479,7 @@ function buildHoldingsSheet(h, prices) {
     'plus a CASH row) — positions start from it and add the movements after that day. Funds and pensions: a Valuation row.']
     .concat(h.warnings.map(w => '⚠️ ' + w));
   sheet.getRange(R.notes, 2, notes.length, 1).setValues(notes.map(n => [n])).setFontSize(9).setFontColor('#6B7280');
+  R.notesEnd = R.notes + notes.length - 1;
 
   // looks
   [R.posCols, R.valCols].forEach(r => sheet.getRange(r, 2, 1, r === R.posCols ? heads.length : 6)
@@ -543,9 +548,22 @@ function refreshHoldings() {
   let usdRate = 0;
   try { usdRate = readDashboardRates(SpreadsheetApp.getActiveSpreadsheet()).USD; } catch (error) { usdRate = 0; }
   const h = computeHoldings(ledger.getDataRange().getValues(), { usdRate: usdRate, year: new Date().getFullYear() });
-  const now = new Date();
-  buildHoldingsSheet(h, { today: normalizeDateForCompare(now), fetched: fetchCryptoPrices(h.positions.map(p => p.ticker)),
+  const now = new Date(), todayKey = normalizeDateForCompare(now);
+  const fetched = fetchCryptoPrices(h.positions.map(p => p.ticker));
+  const built = buildHoldingsSheet(h, { today: todayKey, fetched: fetched,
     fetchedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') });
+  // v1.1.32: read what GOOGLEFINANCE computed, record today's values, then the Performance block
+  let marketValues = null;
+  if (h.positions.length) {
+    SpreadsheetApp.flush();
+    marketValues = built.sheet.getRange(built.rows.posFirst, 8, h.positions.length, 1).getValues().map(r => r[0]);
+  }
+  const valueRows = holdingsValueRows(h, marketValues, { fetched: fetched, usdRate: usdRate });
+  recordPortfolioHistory(valueRows, todayKey);
+  const current = {};
+  valueRows.forEach(r => { current[r.account] = (current[r.account] || 0) + (Number(r.value) || 0); });
+  h.returns = computeReturns(ledger.getDataRange().getValues(), current, { usdRate: usdRate, today: todayKey });
+  writePerformanceBlock(built.sheet, built.rows.notesEnd + 3, h.returns, readHistory());
   return h;
 }
 
@@ -567,4 +585,288 @@ function refreshInvestmentsNow() {
       safeAlert('❌ Could not refresh investments: ' + error);
     }
   });
+}
+
+/* ======================================================================
+ * PORTFOLIO HISTORY, RETURNS AND REPORT DATA — v1.1.32
+ * ====================================================================== */
+const HISTORY_SHEET = 'Portfolio History';
+const HISTORY_HEADERS = ['Date', 'Account', 'Ticker', 'Quantity', 'Price (US$)', 'Value (US$)'];
+const HISTORY_TOTAL = 'TOTAL';
+const ANNUALIZE_MIN_DAYS = 180;   // annualizing a few weeks of returns gives absurd numbers
+
+/**
+ * Every position, cash balance and balance-tracked account in US$ — the Market value
+ * GOOGLEFINANCE already computed in Holdings (marketValues, one per position row), or
+ * quantity × (Coinbase price or last known price) when that cell isn't a number yet. Pure.
+ */
+function holdingsValueRows(h, marketValues, opts) {
+  opts = opts || {};
+  const fetched = opts.fetched || {}, usdRate = Number(opts.usdRate) || 0;
+  const rows = h.positions.map((p, i) => {
+    const mv = marketValues ? Number(marketValues[i]) : NaN;
+    const price = isFinite(mv) && mv > 0 ? mv / p.qty : (fetched[p.ticker] > 0 ? fetched[p.ticker] : p.lastPrice);
+    return { account: p.account, ticker: p.ticker, qty: p.qty, price: price, value: isFinite(mv) && mv > 0 ? mv : p.qty * price };
+  });
+  h.cash.forEach(c => rows.push({ account: c.account, ticker: 'CASH', qty: '', price: '', value: c.amount }));
+  h.valuations.forEach(v => rows.push({ account: v.account, ticker: '', qty: v.units || '', price: '',
+    value: v.currency === 'DOP' ? (usdRate > 0 ? v.value / usdRate : 0) : v.value }));
+  return rows;
+}
+
+/** Writes today's rows (replacing any earlier run of the same day) and a TOTAL row. */
+function recordPortfolioHistory(valueRows, todayKey) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(HISTORY_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(HISTORY_SHEET);
+    sheet.getRange(1, 1, 1, HISTORY_HEADERS.length).setValues([HISTORY_HEADERS]);
+  }
+  const last = sheet.getLastRow();
+  const kept = last > 1 ? sheet.getRange(2, 1, last - 1, HISTORY_HEADERS.length).getValues()
+    .filter(r => r[0] && normalizeDateForCompare(r[0]) !== todayKey) : [];
+  const parts = todayKey.split('-').map(Number);
+  const day = new Date(parts[0], parts[1] - 1, parts[2], 12);
+  const total = valueRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
+  const today = valueRows.map(r => [day, r.account, r.ticker, r.qty, r.price === '' ? '' : +Number(r.price).toPrecision(10), +Number(r.value).toFixed(2)])
+    .concat([[day, HISTORY_TOTAL, '', '', '', +total.toFixed(2)]]);
+  const all = today.concat(kept);
+  if (last > 1) sheet.getRange(2, 1, last - 1, HISTORY_HEADERS.length).clearContent();
+  ensureRowCapacity(sheet, all.length + 1);
+  sheet.getRange(2, 1, all.length, HISTORY_HEADERS.length).setValues(all);
+  sortSheetByDateDesc(sheet, 1);
+  return { rows: today.length, total: total };
+}
+
+function readHistory() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HISTORY_SHEET);
+  return sheet ? sheet.getDataRange().getValues() : [HISTORY_HEADERS];
+}
+
+/**
+ * Newton's method on Σ cf_i / (1+r)^(t_i/365) = 0. Flows: [{ day: 'yyyy-MM-dd', amount }]
+ * (money in = negative). Returns the annual rate, or null when it doesn't converge.
+ */
+function xirr(flows) {
+  if (flows.length < 2 || !flows.some(f => f.amount < 0) || !flows.some(f => f.amount > 0)) return null;
+  const t0 = flows[0].day;
+  const years = flows.map(f => daysBetween(t0, f.day) / 365);
+  let r = 0.1;
+  for (let k = 0; k < 100; k++) {
+    let f = 0, df = 0;
+    flows.forEach((c, i) => { const d = Math.pow(1 + r, years[i]); f += c.amount / d; df -= years[i] * c.amount / (d * (1 + r)); });
+    if (Math.abs(df) < 1e-12) return null;
+    const next = r - f / df;
+    if (!isFinite(next) || next <= -0.9999) return null;
+    if (Math.abs(next - r) < 1e-9) return next;
+    r = next;
+  }
+  return null;
+}
+
+/**
+ * Return since each account started being tracked — its latest Snapshot, first Valuation,
+ * or first movement — and for all accounts together. Period return: Modified Dietz
+ * (deposits weighted by how long they were invested). Annualized (XIRR) only after
+ * ANNUALIZE_MIN_DAYS. DOP flows and values are converted at opts.usdRate. Pure.
+ */
+function computeReturns(ledgerValues, currentValues, opts) {
+  opts = opts || {};
+  const usdRate = Number(opts.usdRate) || 0, today = opts.today;
+  const toUsd = (amount, cur) => String(cur || 'USD').toUpperCase() === 'DOP' ? (usdRate > 0 ? amount / usdRate : 0) : amount;
+  const rows = ledgerValues.slice(1).filter(r => r[LG.DATE] && String(r[LG.ACCOUNT]).trim())
+    .map(r => ({ r: r, key: normalizeDateForCompare(r[LG.DATE]), account: String(r[LG.ACCOUNT]).trim() }))
+    .sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  const accounts = {};
+  Object.keys(currentValues).forEach(a => { accounts[a] = { account: a, start: null, startValue: 0, flows: [] }; });
+  const snapDay = {};
+  rows.filter(x => x.r[LG.TYPE] === 'Snapshot').forEach(x => { if (!snapDay[x.account] || x.key > snapDay[x.account]) snapDay[x.account] = x.key; });
+  Object.keys(accounts).forEach(a => {
+    const acc = accounts[a];
+    const mine = rows.filter(x => x.account === a);
+    if (snapDay[a]) {
+      acc.start = snapDay[a];
+      mine.filter(x => x.r[LG.TYPE] === 'Snapshot' && x.key === snapDay[a]).forEach(x => {
+        const t = String(x.r[LG.TICKER]).toUpperCase().trim();
+        acc.startValue += t === 'CASH' ? invNumber(x.r[LG.AMOUNT]) : invNumber(x.r[LG.QTY]) * invNumber(x.r[LG.PRICE]);
+      });
+    } else {
+      const firstVal = mine.find(x => x.r[LG.TYPE] === 'Valuation');
+      if (firstVal && !mine.some(x => x.r[LG.TYPE] === 'Deposit' && x.key < firstVal.key)) {
+        acc.start = firstVal.key;
+        const v = invNumber(firstVal.r[LG.AMOUNT]) || invNumber(firstVal.r[LG.QTY]) * invNumber(firstVal.r[LG.PRICE]);
+        acc.startValue = toUsd(v, firstVal.r[LG.CURRENCY]);
+      } else if (mine.length) {
+        acc.start = mine[0].key;                         // starts from zero; its first deposit is a flow
+        acc.startValue = 0;
+      }
+    }
+    if (!acc.start) return;
+    mine.forEach(x => {
+      const type = x.r[LG.TYPE];
+      if (type !== 'Deposit' && type !== 'Withdrawal') return;
+      if (acc.startValue > 0 ? x.key <= acc.start : x.key < acc.start) return;
+      const amount = toUsd(invNumber(x.r[LG.AMOUNT]), x.r[LG.CURRENCY]);
+      acc.flows.push({ day: x.key, amount: type === 'Deposit' ? amount : -amount });
+    });
+  });
+  const measure = (start, startValue, flows, value) => {
+    if (!start || !today) return null;
+    const T = Math.max(daysBetween(start, today), 0);
+    const net = flows.reduce((s, f) => s + f.amount, 0);
+    const weighted = flows.reduce((s, f) => s + f.amount * (T > 0 ? (T - daysBetween(start, f.day)) / T : 1), 0);
+    const gain = value - startValue - net;
+    const base = startValue + weighted;
+    const annual = T >= ANNUALIZE_MIN_DAYS
+      ? xirr([{ day: start, amount: -startValue }].concat(flows.map(f => ({ day: f.day, amount: -f.amount })))
+        .concat([{ day: today, amount: value }]).filter(f => f.amount !== 0)) : null;
+    return { start: start, days: T, startValue: startValue, netDeposits: net, value: value, gain: gain,
+      periodReturn: base > 0 ? gain / base : null, annualized: annual };
+  };
+  const list = Object.keys(accounts).map(a => {
+    const acc = accounts[a];
+    return Object.assign({ account: a }, measure(acc.start, acc.startValue, acc.flows, currentValues[a]) || {});
+  }).filter(x => x.start);
+  // all accounts together: accounts that start later enter as a flow on their start day
+  const started = list.map(x => x.start).sort();
+  const start = started[0] || null;
+  const flows = [];
+  let startValue = 0, value = 0;
+  list.forEach(x => {
+    value += x.value;
+    if (x.start === start) startValue += x.startValue;
+    else if (x.startValue) flows.push({ day: x.start, amount: x.startValue });
+    accounts[x.account].flows.forEach(f => flows.push(f));
+  });
+  flows.sort((a, b) => a.day < b.day ? -1 : 1);
+  return { accounts: list, total: start ? measure(start, startValue, flows, value) : null };
+}
+
+/**
+ * What the daily email shows: today's total vs the previous recorded day, the gain in
+ * between without deposits, and the positions whose price moved most. Pure.
+ */
+function investmentsDailyBrief(historyValues, ledgerValues, opts) {
+  opts = opts || {};
+  const usdRate = Number(opts.usdRate) || 0;
+  const rows = historyValues.slice(1).filter(r => r[0]).map(r => ({ day: normalizeDateForCompare(r[0]), account: r[1],
+    ticker: String(r[2] || ''), price: invNumber(r[4]), value: invNumber(r[5]) }));
+  const days = rows.filter(r => r.account === HISTORY_TOTAL).map(r => r.day).sort();
+  if (!days.length) return null;
+  const today = days[days.length - 1], prev = days.length > 1 ? days[days.length - 2] : null;
+  const totalOn = d => rows.filter(r => r.day === d && r.account === HISTORY_TOTAL).reduce((s, r) => s + r.value, 0);
+  const brief = { day: today, total: totalOn(today), totalDop: usdRate > 0 ? totalOn(today) * usdRate : null, prevDay: prev,
+    change: null, changePct: null, deposits: 0, movers: [], returns: opts.returns || null };
+  if (prev) {
+    ledgerValues.slice(1).forEach(r => {
+      if (!r[LG.DATE] || (r[LG.TYPE] !== 'Deposit' && r[LG.TYPE] !== 'Withdrawal')) return;
+      const k = normalizeDateForCompare(r[LG.DATE]);
+      if (k <= prev || k > today) return;
+      const cur = String(r[LG.CURRENCY] || 'USD').toUpperCase();
+      const amount = cur === 'DOP' ? (usdRate > 0 ? invNumber(r[LG.AMOUNT]) / usdRate : 0) : invNumber(r[LG.AMOUNT]);
+      brief.deposits += r[LG.TYPE] === 'Deposit' ? amount : -amount;
+    });
+    const before = totalOn(prev);
+    brief.change = brief.total - before - brief.deposits;
+    brief.changePct = before > 0 ? brief.change / before : null;
+    const prevPrice = {};
+    rows.filter(r => r.day === prev && r.price > 0).forEach(r => { prevPrice[r.account + '|' + r.ticker] = r.price; });
+    brief.movers = rows.filter(r => r.day === today && r.price > 0 && prevPrice[r.account + '|' + r.ticker] > 0)
+      .map(r => ({ ticker: r.ticker, account: r.account, change: r.price / prevPrice[r.account + '|' + r.ticker] - 1 }))
+      .filter(m => Math.abs(m.change) >= 0.0005)
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);
+  }
+  return brief;
+}
+
+/** What the monthly email shows for the month of opts.month: value change, deposits, gain, dividends, fees, allocation. Pure. */
+function investmentsMonthlyBrief(historyValues, ledgerValues, opts) {
+  opts = opts || {};
+  const usdRate = Number(opts.usdRate) || 0;
+  const monthKey = normalizeDateForCompare(opts.month).slice(0, 7);
+  const rows = historyValues.slice(1).filter(r => r[0]).map(r => ({ day: normalizeDateForCompare(r[0]), account: r[1], value: invNumber(r[5]) }));
+  const totals = rows.filter(r => r.account === HISTORY_TOTAL).sort((a, b) => a.day < b.day ? -1 : 1);
+  const inMonth = totals.filter(r => r.day.slice(0, 7) === monthKey);
+  if (!inMonth.length) return null;
+  const end = inMonth[inMonth.length - 1];
+  const before = totals.filter(r => r.day.slice(0, 7) < monthKey);
+  const startRow = before.length ? before[before.length - 1] : inMonth[0];
+  const brief = { endDay: end.day, startDay: startRow.day, startValue: startRow.value, endValue: end.value,
+    deposits: 0, dividends: 0, fees: 0, allocation: [], returns: opts.returns || null, partial: !before.length };
+  ledgerValues.slice(1).forEach(r => {
+    if (!r[LG.DATE]) return;
+    const k = normalizeDateForCompare(r[LG.DATE]);
+    const cur = String(r[LG.CURRENCY] || 'USD').toUpperCase();
+    const usd = v => cur === 'DOP' ? (usdRate > 0 ? v / usdRate : 0) : v;
+    if (k.slice(0, 7) === monthKey) {
+      if (r[LG.TYPE] === 'Dividend') brief.dividends += usd(invNumber(r[LG.AMOUNT]));
+      if (r[LG.TYPE] === 'Fee') brief.fees += usd(invNumber(r[LG.AMOUNT]));
+      if (r[LG.TYPE] === 'Buy' || r[LG.TYPE] === 'Sell') brief.fees += usd(invNumber(r[LG.FEE]));
+    }
+    if ((r[LG.TYPE] === 'Deposit' || r[LG.TYPE] === 'Withdrawal') && k > startRow.day && k <= end.day) {
+      brief.deposits += (r[LG.TYPE] === 'Deposit' ? 1 : -1) * usd(invNumber(r[LG.AMOUNT]));
+    }
+  });
+  brief.gain = brief.endValue - brief.startValue - brief.deposits;
+  brief.gainPct = brief.startValue > 0 ? brief.gain / brief.startValue : null;
+  const byAccount = {};
+  rows.filter(r => r.day === end.day && r.account !== HISTORY_TOTAL).forEach(r => { byAccount[r.account] = (byAccount[r.account] || 0) + r.value; });
+  brief.allocation = Object.keys(byAccount).map(a => ({ account: a, value: byAccount[a], share: end.value > 0 ? byAccount[a] / end.value : 0 }))
+    .sort((a, b) => b.value - a.value);
+  return brief;
+}
+
+/** Holdings: a Performance block and a chart of the total over time (below everything else). */
+function writePerformanceBlock(sheet, startRow, returns, historyValues) {
+  const T = SHEET_THEME, usd = '"US$"#,##0.00';
+  sheet.getRange(startRow, 2).setValue('Performance').setFontWeight('bold').setFontColor(T.headerBg);
+  const heads = ['Account', 'Tracked since', 'Start value', 'Net deposits', 'Value now', 'Gain', 'Return', 'Annualized'];
+  sheet.getRange(startRow + 1, 2, 1, heads.length).setValues([heads]).setBackground(T.headerBg).setFontColor(T.headerFg).setFontWeight('bold');
+  const line = x => [x.account, x.start, x.startValue, x.netDeposits, x.value, x.gain,
+    x.periodReturn === null ? '—' : x.periodReturn, x.annualized === null ? 'after ' + ANNUALIZE_MIN_DAYS + ' days' : x.annualized];
+  const body = returns.accounts.map(line);
+  if (returns.total) body.push(line(Object.assign({ account: 'All accounts' }, returns.total)));
+  if (!body.length) body.push(['Performance appears after the first refresh', '', '', '', '', '', '', '']);
+  sheet.getRange(startRow + 2, 2, body.length, heads.length).setValues(body);
+  sheet.getRange(startRow + 2, 4, body.length, 4).setNumberFormat(usd);
+  sheet.getRange(startRow + 2, 8, body.length, 2).setNumberFormat('+0.00%;-0.00%;0.00%');
+  if (returns.total) sheet.getRange(startRow + 1 + body.length, 2, 1, heads.length).setFontWeight('bold');
+  // total value over time → a small table off to the side, and a line chart of it
+  const totals = historyValues.slice(1).filter(r => r[0] && r[1] === HISTORY_TOTAL)
+    .map(r => [r[0], invNumber(r[5])]).sort((a, b) => normalizeDateForCompare(a[0]) < normalizeDateForCompare(b[0]) ? -1 : 1);
+  const chartRow = startRow + body.length + 4;
+  if (totals.length >= 2) {
+    const col = 16;   // column P, outside the tables
+    sheet.getRange(1, col, 1, 2).setValues([['Date', 'Total (US$)']]);
+    ensureRowCapacity(sheet, totals.length + 1);
+    sheet.getRange(2, col, totals.length, 2).setValues(totals);
+    sheet.getRange(2, col, totals.length, 1).setNumberFormat('yyyy-MM-dd');
+    sheet.hideColumns(col, 2);
+    sheet.insertChart(sheet.newChart().setChartType(Charts.ChartType.LINE)
+      .addRange(sheet.getRange(1, col, totals.length + 1, 2)).setNumHeaders(1)
+      .setPosition(chartRow, 2, 0, 0).setOption('title', 'Portfolio value (US$)').setOption('legend', { position: 'none' })
+      .setOption('colors', ['#0F766E']).setOption('width', 760).setOption('height', 260).build());
+  } else {
+    sheet.getRange(chartRow, 2).setValue('The chart appears once there are two days of history.').setFontSize(9).setFontColor('#6B7280');
+  }
+  return chartRow;
+}
+
+/** For the summary emails: the investments brief from Portfolio History and the ledger (null when there's none). */
+function investmentsReportData(kind, opts) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ledgerSheet = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);
+  const history = readHistory();
+  if (!ledgerSheet || history.length < 2) return null;
+  const ledger = ledgerSheet.getDataRange().getValues();
+  const usdRate = opts.rates && opts.rates.USD || 0;
+  const rows = history.slice(1).filter(r => r[0]);
+  const latest = rows.map(r => normalizeDateForCompare(r[0])).sort().pop();
+  const current = {};
+  rows.filter(r => normalizeDateForCompare(r[0]) === latest && r[1] !== HISTORY_TOTAL)
+    .forEach(r => { current[r[1]] = (current[r[1]] || 0) + invNumber(r[5]); });
+  const returns = computeReturns(ledger, current, { usdRate: usdRate, today: latest }).total;
+  return kind === 'daily'
+    ? investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns })
+    : investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
 }

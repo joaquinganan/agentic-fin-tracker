@@ -16,7 +16,8 @@
  * Menu "📬 Send Daily Summary Now" sends the same email immediately (for a
  * test, or when the trigger is off).
  */
-const SUMMARY_SECTIONS_DEFAULT = { totals: true, vsAverage: true, transfers: true, recommendations: true, cashback: true };
+const SUMMARY_SECTIONS_DEFAULT = { totals: true, vsAverage: true, transfers: true, recommendations: true, cashback: true,
+  investments: true };   // v1.1.32
 const SUMMARY_MIN_HISTORY_DAYS = 7;
 // v1.1.26: bills and fixed costs are left out of "day-to-day" comparisons — a rent
 // or electricity payment would otherwise make any day look like an alarming spike.
@@ -170,6 +171,7 @@ function computeDailySummary(values, opts) {
     .reduce((sum, c) => sum + s.mtdByCategory[c], 0);
   s.lastRun = opts.lastRun || null;
   s.now = opts.now || today;
+  s.investments = opts.investments || null;   // v1.1.32
   s.recommendations = summaryRecommendations(s);
   s.tips = summaryCardTips(s.items, opts.cards || []);
   return s;
@@ -383,6 +385,15 @@ function summaryMoneyShort(n) {
   if (a >= 1e3) return sign + 'RD$' + (a / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
   return sign + 'RD$' + Math.round(a);
 }
+/** v1.1.32: US$ amounts for the investments section. */
+function summaryUsd(n) {
+  const v = Number(n) || 0;
+  return (v < 0 ? '−' : '') + 'US$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function summarySignedUsd(n) { return (n > 0 ? '+' : '') + summaryUsd(n); }
+/** Investment moves are mostly under 1% a day: two decimals (spending percentages stay whole numbers). */
+function summarySignedPctFine(x) { const v = Number(x) || 0; return (v >= 0 ? '+' : '−') + Math.abs(v * 100).toFixed(2) + '%'; }
+
 function summarySignedPct(x) {
   if (Math.round(Math.abs(x) * 100) === 0) return '±0%';   // v1.1.26: no "−0%"
   return (x >= 0 ? '+' : '−') + summaryPct(x);
@@ -516,6 +527,27 @@ function buildDailySummaryEmail(s, opts) {
     T.push('', 'Card tips:', ...(s.tips.length ? s.tips.map(t => '  • ' + t.text) : ['  • none']));
   }
 
+  // ---- investments (v1.1.32)
+  if (sec.investments && s.investments) {
+    const iv = s.investments;
+    const since = iv.prevDay ? summaryShortDate(keyToDate(iv.prevDay)) : null;
+    let inner = ekKpis([
+      { label: 'Portfolio', value: summaryUsd(iv.total), sub: iv.totalDop ? summaryMoney(iv.totalDop) : '' },
+      { label: since ? 'Since ' + since : 'Change', value: iv.change === null ? '—' : summarySignedUsd(iv.change),
+        sub: iv.change === null ? 'first day recorded' : summarySignedPctFine(iv.changePct || 0) + (iv.deposits ? ' · deposits left out' : ''),
+        tone: iv.change > 0 ? 'good' : iv.change < 0 ? 'bad' : null },
+      { label: 'Since tracking began', value: iv.returns && iv.returns.periodReturn !== null ? summarySignedPctFine(iv.returns.periodReturn) : '—',
+        sub: iv.returns ? summarySignedUsd(iv.returns.gain) : '' }
+    ]);
+    if (iv.movers.length) {
+      inner += '<div style="height:10px;font-size:0">&nbsp;</div>' + ekList(iv.movers.map(m => ({
+        title: m.ticker, meta: m.account + ' · biggest move' + (since ? ' since ' + since : ''), right: summarySignedPctFine(m.change),
+        rightTone: m.change >= 0 ? 'good' : 'bad' })));
+    }
+    rows.push(ekSection('Investments', inner));
+    T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));
+  }
+
   // ---- data health (always)
   const health = summaryDataHealth(s.lastRun, s.now || new Date());
   rows.push('<tr><td style="padding:20px 28px 0"><div style="font-size:12px;color:' + ekTone(health.tone).fg + ';background:' +
@@ -603,9 +635,11 @@ function deliverDailySummary(now) {
   const sheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   const values = sheet ? sheet.getDataRange().getValues() : [[]];
   const rates = readDashboardRates(ss);
+  let investments = null;   // v1.1.32
+  try { investments = investmentsReportData('daily', { rates: rates }); } catch (error) { Logger.log('Investments brief: ' + error); }
   const summary = computeDailySummary(values, {
     today: now || new Date(), rates: rates, netIncomeDop: computeNetIncomeDop(config, rates), cards: readDashboardCards(ss),
-    lastRun: readLastRun(), now: now || new Date()
+    lastRun: readLastRun(), now: now || new Date(), investments: investments
   });
   const mail = buildDailySummaryEmail(summary, {
     sections: config.notifySections, sheetName: ss.getName(), links: summaryLinks(ss)

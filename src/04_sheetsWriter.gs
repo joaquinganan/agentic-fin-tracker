@@ -31,7 +31,7 @@ const TX_NUM_COLS = TX_COL.TX_REF + 1;
 const CANONICAL_SHEET_ORDER = [
   "Dashboard", "Holdings", "Transactions", "Bank Transfers",
   "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR",
-  "Investment Ledger", "Custom Rules", "Investment Accounts", "Configuration", "Categories"
+  "Investment Ledger", "Portfolio History", "Custom Rules", "Investment Accounts", "Configuration", "Categories"
 ];
 
 /**
@@ -46,7 +46,8 @@ const TAB_COLORS = {
   "Categories": "#666666",
   "Holdings": "#0F766E",             // v1.1.29
   "Investment Ledger": "#0F766E",
-  "Investment Accounts": "#0F766E"
+  "Investment Accounts": "#0F766E",
+  "Portfolio History": "#0F766E"      // v1.1.32
 };
 const RAW_BANK_TAB_COLOR = "#999999";
 
@@ -270,6 +271,7 @@ function styleTrackerSheets() {
       else if (name === CONFIG_SHEET) styleConfigurationSheet(sheet);
       else if (name === INVESTMENT_LEDGER_SHEET) styleLedgerSheet(sheet);                 // v1.1.29
       else if (name === INVESTMENT_ACCOUNTS_SHEET) styleHeader(sheet, ACCOUNTS_HEADERS.length);
+      else if (name === HISTORY_SHEET) styleHeader(sheet, HISTORY_HEADERS.length);
     } catch (error) {
       Logger.log("Could not style " + name + ": " + error);
     }
@@ -288,7 +290,8 @@ function autoFitDataSheets() {
   ss.getSheets().forEach(sheet => {
     const name = sheet.getName();
     const isData = name === TRANSACTIONS_SHEET || name === 'Bank Transfers' || name.indexOf('Raw_') === 0 ||
-      name === CUSTOM_RULES_SHEET || name === CONFIG_SHEET || name === INVESTMENT_LEDGER_SHEET || name === INVESTMENT_ACCOUNTS_SHEET;
+      name === CUSTOM_RULES_SHEET || name === CONFIG_SHEET || name === INVESTMENT_LEDGER_SHEET || name === INVESTMENT_ACCOUNTS_SHEET ||
+      name === HISTORY_SHEET;
     if (!isData) return;
     try { autoFitColumns(sheet); } catch (error) { Logger.log("Could not fit columns on " + name + ": " + error); }
   });

@@ -188,4 +188,9 @@ suite against another copy of the code.
    just the Amount).
 5. **📊 Tracker › 📈 Refresh Investments** rebuilds Holdings. Regular runs read broker emails and bank deposits on
    their own. Holdings is rebuilt every time — don't edit it by hand; edit the ledger.
+6. Every run records the day's values in **Portfolio History**. Holdings shows the return of each account since it
+   started being tracked, and a chart of the total; the daily and monthly emails include an Investments section
+   (turn it off in the Setup Wizard). Returns are annualized once an account has 180 days of history.
+7. A new account (e.g. IBKR) needs no Snapshot if it starts empty: its movements are added from zero. Add it to
+   Investment Accounts with the keyword of the transfers that fund it.
 

@@ -285,6 +285,7 @@ function makeServices(options) {
       },
       newDataValidation: validationBuilder,
       newConditionalFormatRule: cfBuilder,
+      flush: () => {},
       BorderStyle: { SOLID: 'SOLID', SOLID_MEDIUM: 'SOLID_MEDIUM', SOLID_THICK: 'SOLID_THICK' }
     },
     Charts: { ChartType: { COLUMN: 'COLUMN', PIE: 'PIE', BAR: 'BAR', LINE: 'LINE' } },

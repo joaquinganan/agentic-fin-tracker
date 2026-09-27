@@ -2,6 +2,21 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.32 (Sept 26, 2026) — portfolio history, real returns, investments in the emails
+- **Portfolio History** sheet: every run records each position (quantity, price, value), cash and balance-tracked
+  account in US$, plus a TOTAL row — one set per day (a second run the same day replaces it). Values are what
+  `GOOGLEFINANCE` computed in Holdings, or quantity × price when a cell hasn't loaded.
+- **Returns** per account and for all accounts, since each started being tracked (latest Snapshot, first Valuation, or
+  first movement): **Modified Dietz** for the period (deposits weighted by the days they were invested) and
+  **XIRR** annualized — only after 180 days, since annualizing a few weeks gives absurd numbers. Holdings shows them in
+  a Performance block with a line chart of the total. (Sheets keeps embedded charts on `clear()`, so the rebuild removes
+  the old chart instead of stacking a new one every day.)
+- **Emails**: the daily summary gains an Investments section (value, gain since the previous day with deposits left
+  out, biggest movers, return since tracking began); the monthly one, the month's gain vs deposits, dividends, fees and
+  allocation. On/off in the Setup Wizard. Investment percentages use two decimals — daily moves are mostly under 1%.
+- Tests: 93 (mutation-checked: chart replacement, time-weighted deposits, deposits not counted as gain, one set of
+  history rows per day).
+
 ### v1.1.31 (Sept 26, 2026) — crypto prices from Coinbase; sanity check only against recent prices
 - Reported from a live sheet: ETHUSD and SHIBUSD showed "last known" — `GOOGLEFINANCE` doesn't price crypto pairs
   (a known limitation). Crypto now comes from Coinbase's public spot price (`/v2/prices/<PAIR>/spot`, no key), one

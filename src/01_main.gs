@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.31"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.32"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -316,6 +316,7 @@ function openSetupWizard() {
               <div class="checkbox-item"><input type="checkbox" id="sec_transfers" checked><label for="sec_transfers">Transfers to review</label></div>
               <div class="checkbox-item"><input type="checkbox" id="sec_recommendations" checked><label for="sec_recommendations">Recommendations &amp; feedback</label></div>
               <div class="checkbox-item"><input type="checkbox" id="sec_cashback" checked><label for="sec_cashback">Card &amp; cashback tips</label></div>
+              <div class="checkbox-item"><input type="checkbox" id="sec_investments" checked><label for="sec_investments">Investments</label></div>
             </div>
             </div>
             <div class="hint">Sent from your own Gmail account after the morning update, with links to this spreadsheet.
@@ -330,7 +331,7 @@ function openSetupWizard() {
         </form>
       </div>
       <script>
-        const SECTIONS = ['totals', 'vsAverage', 'transfers', 'recommendations', 'cashback'];
+        const SECTIONS = ['totals', 'vsAverage', 'transfers', 'recommendations', 'cashback', 'investments'];
         function el(id) { return document.getElementById(id); }
         function show(id, on) { el(id).style.display = on ? '' : 'none'; }
         function num(id) { return parseFloat(el(id).value) || 0; }

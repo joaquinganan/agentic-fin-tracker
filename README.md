@@ -85,7 +85,8 @@ The full history — what was wrong, how it was found and what changed — is in
 - **Deduplicates** by Gmail message id and by the bank's own reference number.
 - **Investments** (Investment Ledger → Holdings): broker emails (HAPI orders and dividends), deposits from bank
   transfers, snapshots and balances for funds or pensions; stocks and ETFs valued live with `GOOGLEFINANCE`,
-  crypto with Coinbase's public price.
+  crypto with Coinbase's public price; a daily history, returns (Modified Dietz, XIRR) and investments sections in
+  the summary emails.
 - **Readable data sheets:** a coloured chip per category, and the rows that need attention — transfers without a
   category, unreadable merchants — highlighted automatically.
 - **Dashboard** with KPI cards, categories by month, fixed vs. variable, spend by bank, a year heat map, and a
@@ -175,6 +176,7 @@ npm test            # node --test tests/*.test.js  (Node 18+)
 | `v127.test.js` | other income, credit cards from the Setup Wizard, save flow and messages |
 | `v128.test.js` | category colours (WCAG AA), data-sheet highlights, Bank Transfers Category column |
 | `v129.test.js` | investments: HAPI emails, holdings maths, a full run from emails and bank deposits to Holdings |
+| `v132.test.js` | returns (Modified Dietz, XIRR), portfolio history, investments in the emails |
 
 Adding a real email as a new fixture, and the manual checks a mock can't cover, are described in
 [tests/README.md](tests/README.md).

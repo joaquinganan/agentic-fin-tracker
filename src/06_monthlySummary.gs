@@ -130,6 +130,7 @@ function computeMonthlySummary(values, opts) {
   m.ytdSavingsRate = m.netIncomeDop > 0 && m.ytdMonths ? 1 - m.ytdTotal / (m.netIncomeDop * m.ytdMonths) : null;
 
   m.recommendations = monthlyRecommendations(m);
+  m.investments = opts.investments || null;   // v1.1.32
   m.lastRun = opts.lastRun || null;
   m.now = opts.now || ref;
   return m;
@@ -302,6 +303,28 @@ function buildMonthlySummaryEmail(m, opts) {
   ])));
   T.push('', m.month.getFullYear() + ' so far: ' + summaryMoney(m.ytdTotal) + ' in ' + m.ytdMonths + ' month(s)');
 
+  // investments (v1.1.32)
+  if (m.investments) {
+    const iv = m.investments;
+    let inner = ekKpis([
+      { label: 'Value at month end', value: summaryUsd(iv.endValue), sub: iv.partial ? 'tracking began this month' : 'from ' + summaryUsd(iv.startValue) },
+      { label: 'Gain in ' + SUMMARY_MONTHS[m.month.getMonth()], value: summarySignedUsd(iv.gain),
+        sub: (iv.gainPct !== null ? summarySignedPctFine(iv.gainPct) + ' · ' : '') + 'deposits left out', tone: iv.gain > 0 ? 'good' : iv.gain < 0 ? 'bad' : null },
+      { label: 'Deposited', value: summaryUsd(iv.deposits), sub: 'dividends ' + summaryUsd(iv.dividends) + ' · fees ' + summaryUsd(iv.fees) }
+    ]);
+    if (iv.allocation.length) {
+      inner += '<div style="height:12px;font-size:0">&nbsp;</div>' + iv.allocation.map(a =>
+        ekBar(a.account, a.share, '#0F766E', summaryUsd(a.value), summaryEscape(summaryPct(a.share) + ' of the portfolio'))).join('');
+    }
+    if (iv.returns && iv.returns.periodReturn !== null) {
+      inner += '<div style="font-size:12px;color:' + EK.muted + '">Since tracking began (' + summaryEscape(iv.returns.start) + '): ' +
+        summaryEscape(summarySignedPctFine(iv.returns.periodReturn) + ' · ' + summarySignedUsd(iv.returns.gain)) +
+        (iv.returns.annualized !== null ? ' · ' + summaryEscape(summarySignedPctFine(iv.returns.annualized)) + ' a year' : '') + '</div>';
+    }
+    rows.push(ekSection('Investments', inner));
+    T.push('', 'Investments: ' + summaryUsd(iv.endValue) + ' at month end · gain ' + summarySignedUsd(iv.gain));
+  }
+
   const recs = m.recommendations.length ? m.recommendations : [{ tone: 'good', text: 'Nothing to flag.' }];
   rows.push(ekSection('Recommendations', ekNotes(recs)));
   T.push('', 'Recommendations:', ...recs.map(r => '  • ' + r.text));
@@ -338,9 +361,14 @@ function deliverMonthlySummary(now) {
   const sheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   const values = sheet ? sheet.getDataRange().getValues() : [[]];
   const rates = readDashboardRates(ss);
+  const ref = now || new Date();
+  let investments = null;   // v1.1.32
+  try {
+    investments = investmentsReportData('monthly', { rates: rates, month: new Date(ref.getFullYear(), ref.getMonth() - 1, 1, 12) });
+  } catch (error) { Logger.log('Investments brief: ' + error); }
   const summary = computeMonthlySummary(values, {
-    today: now || new Date(), rates: rates, netIncomeDop: computeNetIncomeDop(config, rates),
-    cards: readDashboardCards(ss), lastRun: readLastRun(), now: now || new Date()
+    today: ref, rates: rates, netIncomeDop: computeNetIncomeDop(config, rates),
+    cards: readDashboardCards(ss), lastRun: readLastRun(), now: ref, investments: investments
   });
   const mail = buildMonthlySummaryEmail(summary, { sheetName: ss.getName(), links: summaryLinks(ss) });
   const to = config.notifyEmail || config.email;
