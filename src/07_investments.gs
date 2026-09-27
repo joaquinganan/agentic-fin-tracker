@@ -161,7 +161,7 @@ function parseHapiMessage(message) {
 
 /** Broker emails in the run's range → { events, parsed, skipped, unparsed, threads, failedThreadIds }. */
 function captureBrokerEmails(range) {
-  const out = { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set() };
+  const out = { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set(), unrecognized: [], readIds: [] };
   Object.keys(BROKER_PATTERNS).forEach(broker => {
     const p = BROKER_PATTERNS[broker];
     const query = p.searchQuery + ' after:' + toEpochSeconds(range.start) + ' before:' + toEpochSeconds(range.endExclusive);
@@ -172,11 +172,13 @@ function captureBrokerEmails(range) {
         if (when < range.start || when >= range.endExclusive) return;
         let result;
         try { result = p.parse(message); } catch (error) { result = { kind: 'unparsed', reason: String(error) }; }
-        if (result.kind === 'event') { out.events.push(result.event); out.parsed++; }
-        else if (result.kind === 'skipped') { out.skipped++; }
+        if (result.kind === 'event') { out.events.push(result.event); out.parsed++; out.readIds.push(message.getId()); }
+        else if (result.kind === 'skipped') { out.skipped++; out.readIds.push(message.getId()); }
         else {
           out.unparsed++;
           out.failedThreadIds.add(thread.getId());
+          out.unrecognized.push({ id: message.getId(), date: when, bank: broker, subject: message.getSubject() || '',   // v1.1.35
+            reason: 'Broker email not read: ' + result.reason, snippet: investmentMessageText(message).substring(0, 700) });
           Logger.log('⚠️ ' + broker + ' email not read (' + result.reason + '): "' + message.getSubject() + '" ' + when);
         }
       });
@@ -624,7 +626,8 @@ function styleAccountsSheet(sheet) {
 
 /** The investments part of a run: broker emails → ledger, bank deposits → ledger, Holdings rebuilt. */
 function runInvestmentsStep(range) {
-  const capture = range ? captureBrokerEmails(range) : { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set() };
+  const capture = range ? captureBrokerEmails(range)
+    : { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set(), unrecognized: [], readIds: [] };
   const accounts = readInvestmentAccounts();
   const tx = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
   const deposits = tx ? brokerDepositsFromTransactions(tx.getDataRange().getValues(), accounts) : [];
@@ -632,7 +635,8 @@ function runInvestmentsStep(range) {
   if (capture.threads.length) markEmailsAsProcessed(capture.threads, capture.failedThreadIds);
   const holdings = refreshHoldings();
   return { parsed: capture.parsed, skipped: capture.skipped, unparsed: capture.unparsed, deposits: deposits.length,
-    saved: saved.saved, duplicates: saved.duplicates, positions: holdings.positions.length, warnings: holdings.warnings };
+    saved: saved.saved, duplicates: saved.duplicates, positions: holdings.positions.length, warnings: holdings.warnings,
+    unrecognized: capture.unrecognized, readIds: capture.readIds };
 }
 
 /** Rebuilds Holdings from the ledger. */
@@ -1134,9 +1138,19 @@ function addValuationEntry(entry) {
       safeToast('Saving the balance...', '📈 Investments', -1);
       const sheet = getOrCreateLedgerSheet();
       const row = valuationRow(entry);
+      // v1.1.35: the same account and statement date again UPDATES that balance instead of adding a duplicate
       const last = sheet.getLastRow();
-      ensureRowCapacity(sheet, last + 1);
-      sheet.getRange(last + 1, 1, 1, LEDGER_HEADERS.length).setValues([row]);
+      const existing = last > 1 ? sheet.getRange(2, 1, last - 1, LEDGER_HEADERS.length).getValues() : [];
+      const same = existing.findIndex(r => r[LG.TYPE] === 'Valuation' && r[LG.DATE] &&
+        String(r[LG.ACCOUNT]).trim().toLowerCase() === row[LG.ACCOUNT].toLowerCase() &&
+        normalizeDateForCompare(r[LG.DATE]) === entry.date);
+      const updated = same !== -1;
+      if (updated) {
+        sheet.getRange(same + 2, 1, 1, LEDGER_HEADERS.length).setValues([row]);
+      } else {
+        ensureRowCapacity(sheet, last + 1);
+        sheet.getRange(last + 1, 1, 1, LEDGER_HEADERS.length).setValues([row]);
+      }
       sortSheetByDateDesc(sheet, LG.DATE + 1);
       // the account is listed in Investment Accounts (no deposit keyword needed for a balance)
       readInvestmentAccounts();
@@ -1152,7 +1166,7 @@ function addValuationEntry(entry) {
       ensureSheetOrder();
       safeToast('Done.', '📈 Investments', 3);
       const value = entry.mode === 'units' ? Number(entry.units) * Number(entry.unitPrice) : Number(entry.amount);
-      safeAlert('✅ Balance saved\n\n' + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' +
+      safeAlert((updated ? '✅ Balance updated (same account and date)\n\n' : '✅ Balance saved\n\n') + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' +
         value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' as of ' + entry.date +
         (entry.mode === 'units' ? ' (' + entry.units + ' × ' + entry.unitPrice + ')' : '') +
         '\n\nIt now shows in Holdings › Other accounts. Add a new balance with every statement.');

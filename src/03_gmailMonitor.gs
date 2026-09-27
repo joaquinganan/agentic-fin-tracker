@@ -410,7 +410,8 @@ function debugBankEmailSample(daysBack = 30, perBank = 5) {
 function newParseStats() {
   return {
     messagesSeen: 0, outOfRange: 0, notOwnBank: 0, promotional: 0,
-    nonTransactional: 0, declined: 0, amountNotFound: 0, parseErrors: 0, placeholders: 0, reversals: 0
+    nonTransactional: 0, declined: 0, amountNotFound: 0, parseErrors: 0, placeholders: 0, reversals: 0,
+    unrecognized: [], readIds: []   // v1.1.35: emails for the Unrecognized sheet, and emails read cleanly
   };
 }
 
@@ -444,6 +445,15 @@ function extractTransactionsFromThreads(threads, rawCustomRules, range) {
       const result = parseEmailMessage(message, rawCustomRules, stats);
       if (result.status === 'failed') failedThreadIds.add(thread.getId());
       transactions.push(...result.items);
+      // v1.1.35: what the Unrecognized sheet lists — not saved, or saved with an unreadable merchant
+      const unreadable = result.status === 'ok' && result.items.some(it => it.merchant === GARBLED_PLACEHOLDER);
+      if (result.status === 'failed' || unreadable) {
+        stats.unrecognized.push({ id: message.getId(), date: message.getDate(), bank: result.bank || (result.items[0] || {}).bank || '',
+          subject: message.getSubject() || '', reason: unreadable ? 'Saved — merchant unreadable (red row in Transactions)' : result.reason,
+          snippet: result.snippet || (unreadable ? (result.items[0].description || '') : '') });
+      } else if (result.status === 'ok' || result.status === 'filtered') {
+        stats.readIds.push(message.getId());
+      }
     }
   }
   return { transactions: transactions, stats: stats, failedThreadIds: failedThreadIds };
@@ -556,7 +566,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       stats.amountNotFound++;
       const snippet = plainText.substring(0, 700).replace(/\s+/g, ' ').trim();
       Logger.log("Amount not found | " + bank + " | " + subject + " | Body: \"" + snippet + "\"");
-      return { items: [], status: 'failed' };
+      return { items: [], status: 'failed', bank: bank, reason: 'Amount not found', snippet: snippet };
     }
 
     const results = [];
@@ -609,7 +619,9 @@ function parseEmailMessage(message, rawCustomRules, stats) {
   } catch (error) {
     stats.parseErrors++;
     Logger.log("Error parsing email: " + error + (error && error.stack ? " | " + error.stack : ""));
-    return { items: [], status: 'failed' };
+    let snippet = '';
+    try { snippet = String(message.getPlainBody() || '').substring(0, 700).replace(/\s+/g, ' ').trim(); } catch (e) { snippet = ''; }
+    return { items: [], status: 'failed', bank: '', reason: 'Could not read: ' + error, snippet: snippet };
   }
 }
 

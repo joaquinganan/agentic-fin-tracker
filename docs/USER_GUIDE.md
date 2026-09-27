@@ -186,6 +186,8 @@ suite against another copy of the code.
    add only the movements after that day.
 4. Funds and pensions: **📊 Tracker › ➕ Add Fund / Pension Balance** whenever you get a statement (units × unit
    price, or the balance). It adds a new `Valuation` row each time — Holdings shows the latest of each account.
+   Saving the same account and date again updates that balance. To measure a return, add an earlier statement too
+   (e.g. the balance on January 1): the earliest balance is where the account's history starts.
 5. **📊 Tracker › 📈 Refresh Investments** rebuilds Holdings. Regular runs read broker emails and bank deposits on
    their own. Holdings is rebuilt every time — don't edit it by hand; edit the ledger.
 6. Every run records the day's values in **Portfolio History**. Holdings shows the return of each account since it
@@ -194,3 +196,9 @@ suite against another copy of the code.
 7. A new account (e.g. IBKR) needs no Snapshot if it starts empty: its movements are added from zero. Add it to
    Investment Accounts with the keyword of the transfers that fund it.
 
+## Unrecognized emails
+
+The **Unrecognized** sheet lists every bank or broker email the tracker couldn't read, with the reason, what the email
+says and a link to open it in Gmail. Send those emails (Gmail › ⋮ › Show original › Download) to get their format
+supported; set Status to *Ignore* for ones that don't matter. Rows disappear by themselves once a later version reads
+the email.

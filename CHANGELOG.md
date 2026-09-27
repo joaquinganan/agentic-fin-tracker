@@ -2,6 +2,16 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.35 (Sept 27, 2026) — the Unrecognized sheet; balances update instead of duplicating
+- **Unrecognized** lists every bank or broker email the tracker couldn't read — amount not found, a reading error, a
+  HAPI email that didn't validate — and emails saved with an unreadable merchant: date, bank, subject, reason, what the
+  email says and a link to it in Gmail. One row per email (a later run updates it and keeps your Status: New or Ignore);
+  a row disappears once a later version reads that email. The run summary and the daily email's data-health line say
+  how many are waiting. Styled like the other tabs (reason and status chips, ignored rows greyed out).
+- **Fund / pension balances**: saving the same account with the same statement date again now updates that balance
+  instead of adding a second row. An earlier statement date adds the start of that account's history.
+- Tests: 108 (mutation-checked: resolved emails drop off, Status kept, balances not duplicated).
+
 ### v1.1.34 (Sept 27, 2026) — investment tabs with the Dashboard's look; Código Cash; one date format
 - **Holdings redesigned** like the Dashboard: navy title band, six KPI cards (portfolio value, cost basis, unrealized
   P/L, return since start, dividends, deposited), underlined sections, striped tables with total rows, price-source

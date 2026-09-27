@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.34"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.35"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -863,6 +863,7 @@ function runGmailMonitorCore(search, config) {
   let marked = null;
   let recatChanged = 0;
   let investments = null;   // v1.1.29
+  let unrecognizedOpen = null;   // v1.1.35
   const errors = [];
 
   try {
@@ -891,6 +892,13 @@ function runGmailMonitorCore(search, config) {
         investments = runInvestmentsStep(search.range);
         styleTrackerSheets();
       }],
+      // v1.1.35: emails that couldn't be read (bank and broker) → Unrecognized; ones read cleanly now drop off it
+      ["unrecognized", () => {
+        unrecognizedOpen = recordUnrecognized(stats.unrecognized.concat(investments ? investments.unrecognized : []),
+          stats.readIds.concat(investments ? investments.readIds : []), new Date());
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(UNRECOGNIZED_SHEET);
+        if (sheet) styleUnrecognizedSheet(sheet);
+      }],
       ["sheet order", () => ensureSheetOrder()],
       ["open Dashboard", () => {
         const dashboardSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dashboard");
@@ -908,11 +916,11 @@ function runGmailMonitorCore(search, config) {
   // v1.1.26: the summary emails report whether the morning update ran and how it went
   recordLastRun({ at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
     failed: results.failed, unparsed: stats.amountNotFound + stats.parseErrors + (investments ? investments.unparsed : 0),
-    errors: errors.length });
+    errors: errors.length, unrecognized: unrecognizedOpen || 0 });
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,
-                              investments: investments }));
+                              investments: investments, unrecognizedOpen: unrecognizedOpen }));
 }
 
 /** v1.1.19 (E7): run summary text — pure, so tests/ can check it. */
@@ -935,6 +943,9 @@ function buildRunSummary(r) {
     lines.push("⚠️ Could not parse: " + unparsed + " email(s) — left UNREAD in Gmail; details in View > Executions");
   }
   if (s.placeholders) lines.push("⚠️ Saved with placeholder merchant: " + s.placeholders);
+  if (r.unrecognizedOpen) {   // v1.1.35
+    lines.push("🔎 Unrecognized: " + r.unrecognizedOpen + " email(s) need a look — see the Unrecognized sheet");
+  }
   const inv = r.investments;   // v1.1.29
   if (inv && (inv.parsed || inv.deposits || inv.unparsed || inv.saved)) {
     lines.push("📈 Investments: " + inv.saved + " new ledger row(s) (" + inv.parsed + " from broker emails, " +

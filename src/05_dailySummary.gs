@@ -417,7 +417,8 @@ function summaryDataHealth(lastRun, now) {
   let text = 'Data updated ' + when + ' · ' + (lastRun.saved || 0) + ' new transaction(s)';
   if (lastRun.unparsed) text += ' · ' + lastRun.unparsed + ' email(s) couldn\'t be read (left unread in Gmail)';
   if (lastRun.errors) text += ' · ' + lastRun.errors + ' error(s) in the log';
-  return { tone: lastRun.unparsed || lastRun.errors ? 'warn' : 'good', text: text };
+  if (lastRun.unrecognized) text += ' · ' + lastRun.unrecognized + ' email(s) in Unrecognized';   // v1.1.35
+  return { tone: lastRun.unparsed || lastRun.errors || lastRun.unrecognized ? 'warn' : 'good', text: text };
 }
 
 /** Subject, HTML and plain-text bodies of the daily email. Pure — see tests/. */

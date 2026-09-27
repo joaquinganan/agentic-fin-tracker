@@ -20,6 +20,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v132.test.js` | Investments reporting: XIRR, Modified Dietz returns per account and in total, history rows (one set per day), daily and monthly briefs, email sections, Holdings chart not stacking. |
 | `v133.test.js` | No progress toast left open (success and error paths), fund/pension balance dialog: validation, saving, listing, Holdings. |
 | `v134.test.js` | Código Cash merchants (parse and repair), Holdings dates as real dates, the Dashboard look of Holdings and the other investment tabs. |
+| `v135.test.js` | Unrecognized sheet: listing, one row per email, Status kept, resolved emails removed, broker failures, data-health line; balances updated not duplicated. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

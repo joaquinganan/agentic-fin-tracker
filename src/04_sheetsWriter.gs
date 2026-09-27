@@ -30,7 +30,7 @@ const TX_NUM_COLS = TX_COL.TX_REF + 1;
  */
 const CANONICAL_SHEET_ORDER = [
   "Dashboard", "Holdings", "Transactions", "Bank Transfers",
-  "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR",
+  "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
   "Investment Ledger", "Portfolio History", "Custom Rules", "Investment Accounts", "Configuration", "Categories"
 ];
 
@@ -47,7 +47,8 @@ const TAB_COLORS = {
   "Holdings": "#0F766E",             // v1.1.29
   "Investment Ledger": "#0F766E",
   "Investment Accounts": "#0F766E",
-  "Portfolio History": "#0F766E"      // v1.1.32
+  "Portfolio History": "#0F766E",     // v1.1.32
+  "Unrecognized": "#C00000"          // v1.1.35
 };
 const RAW_BANK_TAB_COLOR = "#999999";
 
@@ -272,6 +273,7 @@ function styleTrackerSheets() {
       else if (name === INVESTMENT_LEDGER_SHEET) styleLedgerSheet(sheet);                 // v1.1.29
       else if (name === INVESTMENT_ACCOUNTS_SHEET) styleAccountsSheet(sheet);   // v1.1.34
       else if (name === HISTORY_SHEET) styleHistorySheet(sheet);
+      else if (name === UNRECOGNIZED_SHEET) styleUnrecognizedSheet(sheet);           // v1.1.35
     } catch (error) {
       Logger.log("Could not style " + name + ": " + error);
     }
@@ -1505,4 +1507,78 @@ function buildOrRefreshCategoriesSheet(userEmail) {
   sheet.setTabColor(TAB_COLORS["Categories"]);
   Logger.log("✅ Categories sheet built/refreshed");
   return sheet;
+}
+
+/* ======================================================================
+ * UNRECOGNIZED — v1.1.35
+ * Every bank or broker email the tracker couldn't read (or saved with an unreadable merchant), so failures show up by
+ * themselves instead of being found by spotting odd rows. One row per email (a later run updates it, keeping your
+ * Status); a row disappears once a later version reads that email cleanly.
+ * ====================================================================== */
+const UNRECOGNIZED_SHEET = 'Unrecognized';
+const UNRECOGNIZED_HEADERS = ['Date', 'Bank', 'Subject', 'Reason', 'What the email says', 'Gmail', 'Status', 'First seen', 'Last seen', 'Id'];
+const UNRECOGNIZED_STATUSES = ['New', 'Ignore'];
+
+/** Merges this run's entries into the sheet; removes emails now read cleanly. Returns how many are still New. */
+function recordUnrecognized(entries, readIds, now) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(UNRECOGNIZED_SHEET);
+  if (!sheet && !(entries || []).length) return 0;
+  if (!sheet) {
+    sheet = ss.insertSheet(UNRECOGNIZED_SHEET);
+    sheet.getRange(1, 1, 1, UNRECOGNIZED_HEADERS.length).setValues([UNRECOGNIZED_HEADERS]);
+    sheet.hideColumns(UNRECOGNIZED_HEADERS.length);
+  }
+  const width = UNRECOGNIZED_HEADERS.length, idCol = width - 1;
+  const last = sheet.getLastRow();
+  let rows = last > 1 ? sheet.getRange(2, 1, last - 1, width).getValues().filter(r => r[idCol]) : [];
+  const read = new Set(readIds || []);
+  rows = rows.filter(r => !read.has(String(r[idCol])));                       // read cleanly now → resolved
+  const byId = {};
+  rows.forEach(r => { byId[String(r[idCol])] = r; });
+  (entries || []).forEach(e => {
+    const link = '=HYPERLINK("https://mail.google.com/mail/u/0/#all/' + e.id + '","Open")';
+    const snippet = String(e.snippet || '').replace(/\s+/g, ' ').trim().substring(0, 300);
+    const known = byId[e.id];
+    if (known) {                                                               // seen before: refresh, keep the Status
+      known[3] = e.reason; known[4] = snippet; known[5] = link; known[8] = now;
+    } else {
+      const row = [e.date, e.bank, e.subject, e.reason, snippet, link, 'New', now, now, e.id];
+      rows.push(row); byId[e.id] = row;
+    }
+  });
+  rows.sort((a, b) => (b[0] instanceof Date ? b[0].getTime() : 0) - (a[0] instanceof Date ? a[0].getTime() : 0));
+  if (last > 1) sheet.getRange(2, 1, last - 1, width).clearContent();
+  if (rows.length) {
+    ensureRowCapacity(sheet, rows.length + 1);
+    sheet.getRange(2, 1, rows.length, width).setValues(rows);
+  }
+  return rows.filter(r => r[6] !== 'Ignore').length;
+}
+
+function styleUnrecognizedSheet(sheet) {
+  styleHeader(sheet, UNRECOGNIZED_HEADERS.length);
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  sheet.getRange(2, 1, rows, 1).setNumberFormat('yyyy-MM-dd HH:mm').setHorizontalAlignment('center');
+  sheet.getRange(2, 2, rows, 1).setFontWeight('bold').setFontColor(DASH_THEME.navy);
+  sheet.getRange(2, 4, rows, 1).setWrap(true);   // long reasons wrap instead of being cut
+  sheet.getRange(2, 5, rows, 1).setWrap(true).setFontSize(9).setFontColor('#4B5563');
+  sheet.getRange(2, 6, rows, 2).setHorizontalAlignment('center');
+  sheet.getRange(2, 8, rows, 2).setNumberFormat('yyyy-MM-dd').setFontSize(9).setFontColor('#6B7280').setHorizontalAlignment('center');
+  sheet.getRange(2, 7, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(UNRECOGNIZED_STATUSES, true).setAllowInvalid(false)
+    .setHelpText('"Ignore" keeps it here but out of the counts. Rows disappear when a later version reads the email.').build());
+  const all = sheet.getRange(2, 1, rows, UNRECOGNIZED_HEADERS.length - 1), reason = sheet.getRange(2, 4, rows, 1), status = sheet.getRange(2, 7, rows, 1);
+  const rule = () => SpreadsheetApp.newConditionalFormatRule();
+  sheet.setConditionalFormatRules([
+    rule().whenFormulaSatisfied('=$G2="Ignore"').setFontColor('#9CA3AF').setRanges([all]).build(),       // ignored: greyed out
+    rule().whenTextEqualTo('New').setBackground('#FDECEC').setFontColor('#B91C1C').setRanges([status]).build(),
+    rule().whenTextEqualTo('Ignore').setBackground('#F3F4F6').setFontColor('#4B5563').setRanges([status]).build(),
+    rule().whenTextStartsWith('Amount not found').setBackground('#FFF4D6').setFontColor('#92400E').setRanges([reason]).build(),
+    rule().whenTextStartsWith('Could not read').setBackground('#FDECEC').setFontColor('#B91C1C').setRanges([reason]).build(),
+    rule().whenTextStartsWith('Broker email').setBackground('#E0F2F1').setFontColor('#00695C').setRanges([reason]).build(),
+    rule().whenTextStartsWith('Saved').setBackground('#F3E8FF').setFontColor('#7E22CE').setRanges([reason]).build(),
+    rule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(ROW()))').setBackground(SHEET_THEME.stripe).setRanges([all]).build()
+  ]);
+  [125, 85, 260, 250, 420, 60, 70, 85, 85].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
