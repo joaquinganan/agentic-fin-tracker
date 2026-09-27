@@ -184,7 +184,7 @@ suite against another copy of the code.
 3. **Snapshot** each broker account once, in the **Investment Ledger**: one row per ticker — Date, Account,
    `Snapshot`, Ticker, Quantity, Price, Amount = cost basis, Currency — plus a `CASH` row. Positions start from it and
    add only the movements after that day.
-4. Funds and pensions: **📊 Tracker › ➕ Add Fund / Pension Balance** whenever you get a statement (units × unit
+4. Funds and pensions: **📊 Tracker › ➕ Add Balance or Deposit** whenever you get a statement (units × unit
    price, or the balance). It adds a new `Valuation` row each time — Holdings shows the latest of each account.
    Saving the same account and date again updates that balance. To measure a return, add an earlier statement too
    (e.g. the balance on January 1): the earliest balance is where the account's history starts.
@@ -214,4 +214,11 @@ already saved are skipped without being read.
 You can set or change a category directly in **Transactions** or **Bank Transfers**: the tracker keeps it — recategorizing
 and the daily run no longer overwrite it. To go back to the automatic category, clear the cell. For something that should
 apply to every future transaction too, add a Custom Rule instead. (Edits in the Raw_ sheets aren't kept: those are copies.)
+
+## Deposits and the return
+
+An account's gain is its value now − its value at the start − the money put in since. Deposits are recorded by
+themselves when they're bank transfers matching the account's keyword (Investment Accounts); anything else — another
+route, a bank whose transfers aren't read yet, pension contributions — add with **➕ Add Balance or Deposit › A deposit**.
+If purchases since the start exceed the recorded deposits, Holdings › Performance warns you: a missing deposit counts as gain.
 

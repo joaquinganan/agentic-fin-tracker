@@ -854,7 +854,22 @@ function computeReturns(ledgerValues, currentValues, opts) {
   };
   const list = Object.keys(accounts).map(a => {
     const acc = accounts[a];
-    return Object.assign({ account: a }, measure(acc.start, acc.startValue, acc.flows, currentValues[a]) || {});
+    const m = Object.assign({ account: a }, measure(acc.start, acc.startValue, acc.flows, currentValues[a]) || {});
+    if (m.start) {
+      // v1.1.40: money spent on purchases since the start (net of sales and dividends) had to come from somewhere —
+      // deposits, or cash already in the account. Far more bought than deposited usually means deposits are missing,
+      // and every missing deposit shows up as gain (reported: HAPI's 2026 gain included purchases' funding).
+      let bought = 0;
+      rows.filter(x => x.account === a && x.key > m.start).forEach(x => {
+        const type = x.r[LG.TYPE], amt = toUsd(invNumber(x.r[LG.AMOUNT]), x.r[LG.CURRENCY]), fee = toUsd(invNumber(x.r[LG.FEE]), x.r[LG.CURRENCY]);
+        if (type === 'Buy') bought += amt + fee;
+        else if (type === 'Sell') bought -= amt - fee;
+        else if (type === 'Dividend') bought -= amt;
+      });
+      m.netBought = bought;
+      m.unfunded = bought - m.netDeposits > Math.max(50, bought * 0.05) ? bought - m.netDeposits : 0;
+    }
+    return m;
   }).filter(x => x.start);
   // all accounts together: accounts that start later enter as a flow on their start day
   const started = list.map(x => x.start).sort();
@@ -1010,13 +1025,20 @@ function writePerformanceBlock(sheet, startRow, returns, historyValues, allocati
       sheet.getRange(kpi.row + 1, kpi.col).setValue('Since ' + returns.total.start + ' · deposits left out');
     }
   }
+  // v1.1.40: accounts whose purchases since the start exceed their recorded deposits
+  const gaps = returns.accounts.filter(x => x.unfunded > 0).map(x => '⚠️ ' + x.account + ': purchases since ' + x.start + ' (net US$' +
+    x.netBought.toFixed(2) + ') exceed the deposits recorded (US$' + x.netDeposits.toFixed(2) + ') by US$' + x.unfunded.toFixed(2) +
+    ' — unless that came from cash already in the account, deposits are missing and show up as gain. Add them: 📊 Tracker › ➕ Add Balance or Deposit.');
+  if (gaps.length) {
+    sheet.getRange(totalRow + 1, 2, gaps.length, 1).setValues(gaps.map(g => [g])).setFontSize(9).setFontColor('#B45309').setFontWeight('bold');
+  }
   const signed = sheet.getRange(first, 7, body.length, 2);
   sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().concat([
     SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor(T.good).setRanges([signed]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(0).setFontColor(T.bad).setRanges([signed]).build()]));
 
   // charts: value over time (line) and where it is (pie), side by side
-  const chartRow = totalRow + 3;
+  const chartRow = totalRow + 3 + gaps.length;
   const col = 16;   // P:S, hidden helper tables
   const totals = historyValues.slice(1).filter(r => r[0] && r[1] === HISTORY_TOTAL)
     .map(r => [r[0], invNumber(r[5])]).sort((a, b) => normalizeDateForCompare(a[0]) < normalizeDateForCompare(b[0]) ? -1 : 1);
@@ -1084,7 +1106,7 @@ function validateValuationEntry(e, todayKey) {
   if (e.mode === 'units') {
     if (!(Number(e.units) > 0) || !(Number(e.unitPrice) > 0)) return 'Units and unit price must both be greater than 0.';
   } else if (!(Number(e.amount) > 0)) {
-    return 'The balance must be greater than 0.';
+    return e.mode === 'deposit' ? 'The deposit must be greater than 0.' : 'The balance must be greater than 0.';
   }
   return null;
 }
@@ -1093,6 +1115,10 @@ function validateValuationEntry(e, todayKey) {
 function valuationRow(e) {
   const p = e.date.split('-').map(Number);
   const units = e.mode === 'units';
+  if (e.mode === 'deposit') {   // v1.1.40: money put into the account
+    return [new Date(p[0], p[1] - 1, p[2], 12), String(e.account).trim(), 'Deposit', '', '', '', Number(e.amount), '', e.currency,
+      'manual', String(e.notes || '').trim(), ''];
+  }
   return [new Date(p[0], p[1] - 1, p[2], 12), String(e.account).trim(), 'Valuation', '', units ? Number(e.units) : '',
     units ? Number(e.unitPrice) : '', units ? '' : Number(e.amount), '', e.currency, 'manual', String(e.notes || '').trim(), ''];
 }
@@ -1136,18 +1162,19 @@ function openValuationDialog() {
     <div><label for="kind">Kind</label><select id="kind">${VALUATION_KINDS.map(k => `<option>${k}</option>`).join('')}</select></div>
     <div><label for="date">Statement date</label><input id="date" type="date" value="${today}" max="${today}"></div>
   </div>
-  <label>Balance as</label>
+  <label>What to record</label>
   <div class="modes">
     <label><input type="radio" name="mode" value="units" checked onchange="mode()"> Units × unit price</label>
     <label><input type="radio" name="mode" value="amount" onchange="mode()"> A balance</label>
+    <label><input type="radio" name="mode" value="deposit" onchange="mode()"> A deposit</label>
   </div>
   <div id="unitsBox" class="row">
     <div><label for="units">Units</label><input id="units" type="number" step="any" min="0"></div>
     <div><label for="unitPrice">Unit price</label><input id="unitPrice" type="number" step="any" min="0"></div>
   </div>
   <div class="hint" id="unitsHint">A fund: units (cuotas) are in your statement; the unit price (valor cuota) in the fund's fact sheet.</div>
-  <div id="amountBox" style="display:none"><label for="amount">Balance</label><input id="amount" type="number" step="any" min="0">
-    <div class="hint">A pension: the balance of your latest statement.</div></div>
+  <div id="amountBox" style="display:none"><label for="amount" id="amountLabel">Balance</label><input id="amount" type="number" step="any" min="0">
+    <div class="hint" id="amountHint">A pension: the balance of your latest statement.</div></div>
   <div class="row">
     <div><label for="currency">Currency</label><select id="currency"><option>DOP</option><option>USD</option></select></div>
     <div><label for="notes">Notes</label><input id="notes" placeholder="optional"></div>
@@ -1161,6 +1188,11 @@ function openValuationDialog() {
     const u = pick() === 'units';
     el('unitsBox').style.display = u ? 'flex' : 'none'; el('unitsHint').style.display = u ? 'block' : 'none';
     el('amountBox').style.display = u ? 'none' : 'block';
+    const d = pick() === 'deposit';
+    el('amountLabel').textContent = d ? 'Deposit' : 'Balance';
+    el('amountHint').textContent = d ? 'Money you put into the account on that date — only deposits NOT already in the Investment Ledger ' +
+      '(bank transfers matching the account\'s keyword are added by themselves).' : 'A pension: the balance of your latest statement.';
+    el('save').textContent = d ? 'Save deposit' : 'Save balance';
   }
   function fail(m) { el('status').className = 'error'; el('status').textContent = m; }
   function save() {
@@ -1169,7 +1201,7 @@ function openValuationDialog() {
       currency: el('currency').value, notes: el('notes').value };
     if (!e.account) return fail('Give the account a name.');
     if (e.mode === 'units' && !(Number(e.units) > 0 && Number(e.unitPrice) > 0)) return fail('Units and unit price must both be greater than 0.');
-    if (e.mode === 'amount' && !(Number(e.amount) > 0)) return fail('The balance must be greater than 0.');
+    if (e.mode !== 'units' && !(Number(e.amount) > 0)) return fail(e.mode === 'deposit' ? 'The deposit must be greater than 0.' : 'The balance must be greater than 0.');
     el('save').disabled = true;
     el('status').className = 'info';
     el('status').textContent = '⏳ Saving and updating Holdings — a summary pops up in the sheet. This window will close.';
@@ -1177,7 +1209,7 @@ function openValuationDialog() {
     setTimeout(function() { google.script.host.close(); }, 1500);
   }
 </script></body></html>`).setWidth(460).setHeight(610);
-  SpreadsheetApp.getUi().showModalDialog(html, '➕ Fund or pension balance');
+  SpreadsheetApp.getUi().showModalDialog(html, '➕ Balance or deposit');
 }
 
 /** Saves one balance as a Valuation row (a new row every statement — history is kept), then rebuilds Holdings. */
@@ -1199,7 +1231,15 @@ function addValuationEntry(entry) {
       const same = existing.findIndex(r => r[LG.TYPE] === 'Valuation' && r[LG.DATE] &&
         String(r[LG.ACCOUNT]).trim().toLowerCase() === row[LG.ACCOUNT].toLowerCase() &&
         normalizeDateForCompare(r[LG.DATE]) === entry.date);
-      const updated = same !== -1;
+      if (entry.mode === 'deposit') {   // v1.1.40
+        const twice = existing.some(r => r[LG.TYPE] === 'Deposit' && r[LG.DATE] && normalizeDateForCompare(r[LG.DATE]) === entry.date &&
+          String(r[LG.ACCOUNT]).trim().toLowerCase() === row[LG.ACCOUNT].toLowerCase() && Math.abs(invNumber(r[LG.AMOUNT]) - row[LG.AMOUNT]) < 0.005);
+        if (twice) {
+          safeAlert('ℹ️ Not saved: ' + row[LG.ACCOUNT] + ' already has a deposit of ' + entry.currency + ' ' + row[LG.AMOUNT] + ' on ' + entry.date + '.');
+          return false;
+        }
+      }
+      const updated = entry.mode !== 'deposit' && same !== -1;
       if (updated) {
         sheet.getRange(same + 2, 1, 1, LEDGER_HEADERS.length).setValues([row]);
       } else {
@@ -1221,6 +1261,11 @@ function addValuationEntry(entry) {
       ensureSheetOrder();
       safeToast('Done.', '📈 Investments', 3);
       const value = entry.mode === 'units' ? Number(entry.units) * Number(entry.unitPrice) : Number(entry.amount);
+      if (entry.mode === 'deposit') {
+        safeAlert('✅ Deposit saved\n\n' + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' + Number(entry.amount).toLocaleString('en-US',
+          { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' on ' + entry.date + '\n\nIt counts as money put in, not as gain (Holdings › Performance).');
+        return true;
+      }
       safeAlert((updated ? '✅ Balance updated (same account and date)\n\n' : '✅ Balance saved\n\n') + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' +
         value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' as of ' + entry.date +
         (entry.mode === 'units' ? ' (' + entry.units + ' × ' + entry.unitPrice + ')' : '') +

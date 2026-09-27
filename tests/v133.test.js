@@ -85,7 +85,7 @@ test('the balance dialog: fields, the accounts already used, and it closes while
                        'addValuationEntry(e)', 'google.script.host.close()', 'valor cuota']) {
     assert.ok(d.html.includes(piece), piece);
   }
-  assert.match(d.title, /Fund or pension balance/);
+  assert.match(d.title, /Balance or deposit/);   // v1.1.40: it records deposits too
 });
 
 test('onOpen builds the 📊 Tracker menu, and every item calls a function that exists', () => {

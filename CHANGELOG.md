@@ -2,6 +2,16 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.40 (Sept 28, 2026) — missing deposits are flagged; deposits can be added by hand
+- **Reported:** HAPI's 2026 gain looked like it included the money put in. The maths was right (value − start − deposits);
+  the data wasn't: only the deposits the tracker saw as bank transfers were recorded, and every missing one shows up as
+  gain. Performance now checks each account: when the purchases since its start (net of sales and dividends) exceed the
+  recorded deposits by more than US$50 and 5%, it says by how much — unless that came from cash already in the account,
+  deposits are missing.
+- **📊 Tracker › ➕ Add Balance or Deposit** (was "Add Fund / Pension Balance") gains a third option, *A deposit*: money
+  put into an account on a date (a broker funded another way, pension contributions). The same deposit twice is refused.
+- Tests: 130 (mutation-checked: the funding check, duplicate deposits).
+
 ### v1.1.39 (Sept 28, 2026) — categories you set by hand are kept; HAPI's return from an earlier date
 - **Reported:** recategorizing — from the menu and in every daily run — wiped categories set by hand: a transfer you
   categorised went back to empty, a purchase you re-categorised went back to the tracker's choice. And Bank Transfers,

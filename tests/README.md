@@ -25,6 +25,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v137.test.js` | Investment changes account by account (added accounts aren't gain), status colours vs chips (ΔE ≥ 25), tab order and the settings-tab toggle, link noise in Unrecognized. |
 | `v138.test.js` | HAPI limit orders (Cost with the fee), the limit-order email leaving Unrecognized, tab order keeping hidden tabs hidden, Recategorize reordering tabs. |
 | `v139.test.js` | Hand-set categories kept (Transactions and Bank Transfers, before and after v1.1.39), rules vs your choices, HAPI's return from an earlier balance, history day bands. |
+| `v140.test.js` | Missing-deposit check (purchases vs deposits since the start), its warning in Performance, deposits from the dialog. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 
