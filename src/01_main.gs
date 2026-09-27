@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.36"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.37"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -43,6 +43,7 @@ function onOpen() {
     .addItem("🗓️ Send Monthly Summary Now", "sendMonthlySummaryNow")
     .addItem("📈 Refresh Investments", "refreshInvestmentsNow")
     .addItem("➕ Add Fund / Pension Balance", "openValuationDialog")
+    .addItem("🙈 Show / Hide Settings Tabs", "toggleSettingsTabs")
     .addItem("⚙️ View Config", "viewConfig")
     .addSeparator()
     .addItem("🗑️ Reset System", "resetSystem")

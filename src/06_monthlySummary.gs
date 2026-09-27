@@ -307,7 +307,8 @@ function buildMonthlySummaryEmail(m, opts) {
   if (m.investments) {
     const iv = m.investments;
     let inner = ekKpis([
-      { label: 'Value at month end', value: summaryUsd(iv.endValue), sub: iv.partial ? 'tracking began this month' : 'from ' + summaryUsd(iv.startValue) },
+      { label: 'Value at month end', value: summaryUsd(iv.endValue), sub: iv.partial ? 'tracking began this month'
+        : iv.added && iv.added.length ? 'added this month: ' + iv.added.join(', ') : 'from ' + summaryUsd(iv.startValue) },
       { label: 'Gain in ' + SUMMARY_MONTHS[m.month.getMonth()], value: summarySignedUsd(iv.gain),
         sub: (iv.gainPct !== null ? summarySignedPctFine(iv.gainPct) + ' · ' : '') + 'deposits left out', tone: iv.gain > 0 ? 'good' : iv.gain < 0 ? 'bad' : null },
       { label: 'Deposited', value: summaryUsd(iv.deposits), sub: 'dividends ' + summaryUsd(iv.dividends) + ' · fees ' + summaryUsd(iv.fees) }

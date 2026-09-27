@@ -22,6 +22,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v134.test.js` | Código Cash merchants (parse and repair), Holdings dates as real dates, the Dashboard look of Holdings and the other investment tabs. |
 | `v135.test.js` | Unrecognized sheet: listing, one row per email, Status kept, resolved emails removed, broker failures, data-health line; balances updated not duplicated. |
 | `v136.test.js` | Time budget: saved emails not read again, reading stops at the deadline, a stopped run finishes its steps and the next run completes it; broker emails likewise. |
+| `v137.test.js` | Investment changes account by account (added accounts aren't gain), status colours vs chips (ΔE ≥ 25), tab order and the settings-tab toggle, link noise in Unrecognized. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

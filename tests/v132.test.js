@@ -107,8 +107,11 @@ test('monthly brief: from the last value of the previous month; deposits, divide
   const ledger = L(h, [[[2026, 9, 3], 'HAPI', 'Deposit', '', '', '', 300, '', 'USD'], [[2026, 9, 12], 'HAPI', 'Dividend', 'GOOGL', '', '', 1.5, '', 'USD'],
     [[2026, 9, 10], 'HAPI', 'Buy', 'GOOGL', 1, 300, 300, 0.15, 'USD'], [[2026, 9, 20], 'Fondo', 'Deposit', '', '', '', 90000, '', 'DOP']]);
   const b = h.plain(h.ctx.investmentsMonthlyBrief(history, ledger, { usdRate: 60, month: h.date(2026, 9, 1) }));
-  assert.deepEqual([b.startDay, b.endDay, b.startValue, b.endValue], ['2026-08-31', '2026-09-30', 600, 2430]);
-  near(b.deposits, 1800);
+  // v1.1.37: "Fondo" first appears on Sep 30 — added during the month, so its start is that first value and its
+  // earlier deposit isn't this month's contribution; the gain is the same (+30 on HAPI), the row reads right
+  assert.deepEqual([b.startDay, b.endDay, b.startValue, b.endValue], ['2026-08-31', '2026-09-30', 2100, 2430]);
+  assert.deepEqual(b.added, ['Fondo']);
+  near(b.deposits, 300);
   near(b.gain, 30);
   near(b.dividends, 1.5); near(b.fees, 0.15);
   assert.deepEqual(b.allocation.map(a => a.account), ['Fondo', 'HAPI']);

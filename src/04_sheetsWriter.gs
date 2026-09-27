@@ -28,11 +28,27 @@ const TX_NUM_COLS = TX_COL.TX_REF + 1;
  * from the Excel workbook) has no way to stay in sync when the categorizer
  * changes in code.
  */
+// v1.1.37: spending, then everything about investments together, then settings
 const CANONICAL_SHEET_ORDER = [
-  "Dashboard", "Holdings", "Transactions", "Bank Transfers",
+  "Dashboard", "Transactions", "Bank Transfers",
   "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
-  "Investment Ledger", "Portfolio History", "Custom Rules", "Investment Accounts", "Configuration", "Categories"
+  "Holdings", "Investment Ledger", "Portfolio History",
+  "Custom Rules", "Investment Accounts", "Configuration", "Categories"
 ];
+// Settings tabs you rarely open; 📊 Tracker › Show / Hide Settings Tabs toggles them. Custom Rules isn't one of them:
+// it's edited often, and the summary emails link to it (a hidden sheet can't be opened from a link).
+const SETTINGS_TABS = ["Investment Accounts", "Configuration", "Categories"];
+
+/** v1.1.37: hides the settings tabs, or shows them again if any is hidden. Never done automatically. */
+function toggleSettingsTabs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tabs = SETTINGS_TABS.map(n => ss.getSheetByName(n)).filter(Boolean);
+  if (!tabs.length) return;
+  const show = tabs.some(s => s.isSheetHidden());
+  tabs.forEach(s => { if (show) s.showSheet(); else s.hideSheet(); });
+  safeAlert(show ? "👁 Settings tabs shown again: " + tabs.map(s => s.getName()).join(", ")
+    : "🙈 Settings tabs hidden: " + tabs.map(s => s.getName()).join(", ") + ".\nRun the same menu item to show them again.");
+}
 
 /**
  * v1.1.5: tab colors — every Raw_<BANK> sheet shares one common color.
@@ -171,7 +187,7 @@ function autoFitColumns(sheet, options) {
  *   · alternate rows: a faint stripe
  */
 const SHEET_THEME = {
-  headerBg: '#1F3864', headerFg: '#FFFFFF', stripe: '#F7F9FC', attention: '#FFF4D6', problem: '#FDECEC',
+  headerBg: '#1F3864', headerFg: '#FFFFFF', stripe: '#F7F9FC', attention: '#FDBA74', problem: '#FCA5A5',   // v1.1.37: were #FFF4D6 and #FDECEC, ΔE 7 and 6 from chips (tested)
   refund: '#2E7D32', keyBg: '#F3F6FB', keyFg: '#374151', example: '#9CA3AF'
 };
 const TYPE_COLORS = { 'Transfer': ['#E0F2F1', '#00695C'], 'Card Payment': ['#F3F4F6', '#4B5563'] };   // WCAG AA (was 4.39:1)
@@ -1538,7 +1554,8 @@ function recordUnrecognized(entries, readIds, now) {
   rows.forEach(r => { byId[String(r[idCol])] = r; });
   (entries || []).forEach(e => {
     const link = '=HYPERLINK("https://mail.google.com/mail/u/0/#all/' + e.id + '","Open")';
-    const snippet = String(e.snippet || '').replace(/\s+/g, ' ').trim().substring(0, 300);
+    const snippet = String(e.snippet || '').replace(/<https?:[^>]*>/g, ' ').replace(/https?:\/\/\S+/g, ' ')   // v1.1.37: no link noise
+      .replace(/\s+/g, ' ').trim().substring(0, 300);
     const known = byId[e.id];
     if (known) {                                                               // seen before: refresh, keep the Status
       known[3] = e.reason; known[4] = snippet; known[5] = link; known[8] = now;

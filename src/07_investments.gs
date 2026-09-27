@@ -869,18 +869,29 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
   const today = days[days.length - 1], prev = days.length > 1 ? days[days.length - 2] : null;
   const totalOn = d => rows.filter(r => r.day === d && r.account === HISTORY_TOTAL).reduce((s, r) => s + r.value, 0);
   const brief = { day: today, total: totalOn(today), totalDop: usdRate > 0 ? totalOn(today) * usdRate : null, prevDay: prev,
-    change: null, changePct: null, deposits: 0, movers: [], returns: opts.returns || null };
+    change: null, changePct: null, deposits: 0, movers: [], added: [], returns: opts.returns || null };
   if (prev) {
+    // v1.1.37: compared account by account. An account added to the tracker since the previous day (a fund's first
+    // balance, say) isn't gain — comparing totals counted it as one (+US$17,104 on the day two accounts were added).
+    const byAccount = d => {
+      const m = {};
+      rows.filter(r => r.day === d && r.account !== HISTORY_TOTAL).forEach(r => { m[r.account] = (m[r.account] || 0) + r.value; });
+      return m;
+    };
+    const now = byAccount(today), then = byAccount(prev);
+    const common = Object.keys(now).filter(a => a in then);
+    brief.added = Object.keys(now).filter(a => !(a in then));
     ledgerValues.slice(1).forEach(r => {
       if (!r[LG.DATE] || (r[LG.TYPE] !== 'Deposit' && r[LG.TYPE] !== 'Withdrawal')) return;
+      if (common.indexOf(String(r[LG.ACCOUNT]).trim()) === -1) return;
       const k = normalizeDateForCompare(r[LG.DATE]);
       if (k <= prev || k > today) return;
       const cur = String(r[LG.CURRENCY] || 'USD').toUpperCase();
       const amount = cur === 'DOP' ? (usdRate > 0 ? invNumber(r[LG.AMOUNT]) / usdRate : 0) : invNumber(r[LG.AMOUNT]);
       brief.deposits += r[LG.TYPE] === 'Deposit' ? amount : -amount;
     });
-    const before = totalOn(prev);
-    brief.change = brief.total - before - brief.deposits;
+    const before = common.reduce((t, a) => t + then[a], 0), after = common.reduce((t, a) => t + now[a], 0);
+    brief.change = after - before - brief.deposits;
     brief.changePct = before > 0 ? brief.change / before : null;
     const prevPrice = {};
     rows.filter(r => r.day === prev && r.price > 0).forEach(r => { prevPrice[r.account + '|' + r.ticker] = r.price; });
@@ -898,14 +909,30 @@ function investmentsMonthlyBrief(historyValues, ledgerValues, opts) {
   const usdRate = Number(opts.usdRate) || 0;
   const monthKey = normalizeDateForCompare(opts.month).slice(0, 7);
   const rows = historyValues.slice(1).filter(r => r[0]).map(r => ({ day: normalizeDateForCompare(r[0]), account: r[1], value: invNumber(r[5]) }));
-  const totals = rows.filter(r => r.account === HISTORY_TOTAL).sort((a, b) => a.day < b.day ? -1 : 1);
-  const inMonth = totals.filter(r => r.day.slice(0, 7) === monthKey);
+  const days = rows.filter(r => r.account === HISTORY_TOTAL).map(r => r.day).sort();
+  const inMonth = days.filter(d => d.slice(0, 7) === monthKey);
   if (!inMonth.length) return null;
-  const end = inMonth[inMonth.length - 1];
-  const before = totals.filter(r => r.day.slice(0, 7) < monthKey);
-  const startRow = before.length ? before[before.length - 1] : inMonth[0];
-  const brief = { endDay: end.day, startDay: startRow.day, startValue: startRow.value, endValue: end.value,
-    deposits: 0, dividends: 0, fees: 0, allocation: [], returns: opts.returns || null, partial: !before.length };
+  const endDay = inMonth[inMonth.length - 1];
+  const before = days.filter(d => d.slice(0, 7) < monthKey);
+  const startDay = before.length ? before[before.length - 1] : inMonth[0];
+  const valueOn = d => {
+    const m = {};
+    rows.filter(r => r.day === d && r.account !== HISTORY_TOTAL).forEach(r => { m[r.account] = (m[r.account] || 0) + r.value; });
+    return m;
+  };
+  // v1.1.37: account by account — an account's start is its value when the month began, or, if it was added during
+  // the month, its first recorded value (so adding an account is not counted as gain)
+  const end = valueOn(endDay), start = valueOn(startDay), from = {}, added = [];
+  const accounts = Object.keys(end).concat(Object.keys(start).filter(a => !(a in end)));
+  accounts.forEach(a => {
+    if (a in start) { from[a] = { day: startDay, value: start[a] }; return; }
+    const first = inMonth.find(d => rows.some(r => r.day === d && r.account === a));
+    from[a] = { day: first, value: valueOn(first)[a] || 0 };
+    added.push(a);
+  });
+  const brief = { endDay: endDay, startDay: startDay, startValue: accounts.reduce((t, a) => t + from[a].value, 0),
+    endValue: accounts.reduce((t, a) => t + (end[a] || 0), 0), deposits: 0, dividends: 0, fees: 0, allocation: [],
+    added: added, returns: opts.returns || null, partial: !before.length };
   ledgerValues.slice(1).forEach(r => {
     if (!r[LG.DATE]) return;
     const k = normalizeDateForCompare(r[LG.DATE]);
@@ -916,16 +943,15 @@ function investmentsMonthlyBrief(historyValues, ledgerValues, opts) {
       if (r[LG.TYPE] === 'Fee') brief.fees += usd(invNumber(r[LG.AMOUNT]));
       if (r[LG.TYPE] === 'Buy' || r[LG.TYPE] === 'Sell') brief.fees += usd(invNumber(r[LG.FEE]));
     }
-    if ((r[LG.TYPE] === 'Deposit' || r[LG.TYPE] === 'Withdrawal') && k > startRow.day && k <= end.day) {
+    const a = String(r[LG.ACCOUNT]).trim();
+    if ((r[LG.TYPE] === 'Deposit' || r[LG.TYPE] === 'Withdrawal') && from[a] && k > from[a].day && k <= endDay) {
       brief.deposits += (r[LG.TYPE] === 'Deposit' ? 1 : -1) * usd(invNumber(r[LG.AMOUNT]));
     }
   });
   brief.gain = brief.endValue - brief.startValue - brief.deposits;
   brief.gainPct = brief.startValue > 0 ? brief.gain / brief.startValue : null;
-  const byAccount = {};
-  rows.filter(r => r.day === end.day && r.account !== HISTORY_TOTAL).forEach(r => { byAccount[r.account] = (byAccount[r.account] || 0) + r.value; });
-  brief.allocation = Object.keys(byAccount).map(a => ({ account: a, value: byAccount[a], share: end.value > 0 ? byAccount[a] / end.value : 0 }))
-    .sort((a, b) => b.value - a.value);
+  brief.allocation = Object.keys(end).map(a => ({ account: a, value: end[a], share: brief.endValue > 0 ? end[a] / brief.endValue : 0 }))
+    .sort((x, y) => y.value - x.value);
   return brief;
 }
 

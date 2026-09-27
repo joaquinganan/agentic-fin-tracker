@@ -535,7 +535,8 @@ function buildDailySummaryEmail(s, opts) {
     let inner = ekKpis([
       { label: 'Portfolio', value: summaryUsd(iv.total), sub: iv.totalDop ? summaryMoney(iv.totalDop) : '' },
       { label: since ? 'Since ' + since : 'Change', value: iv.change === null ? '—' : summarySignedUsd(iv.change),
-        sub: iv.change === null ? 'first day recorded' : summarySignedPctFine(iv.changePct || 0) + (iv.deposits ? ' · deposits left out' : ''),
+        sub: iv.change === null ? 'first day recorded' : summarySignedPctFine(iv.changePct || 0) + (iv.deposits ? ' · deposits left out' : '') +
+          (iv.added && iv.added.length ? ' · new account(s) not counted' : ''),
         tone: iv.change > 0 ? 'good' : iv.change < 0 ? 'bad' : null },
       { label: 'Since tracking began', value: iv.returns && iv.returns.periodReturn !== null ? summarySignedPctFine(iv.returns.periodReturn) : '—',
         sub: iv.returns ? summarySignedUsd(iv.returns.gain) : '' }

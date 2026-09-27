@@ -197,6 +197,9 @@ class FakeSheet {
   getColumnWidth(c) { return this.widths[c] || 100; }
   setColumnWidth(c, w) { this.widths[c] = w; return this; }
   isColumnHiddenByUser(c) { return this.hidden.indexOf(c) !== -1; }
+  hideSheet() { this.sheetHidden = true; return this; }
+  showSheet() { this.sheetHidden = false; return this; }
+  isSheetHidden() { return !!this.sheetHidden; }
   /** Rough stand-in for Sheets' fit-to-content: 7 px per character + 8. */
   autoResizeColumns(start, n) {
     for (let c = start; c < start + n; c++) {

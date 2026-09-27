@@ -2,6 +2,18 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.37 (Sept 28, 2026) — investment changes account by account; distinct status colours; tab groups
+- **Reported:** the daily email showed "+US$17,104 since Sat 26 Sep" — the day a fund and a pension were added. The change
+  compared totals, so accounts added to the tracker counted as gain. Daily and monthly changes are now measured account
+  by account: an account added in the period starts from its first recorded value, and the email says so.
+- **Reported:** transfers without a category were highlighted in a colour close to Electricity's chip. A test now measures
+  the perceptual distance (CIE ΔE) between every status colour and every category chip and requires ≥ 25 — it also
+  caught the unreadable-merchant row colour at ΔE 5.8 from Rent's chip. Both changed (#FDBA74, #FCA5A5).
+- **Tabs grouped**: spending, then Holdings / Investment Ledger / Portfolio History together, then settings.
+  **📊 Tracker › 🙈 Show / Hide Settings Tabs** hides Investment Accounts, Configuration and Categories (Custom Rules stays:
+  it's edited often and the emails link to it). Never automatic, and reordering never unhides them.
+- Unrecognized: tracking links are removed from "What the email says". Tests: 116.
+
 ### v1.1.36 (Sept 27, 2026) — runs stop in time and resume; saved emails aren't read again
 - Reported: a long run (a big date range) hit Apps Script's 6-minute limit — killed mid-step, with the "Saving…" toast
   left on screen and the last steps (recategorize, derived sheets, investments, Unrecognized) never run. A hard kill
