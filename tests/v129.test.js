@@ -91,12 +91,71 @@ test('positions: a sale with no position is flagged, never turned into negative 
   assert.match(r.warnings[0], /HAPI TSLA: sale on 2026-09-01 with no position — add a Snapshot/);
 });
 
-test('prices: GOOGLEFINANCE with a sanity check against the last known price; crypto symbols mapped', () => {
+test('tiny prices keep their precision all the way into Holdings (v1.1.30)', () => {
+  const mock = makeServices();
+  const h = load({ services: mock.services });
+  const led = h.ctx.getOrCreateLedgerSheet();
+  led.getRange(2, 1, 2, 12).setValues([
+    [h.date(2026, 9, 26), 'HAPI', 'Snapshot', 'SHIBUSD', 50000.5, 0.0000061234, 0.4, '', 'USD', 'manual', '', ''],   // fictitious
+    [h.date(2026, 9, 26), 'HAPI', 'Snapshot', 'NVDA', 3.1, 180.5, 500, '', 'USD', 'manual', '', '']]);
+  h.ctx.refreshHoldings();                                   // no Coinbase answer in this test → last known price
+  const hold = mock.ss.getSheetByName('Holdings');
+  const shib = hold._rows(13).find(r => r[2] === 'SHIBUSD');
+  assert.equal(shib[6], 0.0000061234, 'not rounded to 0.000006');
+  assert.equal(shib[12], 'last known (Coinbase unavailable)');
+  assert.ok([...hold.cells.values()].map(String).some(c => c.includes('GOOGLEFINANCE("NVDA","price")/180.5-1)')));
+  assert.equal(h.ctx.formulaNumber(5e-9), '0.000000005', 'never scientific notation in a formula');
+  assert.equal(h.ctx.formulaNumber(1234.5678), '1234.5678');
+});
+
+test('crypto is priced from Coinbase (GOOGLEFINANCE errors on crypto pairs); failures fall back to the last known price (v1.1.31)', () => {
+  const mock = makeServices();
+  const h = load({ services: mock.services });
+  mock.http.responses['https://api.coinbase.com/v2/prices/ETH-USD/spot'] = { code: 200, body: JSON.stringify({ data: { base: 'ETH', currency: 'USD', amount: '2750.12' } }) };
+  mock.http.responses['https://api.coinbase.com/v2/prices/SHIB-USD/spot'] = { code: 500, body: 'oops' };
+  const led = h.ctx.getOrCreateLedgerSheet();
+  led.getRange(2, 1, 3, 12).setValues([
+    [h.date(2026, 9, 26), 'HAPI', 'Snapshot', 'ETHUSD', 0.5, 2600, 1100, '', 'USD', 'manual', '', ''],
+    [h.date(2026, 9, 26), 'HAPI', 'Snapshot', 'SHIBUSD', 50000.5, 0.0000061234, 0.4, '', 'USD', 'manual', '', ''],
+    [h.date(2026, 9, 26), 'HAPI', 'Snapshot', 'GOOGL', 2, 300, 500, '', 'USD', 'manual', '', '']]);
+  h.ctx.refreshHoldings();
+  assert.deepEqual(mock.http.requests.slice().sort(), ['https://api.coinbase.com/v2/prices/ETH-USD/spot', 'https://api.coinbase.com/v2/prices/SHIB-USD/spot'],
+    'one batch, crypto only — stocks stay on GOOGLEFINANCE');
+  const rows = mock.ss.getSheetByName('Holdings')._rows(13);
+  const eth = rows.find(r => r[2] === 'ETHUSD'), shib = rows.find(r => r[2] === 'SHIBUSD');
+  assert.equal(eth[6], 2750.12);
+  assert.match(eth[12], /^Coinbase · \d{4}-\d{2}-\d{2}/);
+  assert.equal(eth[7], '=D' + (rows.indexOf(eth) + 2) + '*G' + (rows.indexOf(eth) + 2), 'market value still a formula');
+  assert.deepEqual([shib[6], shib[12]], [0.0000061234, 'last known (Coinbase unavailable)']);
+  // Coinbase unreachable altogether: nothing breaks
+  const m2 = makeServices(); const h2 = load({ services: m2.services });
+  m2.http.responses['https://api.coinbase.com/v2/prices/ETH-USD/spot'] = new Error('DNS error');
+  h2.ctx.getOrCreateLedgerSheet().getRange(2, 1, 1, 12).setValues([[h2.date(2026, 9, 26), 'HAPI', 'Snapshot', 'ETHUSD', 0.5, 2600, 1100, '', 'USD', 'manual', '', '']]);
+  h2.ctx.refreshHoldings();
+  assert.equal(m2.ss.getSheetByName('Holdings')._rows(13).find(r => r[2] === 'ETHUSD')[6], 2600);
+});
+
+test('sanity check: only against a recent last known price — a real 50%+ move after months is not frozen (v1.1.31)', () => {
   const h = load();
-  const f = h.plain(h.ctx.holdingPriceFormulas('ETHUSD', 2700));
-  assert.equal(f.price, '=IFERROR(IF(ABS(GOOGLEFINANCE("CURRENCY:ETHUSD","price")/2700-1)>0.5,2700,GOOGLEFINANCE("CURRENCY:ETHUSD","price")),2700)');
+  const recent = h.plain(h.ctx.holdingPriceFormulas('NVDA', 110, { lastPriceDay: '2026-08-01', today: '2026-09-26' }));
+  assert.match(recent.price, /ABS\(GOOGLEFINANCE\("NVDA","price"\)\/110-1\)>0\.5/);
+  const stale = h.plain(h.ctx.holdingPriceFormulas('NVDA', 110, { lastPriceDay: '2026-03-01', today: '2026-09-26' }));
+  assert.equal(stale.price, '=IFERROR(GOOGLEFINANCE("NVDA","price"),110)', 'older than 90 days: trust the live price');
+  assert.equal(stale.source, '=IF(ISERROR(GOOGLEFINANCE("NVDA","price")),"last known","live")');
+  // crypto: a fetched price 10× the recent last known one is suspicious; the same after 6 months is not
+  assert.deepEqual(h.plain(h.ctx.holdingPriceFormulas('ETHUSD', 2600, { fetched: 26000, lastPriceDay: '2026-09-20', today: '2026-09-26' })),
+    { price: 2600, source: 'last known — check Coinbase price' });
+  assert.equal(h.plain(h.ctx.holdingPriceFormulas('ETHUSD', 2600, { fetched: 5200, lastPriceDay: '2026-03-01', today: '2026-09-26' })).price, 5200);
+});
+
+test('prices: GOOGLEFINANCE for stocks and ETFs; crypto pairs recognised', () => {
+  const h = load();
+  const f = h.plain(h.ctx.holdingPriceFormulas('GOOGL', 300));
+  assert.equal(f.price, '=IFERROR(IF(ABS(GOOGLEFINANCE("GOOGL","price")/300-1)>0.5,300,GOOGLEFINANCE("GOOGL","price")),300)');
   assert.match(f.source, /check symbol/);
   assert.equal(h.plain(h.ctx.holdingPriceFormulas('XYZ', 0)).price, '=IFERROR(GOOGLEFINANCE("XYZ","price"),0)');
+  assert.deepEqual(['ETHUSD', 'BTCUSD', 'SHIBUSD', 'DOGEUSD', 'GOOGL', 'SOXX', 'NVDA', 'QQQ'].map(t => h.ctx.isCryptoPair(t)),
+    [true, true, true, true, false, false, false, false]);
 });
 
 // ---- the whole run

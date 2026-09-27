@@ -41,8 +41,54 @@ const DEFAULT_INVESTMENT_ACCOUNTS = [
 const BROKER_PATTERNS = {
   HAPI: { searchQuery: 'from:no-reply@hapi.trade', sender: 'hapi.trade', parse: parseHapiMessage }
 };
-// GOOGLEFINANCE symbols for tickers it doesn't know as they are
-const PRICE_SYMBOLS = { ETHUSD: 'CURRENCY:ETHUSD', BTCUSD: 'CURRENCY:BTCUSD' };
+// GOOGLEFINANCE symbols for tickers it doesn't know as they are. v1.1.30: any crypto pair — 6+ letters ending in USD
+// (ETHUSD, SHIBUSD…) — is CURRENCY:<pair>; US stock tickers have at most 5 letters, so none is caught by mistake.
+const PRICE_SYMBOLS = {};
+function priceSymbol(ticker) {
+  if (PRICE_SYMBOLS[ticker]) return PRICE_SYMBOLS[ticker];
+  return /^[A-Z]{3,}USD$/.test(ticker) && ticker.length >= 6 ? 'CURRENCY:' + ticker : ticker;
+}
+/**
+ * v1.1.31: GOOGLEFINANCE doesn't price crypto pairs — ETHUSD and SHIBUSD returned errors in a live sheet (a known
+ * limitation). Crypto comes from Coinbase's public spot price (no key), fetched by the script on every refresh;
+ * stocks and ETFs stay on GOOGLEFINANCE. Crypto prices therefore update when the tracker runs, not continuously.
+ */
+const CRYPTO_PRICE_URL = pair => 'https://api.coinbase.com/v2/prices/' + pair + '/spot';
+function isCryptoPair(ticker) { return /^[A-Z]{3,}USD$/.test(ticker) && ticker.length >= 6; }
+// v1.1.31: the sanity check only trusts a RECENT last known price — after months without trades a 50%+ move is real
+// (the first version would have frozen such a position at its old price, labelled "check symbol").
+const SANITY_MAX_AGE_DAYS = 90;
+function daysBetween(fromKey, toKey) {
+  const d = k => { const p = String(k).split('-').map(Number); return Date.UTC(p[0], p[1] - 1, p[2]); };
+  return Math.round((d(toKey) - d(fromKey)) / 86400000);
+}
+
+/** Coinbase spot prices for the crypto pairs among `tickers` → { TICKER: price }; missing on any failure. */
+function fetchCryptoPrices(tickers) {
+  const pairs = tickers.filter(isCryptoPair).filter((t, i, a) => a.indexOf(t) === i);
+  const out = {};
+  if (!pairs.length) return out;
+  let responses;
+  try {
+    responses = UrlFetchApp.fetchAll(pairs.map(t => ({ url: CRYPTO_PRICE_URL(t.slice(0, -3) + '-USD'), muteHttpExceptions: true })));
+  } catch (error) {
+    Logger.log('Crypto prices unavailable: ' + error);
+    return out;
+  }
+  responses.forEach((response, i) => {
+    try {
+      if (response.getResponseCode() !== 200) return;
+      const amount = Number(JSON.parse(response.getContentText()).data.amount);
+      if (amount > 0) out[pairs[i]] = amount;
+    } catch (error) {
+      Logger.log('Crypto price for ' + pairs[i] + ' unreadable: ' + error);
+    }
+  });
+  return out;
+}
+
+// prices under a cent (e.g. SHIB) keep 8 decimals instead of showing US$0.00
+const USD_PRICE_FORMAT = '[<0.01]"US$"0.00000000;"US$"#,##0.00';
 // A live price this far from the last known one is treated as a wrong symbol (e.g. a ticker Google maps to another security)
 const PRICE_SANITY = 0.5;
 
@@ -316,22 +362,50 @@ function computeHoldings(values, opts) {
   };
 }
 
-/** GOOGLEFINANCE price with a sanity check against the last known price (see PRICE_SANITY). */
-function holdingPriceFormulas(ticker, lastPrice) {
-  const symbol = PRICE_SYMBOLS[ticker] || ticker;
+/**
+ * A number as formula text: 10 significant digits, never scientific notation. v1.1.30: the last
+ * known price used to be rounded to 6 decimals, which turned a SHIB-sized 0.0000061234 into 0.000006 (−2%).
+ */
+function formulaNumber(x) {
+  const n = Number(Number(x).toPrecision(10));
+  return /e/i.test(String(n)) ? n.toFixed(20).replace(/0+$/, '').replace(/\.$/, '') : String(n);
+}
+
+/**
+ * Price and Price source cells of a position. Stocks/ETFs: GOOGLEFINANCE formulas (live in the sheet). Crypto: the
+ * value fetched from Coinbase (opts.fetched). Both fall back to the last known price, and both are compared with it
+ * when that price is recent (see PRICE_SANITY, SANITY_MAX_AGE_DAYS).
+ */
+function holdingPriceFormulas(ticker, lastPrice, opts) {
+  opts = opts || {};
+  const recent = !(opts.lastPriceDay && opts.today) || daysBetween(opts.lastPriceDay, opts.today) <= SANITY_MAX_AGE_DAYS;
+  if (isCryptoPair(ticker)) {
+    const fetched = Number(opts.fetched) || 0;
+    if (fetched > 0 && !(lastPrice > 0 && recent && Math.abs(fetched / lastPrice - 1) > PRICE_SANITY)) {
+      return { price: fetched, source: 'Coinbase' + (opts.fetchedAt ? ' · ' + opts.fetchedAt : '') };
+    }
+    if (fetched > 0) return { price: lastPrice, source: 'last known — check Coinbase price' };
+    return { price: lastPrice > 0 ? lastPrice : 0, source: lastPrice > 0 ? 'last known (Coinbase unavailable)' : 'no price' };
+  }
+  const symbol = priceSymbol(ticker);
   const live = 'GOOGLEFINANCE("' + symbol + '","price")';
   if (!(lastPrice > 0)) {
     return { price: '=IFERROR(' + live + ',0)', source: '=IF(ISERROR(' + live + '),"no price","live")' };
   }
-  const off = 'ABS(' + live + '/' + lastPrice + '-1)>' + PRICE_SANITY;
+  const last = formulaNumber(lastPrice);
+  if (!recent) {
+    return { price: '=IFERROR(' + live + ',' + last + ')', source: '=IF(ISERROR(' + live + '),"last known","live")' };
+  }
+  const off = 'ABS(' + live + '/' + last + '-1)>' + PRICE_SANITY;
   return {
-    price: '=IFERROR(IF(' + off + ',' + lastPrice + ',' + live + '),' + lastPrice + ')',
+    price: '=IFERROR(IF(' + off + ',' + last + ',' + live + '),' + last + ')',
     source: '=IFERROR(IF(' + off + ',"last known — check symbol","live"),"last known")'
   };
 }
 
 /** Writes the Holdings sheet from computeHoldings(). Values come from formulas, so prices stay live. */
-function buildHoldingsSheet(h) {
+function buildHoldingsSheet(h, prices) {
+  prices = prices || {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(HOLDINGS_SHEET);
   if (sheet) { sheet.clear(); sheet.setConditionalFormatRules([]); }
@@ -347,13 +421,17 @@ function buildHoldingsSheet(h) {
   sheet.getRange('B2').setValue('📈 Investments').setFontSize(18).setFontWeight('bold').setFontColor(T.headerBg);
   sheet.getRange('B3').setValue('Positions from the Investment Ledger · prices from GOOGLEFINANCE (delayed up to 20 min) · built ' +
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')).setFontSize(9).setFontColor('#6B7280');
+  if (h.positions.some(p => isCryptoPair(p.ticker))) {
+    sheet.getRange('B3').setValue(sheet.getRange('B3').getValue() + ' · crypto from Coinbase when the tracker runs');
+  }
 
   // positions
   sheet.getRange(R.posHead, 2).setValue('Positions').setFontWeight('bold').setFontColor(T.headerBg);
   const heads = ['Account', 'Ticker', 'Shares', 'Avg cost', 'Cost basis', 'Price', 'Market value', 'Unrealized P/L', 'P/L %', 'Weight', 'Dividends', 'Price source'];
   sheet.getRange(R.posCols, 2, 1, heads.length).setValues([heads]);
   const posRows = h.positions.length ? h.positions.map((p, i) => {
-    const r = R.posFirst + i, f = holdingPriceFormulas(p.ticker, +p.lastPrice.toFixed(6));
+    const r = R.posFirst + i, f = holdingPriceFormulas(p.ticker, p.lastPrice, { lastPriceDay: p.lastPriceDay,
+      today: prices.today, fetched: (prices.fetched || {})[p.ticker], fetchedAt: prices.fetchedAt });
     return [p.account, p.ticker, p.qty, '=F' + r + '/D' + r, p.cost, f.price, '=D' + r + '*G' + r, '=H' + r + '-F' + r,
       '=IF(F' + r + '>0,I' + r + '/F' + r + ',"")', '=IF($H$' + R.posTotal + '>0,H' + r + '/$H$' + R.posTotal + ',"")', p.dividends, f.source];
   }) : [['No positions yet — add a Snapshot to the Investment Ledger', '', '', '', '', '', '', '', '', '', '', '']];
@@ -404,6 +482,8 @@ function buildHoldingsSheet(h) {
   const nRows = R.posTotal - R.posFirst + 1;
   sheet.getRange(R.posFirst, 4, nRows, 1).setNumberFormat('0.00000');
   sheet.getRange(R.posFirst, 5, nRows, 5).setNumberFormat(usd);
+  sheet.getRange(R.posFirst, 5, nRows, 1).setNumberFormat(USD_PRICE_FORMAT);   // Avg cost
+  sheet.getRange(R.posFirst, 7, nRows, 1).setNumberFormat(USD_PRICE_FORMAT);   // Price
   sheet.getRange(R.posFirst, 10, nRows, 2).setNumberFormat(pct);
   sheet.getRange(R.posFirst, 12, nRows, 1).setNumberFormat(usd);
   sheet.getRange(R.valFirst, 3, nVal, 1).setNumberFormat('#,##0.00');
@@ -429,7 +509,8 @@ function styleLedgerSheet(sheet) {
   const rows = Math.max(sheet.getMaxRows() - 1, 1);
   sheet.getRange(2, LG.DATE + 1, rows, 1).setNumberFormat('yyyy-MM-dd');
   sheet.getRange(2, LG.QTY + 1, rows, 1).setNumberFormat('0.00000###');
-  sheet.getRange(2, LG.PRICE + 1, rows, 3).setNumberFormat('#,##0.00###');
+  sheet.getRange(2, LG.PRICE + 1, rows, 1).setNumberFormat('#,##0.00######');   // up to 8 decimals (SHIB-sized prices)
+  sheet.getRange(2, LG.AMOUNT + 1, rows, 2).setNumberFormat('#,##0.00');
   sheet.getRange(2, LG.TYPE + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(LEDGER_TYPES, true).setAllowInvalid(false).build());
   const colours = { Buy: ['#E8F5E9', '#2E7D32'], Sell: ['#FDECEC', '#B91C1C'], Dividend: ['#F3E8FF', '#7E22CE'],
@@ -462,7 +543,9 @@ function refreshHoldings() {
   let usdRate = 0;
   try { usdRate = readDashboardRates(SpreadsheetApp.getActiveSpreadsheet()).USD; } catch (error) { usdRate = 0; }
   const h = computeHoldings(ledger.getDataRange().getValues(), { usdRate: usdRate, year: new Date().getFullYear() });
-  buildHoldingsSheet(h);
+  const now = new Date();
+  buildHoldingsSheet(h, { today: normalizeDateForCompare(now), fetched: fetchCryptoPrices(h.positions.map(p => p.ticker)),
+    fetchedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') });
   return h;
 }
 

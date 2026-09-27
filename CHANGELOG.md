@@ -2,6 +2,25 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.31 (Sept 26, 2026) — crypto prices from Coinbase; sanity check only against recent prices
+- Reported from a live sheet: ETHUSD and SHIBUSD showed "last known" — `GOOGLEFINANCE` doesn't price crypto pairs
+  (a known limitation). Crypto now comes from Coinbase's public spot price (`/v2/prices/<PAIR>/spot`, no key), one
+  batched fetch per refresh; stocks and ETFs stay on `GOOGLEFINANCE`. If Coinbase doesn't answer, the last known
+  price is used and labelled.
+- Design fix found while doing it: the price sanity check compared a live price with the last known one however old
+  it was — after months without trades, a real 50%+ move (NVDA has done it) would have frozen the position at its
+  old price. The check now applies only when the last known price is 90 days old or newer.
+- The test mock gains `UrlFetchApp` (responses per URL, failures). Tests: 84 (mutation-checked).
+
+### v1.1.30 (Sept 26, 2026) — crypto pairs and tiny prices
+- Every crypto pair (6+ letters ending in USD: ETHUSD, SHIBUSD…) is priced as `CURRENCY:<pair>`; before, only ETH and
+  BTC were mapped, so SHIBUSD had no live price.
+- The last known price went into the Holdings formula rounded to 6 decimals — a price like 0.0000061234 became 0.000006
+  (+4% on the position). Now written with 10 significant digits, never in scientific notation. Found while loading a
+  real portfolio; covered by a test that goes through the whole Holdings build (the old test called the price
+  function directly and missed it).
+- Prices under a cent show 8 decimals instead of US$0.00. Tests: 82.
+
 ### v1.1.29 (Sept 26, 2026) — investments: ledger, HAPI emails, holdings
 - New file **`07_investments.gs`** and three sheets: **Investment Ledger** (every movement), **Holdings** (positions
   valued with `GOOGLEFINANCE`, other accounts, total in US$ and DOP-equivalent) and **Investment Accounts**.

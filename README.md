@@ -84,7 +84,8 @@ The full history — what was wrong, how it was found and what changed — is in
   cancel the original purchase.
 - **Deduplicates** by Gmail message id and by the bank's own reference number.
 - **Investments** (Investment Ledger → Holdings): broker emails (HAPI orders and dividends), deposits from bank
-  transfers, snapshots and balances for funds or pensions; positions valued live with `GOOGLEFINANCE`.
+  transfers, snapshots and balances for funds or pensions; stocks and ETFs valued live with `GOOGLEFINANCE`,
+  crypto with Coinbase's public price.
 - **Readable data sheets:** a coloured chip per category, and the rows that need attention — transfers without a
   category, unreadable merchants — highlighted automatically.
 - **Dashboard** with KPI cards, categories by month, fixed vs. variable, spend by bank, a year heat map, and a

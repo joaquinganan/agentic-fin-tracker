@@ -257,6 +257,7 @@ function makeServices(options) {
   const ui = { dialogs: [], alerts: [] };
   const triggers = [];
   const props = {};
+  const http = { responses: {}, requests: [] };   // UrlFetchApp: http.responses[url] = { code, body }
   const validationBuilder = () => {
     const rule = {};
     const b = { requireValueInList: (list, dropdown) => { rule.list = list.slice(); rule.dropdown = dropdown; return b; },
@@ -324,6 +325,17 @@ function makeServices(options) {
         setProperty: (k, v) => { props[k] = String(v); }
       })
     },
+    UrlFetchApp: {
+      fetchAll(requests) {
+        return requests.map(req => {
+          if (typeof req !== 'object' || !req.url) throw new Error('Mock: fetchAll takes request objects with a url');
+          http.requests.push(req.url);
+          const r = http.responses[req.url];
+          if (r instanceof Error) throw r;
+          return { getResponseCode: () => (r ? r.code : 404), getContentText: () => (r ? r.body : 'Not found') };
+        });
+      }
+    },
     LockService: {
       getScriptLock: () => ({
         tryLock: () => { if (lock.refuse || lock.held) return false; lock.held = true; return true; },
@@ -331,7 +343,7 @@ function makeServices(options) {
       })
     }
   };
-  return { services, ss, gmail, lock, ui, triggers, props };
+  return { services, ss, gmail, lock, ui, triggers, props, http };
 }
 
 function fakeThread(id, messages) {
