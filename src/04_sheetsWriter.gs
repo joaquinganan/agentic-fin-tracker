@@ -270,8 +270,8 @@ function styleTrackerSheets() {
       else if (name === CUSTOM_RULES_SHEET) styleCustomRulesSheet(sheet, palette);
       else if (name === CONFIG_SHEET) styleConfigurationSheet(sheet);
       else if (name === INVESTMENT_LEDGER_SHEET) styleLedgerSheet(sheet);                 // v1.1.29
-      else if (name === INVESTMENT_ACCOUNTS_SHEET) styleHeader(sheet, ACCOUNTS_HEADERS.length);
-      else if (name === HISTORY_SHEET) styleHeader(sheet, HISTORY_HEADERS.length);
+      else if (name === INVESTMENT_ACCOUNTS_SHEET) styleAccountsSheet(sheet);   // v1.1.34
+      else if (name === HISTORY_SHEET) styleHistorySheet(sheet);
     } catch (error) {
       Logger.log("Could not style " + name + ": " + error);
     }
@@ -613,6 +613,18 @@ function recategorizeAllTransactions(userEmail) {
     const changedCols = new Set();
 
     values.forEach(row => {
+      // v1.1.34: the ONE merchant repair recategorize makes, kept outside computeRecategorization (which must never
+      // rewrite merchants — C5): a merchant that is exactly a status word ("Aprobada") was never a merchant.
+      const fixed = fixStatusAsMerchant(row[TX_COL.MERCHANT], row[TX_COL.SUBJECT], '');
+      if (fixed !== row[TX_COL.MERCHANT]) {
+        if (!row[TX_COL.DESCRIPTION] || row[TX_COL.DESCRIPTION] === row[TX_COL.MERCHANT]) {
+          row[TX_COL.DESCRIPTION] = fixed;
+          changedCols.add(TX_COL.DESCRIPTION);
+        }
+        row[TX_COL.MERCHANT] = fixed;
+        changedCols.add(TX_COL.MERCHANT);
+        totalChanged++;
+      }
       const r = computeRecategorization(row, rawCustomRules);
       [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, r.category], [TX_COL.CURRENCY, r.currency],
        [TX_COL.IS_CREDIT, r.isCredit], [TX_COL.IS_CASHBACK, r.isCashback]].forEach(pair => {

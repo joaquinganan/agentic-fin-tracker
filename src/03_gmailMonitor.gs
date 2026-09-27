@@ -541,6 +541,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
     const type = detectTransactionType(subject, plainText);
 
     let items = extractTransactionItems(bank, type, plainText);
+    items.forEach(it => { it.merchant = fixStatusAsMerchant(it.merchant, subject, plainText); });   // v1.1.34
     const declinedRows = items.filter(it => it.declined).length;
     items = items.filter(it => !it.declined);
     if (items.length === 0 && declinedRows > 0) {
@@ -873,6 +874,19 @@ function extractBHDConsumoTransactions(text) {
 const GARBLED_PLACEHOLDER = '(unparsed — see Email Subject)'; // v1.1.19: moved here from 04_sheetsWriter.gs
 
 const REVERSAL_UNMATCHED = 'Reversal (original purchase not found)'; // v1.1.23
+
+/**
+ * v1.1.34: a POPULAR "Código Cash" withdrawal has no merchant column (Monto | Moneda | Fecha | Estatus), so the
+ * status word after the date — "Aprobada" — was saved as the merchant (seen in a live Raw_POPULAR). A status word is
+ * never a merchant: a Código Cash email gets a clear label, anything else the unreadable-merchant placeholder.
+ * The category stays the fallback, Dining/Delivery + Entertainment + Other.
+ */
+const STATUS_WORD_MERCHANT = /^(APROBAD[AO]|RECHAZAD[AO]|DECLINAD[AO]|REVERSAD[AO]|REVERSO)$/i;
+const CODIGO_CASH_MERCHANT = 'Código Cash (cash withdrawal)';
+function fixStatusAsMerchant(merchant, subject, text) {
+  if (!STATUS_WORD_MERCHANT.test(String(merchant || '').trim())) return merchant;
+  return /C[OÓ]DIGO\s*CASH/i.test(String(subject || '') + ' ' + String(text || '')) ? CODIGO_CASH_MERCHANT : GARBLED_PLACEHOLDER;
+}
 
 function looksGarbled(text) {
   if (!text) return false;

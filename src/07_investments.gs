@@ -403,36 +403,78 @@ function holdingPriceFormulas(ticker, lastPrice, opts) {
   };
 }
 
-/** Writes the Holdings sheet from computeHoldings(). Values come from formulas, so prices stay live. */
+/**
+ * Writes the Holdings sheet from computeHoldings() — v1.1.34: the Dashboard's look (title band, KPI cards,
+ * sections, striped tables, total rows). Prices stay live: stocks/ETFs are GOOGLEFINANCE formulas.
+ * Columns B–M of the positions table are fixed (the history reads Market value from column H).
+ */
 function buildHoldingsSheet(h, prices) {
   prices = prices || {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(HOLDINGS_SHEET);
   if (sheet) {
+    sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
     sheet.clear();
     sheet.setConditionalFormatRules([]);
     sheet.getCharts().forEach(c => sheet.removeChart(c));   // sheet.clear() keeps embedded charts
-  }
-  else sheet = ss.insertSheet(HOLDINGS_SHEET);
-  const T = SHEET_THEME, usd = '"US$"#,##0.00', pct = '0.00%';
+  } else sheet = ss.insertSheet(HOLDINGS_SHEET);
+  const T = DASH_THEME, border = SpreadsheetApp.BorderStyle, usd = '"US$"#,##0.00', year = new Date().getFullYear();
   const nPos = Math.max(h.positions.length, 1), nCash = h.cash.length, nVal = Math.max(h.valuations.length, 1);
-  const R = {};
-  R.kpiLabel = 4; R.kpiValue = 5; R.posHead = 8; R.posCols = 9; R.posFirst = 10; R.posLast = R.posFirst + nPos - 1;
-  R.cashFirst = R.posLast + 1; R.posTotal = R.cashFirst + nCash; R.valHead = R.posTotal + 3; R.valCols = R.valHead + 1;
-  R.valFirst = R.valCols + 1; R.valLast = R.valFirst + nVal - 1; R.grand = R.valLast + 2; R.notes = R.grand + 3;
-  ensureRowCapacity(sheet, R.notes + h.warnings.length + 6);
+  const R = { kpiLabel: 4, kpiValue: 5, kpiNote: 6, posHead: 8, posCols: 9, posFirst: 10 };
+  R.posLast = R.posFirst + nPos - 1; R.cashFirst = R.posLast + 1; R.posTotal = R.cashFirst + nCash;
+  R.valHead = R.posTotal + 2; R.valCols = R.valHead + 1; R.valFirst = R.valCols + 1; R.valLast = R.valFirst + nVal - 1;
+  R.grand = R.valLast + 2; R.notes = R.grand + 2;
+  ensureRowCapacity(sheet, R.notes + h.warnings.length + 40);
 
-  sheet.getRange('B2').setValue('📈 Investments').setFontSize(18).setFontWeight('bold').setFontColor(T.headerBg);
-  sheet.getRange('B3').setValue('Positions from the Investment Ledger · prices from GOOGLEFINANCE (delayed up to 20 min) · built ' +
-    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')).setFontSize(9).setFontColor('#6B7280');
-  if (h.positions.some(p => isCryptoPair(p.ticker))) {
-    sheet.getRange('B3').setValue(sheet.getRange('B3').getValue() + ' · crypto from Coinbase when the tracker runs');
-  }
+  const section = (row, c1, c2, text) => {
+    sheet.getRange(row, c1, 1, c2 - c1 + 1).merge().setValue(text).setFontWeight('bold').setFontSize(11).setFontColor(T.navy)
+      .setBorder(null, null, true, null, null, null, T.accent, border.SOLID_MEDIUM);
+    sheet.setRowHeight(row, 28);
+  };
+  const tableHead = (row, c1, labels) => sheet.getRange(row, c1, 1, labels.length).setValues([labels])
+    .setFontWeight('bold').setFontSize(8).setFontColor(T.muted).setBackground(T.soft)
+    .setBorder(null, null, true, null, null, null, T.line, border.SOLID);
+  const stripe = (row, c1, rows, cols) => sheet.getRange(row, c1, rows, cols).setBackgrounds(
+    Array.from({ length: rows }, (_, i) => new Array(cols).fill(i % 2 ? T.stripe : '#FFFFFF')));
+  const totalRow = (row, c1, cols) => sheet.getRange(row, c1, 1, cols).setFontWeight('bold').setBackground(T.total)
+    .setBorder(true, null, null, null, null, null, T.accent, border.SOLID);
 
-  // positions
-  sheet.getRange(R.posHead, 2).setValue('Positions').setFontWeight('bold').setFontColor(T.headerBg);
+  // ---- 1-2 title band
+  sheet.setRowHeight(1, 46);
+  sheet.setRowHeight(2, 24);
+  sheet.getRange(1, 1, 2, 13).setBackground(T.navy);
+  sheet.getRange('B1:M1').merge().setValue('📈  Investments').setFontSize(20).setFontWeight('bold').setFontColor('#FFFFFF');
+  sheet.getRange('B2:M2').merge().setValue('Holdings  ·  stocks and ETFs from GOOGLEFINANCE, crypto from Coinbase  ·  built ' +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') + '  ·  amounts in US$').setFontColor(T.line);
+  sheet.setRowHeight(3, 10);
+
+  // ---- 4-6 KPI cards (the return is filled in once the Performance block exists)
+  const kpis = [
+    { c: 2, label: 'PORTFOLIO VALUE', value: '=C' + R.grand, fmt: usd, note: '=IFERROR("RD$"&TEXT(C' + R.grand + '*RATE_USD,"#,##0")&" · DOP-equivalent","")' },
+    { c: 4, label: 'INVESTED (COST BASIS)', value: '=F' + R.posTotal, fmt: usd, note: 'Positions + cash, from the ledger' },
+    { c: 6, label: 'UNREALIZED P/L', value: '=I' + R.posTotal, fmt: '"+US$"#,##0.00;"−US$"#,##0.00',
+      note: '=IFERROR(TEXT(J' + R.posTotal + ',"+0.00%;-0.00%")&" on cost","")' },
+    { c: 8, label: 'RETURN SINCE START', value: '—', fmt: '+0.00%;-0.00%;0.00%', note: 'Deposits left out · Modified Dietz' },
+    { c: 10, label: 'DIVIDENDS ' + year, value: h.totals.dividendsYtd, fmt: usd, note: 'Fees ' + year + ': US$' + h.totals.feesYtd.toFixed(2) },
+    { c: 12, label: 'DEPOSITED ' + year, value: h.totals.contributionsYtd.DOP, fmt: '"RD$"#,##0',
+      note: h.totals.contributionsYtd.USD ? '+ US$' + h.totals.contributionsYtd.USD.toFixed(2) : 'From bank transfers' }
+  ];
+  sheet.setRowHeight(R.kpiLabel, 22); sheet.setRowHeight(R.kpiValue, 36); sheet.setRowHeight(R.kpiNote, 22);
+  kpis.forEach(k => {
+    sheet.getRange(R.kpiLabel, k.c, 3, 2).mergeAcross().setBackground(T.soft).setHorizontalAlignment('left')
+      .setBorder(null, true, null, true, null, null, '#FFFFFF', border.SOLID_THICK);
+    sheet.getRange(R.kpiLabel, k.c, 1, 2).setBorder(true, null, null, null, null, null, T.accent, border.SOLID_THICK);
+    sheet.getRange(R.kpiLabel, k.c).setValue(k.label).setFontSize(8).setFontWeight('bold').setFontColor(T.muted);
+    sheet.getRange(R.kpiValue, k.c).setValue(k.value).setFontSize(18).setFontWeight('bold').setFontColor(T.navy).setNumberFormat(k.fmt);
+    sheet.getRange(R.kpiNote, k.c).setValue(k.note).setFontSize(8).setFontColor(T.muted);
+  });
+  R.kpiReturnCol = 8;
+  sheet.setRowHeight(7, 12);
+
+  // ---- positions
+  section(R.posHead, 2, 13, '📊  Positions');
   const heads = ['Account', 'Ticker', 'Shares', 'Avg cost', 'Cost basis', 'Price', 'Market value', 'Unrealized P/L', 'P/L %', 'Weight', 'Dividends', 'Price source'];
-  sheet.getRange(R.posCols, 2, 1, heads.length).setValues([heads]);
+  tableHead(R.posCols, 2, heads);
   const posRows = h.positions.length ? h.positions.map((p, i) => {
     const r = R.posFirst + i, f = holdingPriceFormulas(p.ticker, p.lastPrice, { lastPriceDay: p.lastPriceDay,
       today: prices.today, fetched: (prices.fetched || {})[p.ticker], fetchedAt: prices.fetchedAt });
@@ -442,69 +484,81 @@ function buildHoldingsSheet(h, prices) {
   sheet.getRange(R.posFirst, 2, posRows.length, heads.length).setValues(posRows);
   if (nCash) {
     sheet.getRange(R.cashFirst, 2, nCash, heads.length).setValues(h.cash.map(c =>
-      [c.account, 'Cash' + (c.estimated ? ' (≈ estimated)' : ''), '', '', c.amount, '', c.amount, '', '', '', '', c.estimated ? 'DOP deposits at the Dashboard rate' : 'ledger']));
+      [c.account, 'Cash' + (c.estimated ? ' (≈)' : ''), '', '', c.amount, '', c.amount, '', '', '=IF($H$' + R.posTotal + '>0,H' +
+        (R.cashFirst + h.cash.indexOf(c)) + '/$H$' + R.posTotal + ',"")', '', c.estimated ? 'DOP deposits at the Dashboard rate' : 'ledger']));
   }
-  sheet.getRange(R.posTotal, 2, 1, heads.length).setValues([['Total', '', '', '',
+  stripe(R.posFirst, 2, R.posTotal - R.posFirst, heads.length);
+  sheet.getRange(R.posTotal, 2, 1, heads.length).setValues([['TOTAL', '', '', '',
     '=SUM(F' + R.posFirst + ':F' + (R.posTotal - 1) + ')', '', '=SUM(H' + R.posFirst + ':H' + (R.posTotal - 1) + ')',
     '=SUM(I' + R.posFirst + ':I' + (R.posTotal - 1) + ')', '=IF(F' + R.posTotal + '>0,I' + R.posTotal + '/F' + R.posTotal + ',"")', '',
-    '=SUM(L' + R.posFirst + ':L' + (R.posTotal - 1) + ')', '']]).setFontWeight('bold');
-
-  // other accounts (tracked by value)
-  sheet.getRange(R.valHead, 2).setValue('Other accounts').setFontWeight('bold').setFontColor(T.headerBg);
-  sheet.getRange(R.valCols, 2, 1, 6).setValues([['Account', 'Value', 'Currency', 'As of', 'Units × unit price', 'Value (US$)']]);
-  const valRows = h.valuations.length ? h.valuations.map((v, i) => {
-    const r = R.valFirst + i;
-    return [v.account, v.value, v.currency, v.day, v.units && v.unitPrice ? v.units + ' × ' + v.unitPrice : '',
-      '=IF(D' + r + '="DOP",IFERROR(C' + r + '/RATE_USD,""),C' + r + ')'];
-  }) : [['Add a Valuation row to the ledger for funds or pensions tracked by balance', '', '', '', '', '']];
-  sheet.getRange(R.valFirst, 2, valRows.length, 6).setValues(valRows);
-
-  sheet.getRange(R.grand, 2, 1, 4).setValues([['Total invested (US$)',
-    '=H' + R.posTotal + '+SUM(G' + R.valFirst + ':G' + R.valLast + ')', 'DOP-equivalent',
-    '=IFERROR(C' + R.grand + '*RATE_USD,"")']]).setFontWeight('bold').setFontSize(12);
-
-  // KPI line
-  const kpis = [['Portfolio value', '=C' + R.grand, usd], ['Unrealized P/L', '=I' + R.posTotal, usd],
-    ['Dividends ' + new Date().getFullYear(), h.totals.dividendsYtd, usd], ['Fees ' + new Date().getFullYear(), h.totals.feesYtd, usd],
-    ['Deposited ' + new Date().getFullYear() + ' (DOP)', h.totals.contributionsYtd.DOP, '"RD$"#,##0.00'],
-    ['Deposited ' + new Date().getFullYear() + ' (US$)', h.totals.contributionsYtd.USD, usd]];
-  kpis.forEach((k, i) => {
-    const c = 2 + i * 2;
-    sheet.getRange(R.kpiLabel, c).setValue(k[0]).setFontSize(9).setFontColor('#6B7280');
-    sheet.getRange(R.kpiValue, c).setValue(k[1]).setNumberFormat(k[2]).setFontSize(14).setFontWeight('bold').setFontColor(T.headerBg);
-  });
-
-  // notes and warnings
-  const notes = ['How to use: add a Snapshot of each account (one row per ticker with Quantity, Price and Amount = cost basis, ' +
-    'plus a CASH row) — positions start from it and add the movements after that day. Funds and pensions: a Valuation row.']
-    .concat(h.warnings.map(w => '⚠️ ' + w));
-  sheet.getRange(R.notes, 2, notes.length, 1).setValues(notes.map(n => [n])).setFontSize(9).setFontColor('#6B7280');
-  R.notesEnd = R.notes + notes.length - 1;
-
-  // looks
-  [R.posCols, R.valCols].forEach(r => sheet.getRange(r, 2, 1, r === R.posCols ? heads.length : 6)
-    .setBackground(T.headerBg).setFontColor(T.headerFg).setFontWeight('bold'));
+    '=SUM(L' + R.posFirst + ':L' + (R.posTotal - 1) + ')', '']]);
+  totalRow(R.posTotal, 2, heads.length);
   const nRows = R.posTotal - R.posFirst + 1;
-  sheet.getRange(R.posFirst, 4, nRows, 1).setNumberFormat('0.00000');
+  sheet.getRange(R.posFirst, 2, nRows - 1, 1).setFontColor(T.muted);
+  sheet.getRange(R.posFirst, 3, nRows - 1, 1).setFontWeight('bold').setFontColor(T.navy);
+  sheet.getRange(R.posFirst, 4, nRows, 1).setNumberFormat('#,##0.00000');
   sheet.getRange(R.posFirst, 5, nRows, 5).setNumberFormat(usd);
   sheet.getRange(R.posFirst, 5, nRows, 1).setNumberFormat(USD_PRICE_FORMAT);   // Avg cost
   sheet.getRange(R.posFirst, 7, nRows, 1).setNumberFormat(USD_PRICE_FORMAT);   // Price
-  sheet.getRange(R.posFirst, 10, nRows, 2).setNumberFormat(pct);
+  sheet.getRange(R.posFirst, 9, nRows, 1).setNumberFormat('"+US$"#,##0.00;"−US$"#,##0.00;"US$"0.00');
+  sheet.getRange(R.posFirst, 10, nRows, 2).setNumberFormat('+0.00%;-0.00%;0.00%');
+  sheet.getRange(R.posFirst, 11, nRows, 1).setNumberFormat('0.0%');
   sheet.getRange(R.posFirst, 12, nRows, 1).setNumberFormat(usd);
+  sheet.getRange(R.posFirst, 13, nRows, 1).setFontSize(8).setHorizontalAlignment('center');
+
+  // ---- other accounts (tracked by balance)
+  section(R.valHead, 2, 7, '🏦  Other accounts');
+  tableHead(R.valCols, 2, ['Account', 'Value', 'Currency', 'As of', 'Units × unit price', 'Value (US$)']);
+  const dayDate = k => { const p = String(k).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2], 12); };
+  const valRows = h.valuations.length ? h.valuations.map((v, i) => {
+    const r = R.valFirst + i;
+    return [v.account, v.value, v.currency, dayDate(v.day),   // v1.1.34: a real date (was text, shown two ways)
+      v.units && v.unitPrice ? (+Number(v.units).toFixed(4)).toLocaleString('en-US') + ' × ' +
+        Number(v.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+      '=IF(D' + r + '="DOP",IFERROR(C' + r + '/RATE_USD,""),C' + r + ')'];
+  }) : [['Add a balance: 📊 Tracker › ➕ Add Fund / Pension Balance', '', '', '', '', '']];
+  sheet.getRange(R.valFirst, 2, valRows.length, 6).setValues(valRows);
+  stripe(R.valFirst, 2, nVal, 6);
   sheet.getRange(R.valFirst, 3, nVal, 1).setNumberFormat('#,##0.00');
+  sheet.getRange(R.valFirst, 4, nVal, 1).setHorizontalAlignment('center');
+  sheet.getRange(R.valFirst, 5, nVal, 1).setNumberFormat('yyyy-mm-dd').setHorizontalAlignment('center');
+  sheet.getRange(R.valFirst, 6, nVal, 1).setFontSize(9).setFontColor(T.muted);
   sheet.getRange(R.valFirst, 7, nVal, 1).setNumberFormat(usd);
+
+  // ---- grand total
+  sheet.getRange(R.grand, 2, 1, 12).setBackground(T.navy).setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(12);
+  sheet.setRowHeight(R.grand, 32);
+  sheet.getRange(R.grand, 2, 1, 4).setValues([['TOTAL INVESTED',
+    '=H' + R.posTotal + '+SUM(G' + R.valFirst + ':G' + R.valLast + ')', 'DOP-equivalent', '=IFERROR(C' + R.grand + '*RATE_USD,"")']]);
   sheet.getRange(R.grand, 3).setNumberFormat(usd);
+  sheet.getRange(R.grand, 4).setHorizontalAlignment('right').setFontWeight('normal').setFontSize(9);
   sheet.getRange(R.grand, 5).setNumberFormat('"RD$"#,##0.00');
-  const pl = sheet.getRange(R.posFirst, 9, nRows, 2);
+
+  // ---- notes and warnings
+  const notes = ['Positions start from each account\'s latest Snapshot and add the movements after that day. ' +
+    'Funds and pensions: 📊 Tracker › ➕ Add Fund / Pension Balance. This sheet is rebuilt on every refresh — edit the ledger, not this.']
+    .concat(h.warnings.map(w => '⚠️ ' + w));
+  sheet.getRange(R.notes, 2, notes.length, 1).setValues(notes.map(n => [n])).setFontSize(8).setFontColor(T.muted);
+  R.notesEnd = R.notes + notes.length - 1;
+
+  // ---- conditional looks: P/L colours, price-source chips, weight scale
+  const rows = n => sheet.getRange(R.posFirst, n, nRows, 1);
+  const rule = () => SpreadsheetApp.newConditionalFormatRule();
   sheet.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor(T.refund).setRanges([pl]).build(),
-    SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(0).setFontColor('#B91C1C').setRanges([pl]).build()
+    rule().whenNumberGreaterThan(0).setFontColor(T.good).setRanges([sheet.getRange(R.posFirst, 9, nRows, 2)]).build(),
+    rule().whenNumberLessThan(0).setFontColor(T.bad).setRanges([sheet.getRange(R.posFirst, 9, nRows, 2)]).build(),
+    rule().whenTextEqualTo('live').setBackground('#E8F5E9').setFontColor('#2E7D32').setRanges([rows(13)]).build(),
+    rule().whenTextStartsWith('Coinbase').setBackground('#E0F2F1').setFontColor('#00695C').setRanges([rows(13)]).build(),
+    rule().whenTextStartsWith('last known').setBackground('#FFF4D6').setFontColor('#92400E').setRanges([rows(13)]).build(),
+    rule().setGradientMinpoint('#FFFFFF').setGradientMaxpoint('#C9D7EF').setRanges([sheet.getRange(R.posFirst, 11, nRows - 1, 1)]).build()
   ]);
-  sheet.setColumnWidth(1, 24);
-  sheet.setColumnWidth(2, 150);
-  for (let c = 3; c <= 12; c++) sheet.setColumnWidth(c, 112);
-  sheet.setColumnWidth(13, 190);
-  sheet.setFrozenRows(0);
+
+  // ---- columns
+  sheet.setColumnWidth(1, 16);
+  sheet.setColumnWidth(2, 170);
+  for (let c = 3; c <= 12; c++) sheet.setColumnWidth(c, 108);
+  sheet.setColumnWidth(13, 200);
+  sheet.setFrozenRows(2);
   sheet.setHiddenGridlines(true);
   return { sheet: sheet, rows: R };
 }
@@ -512,21 +566,60 @@ function buildHoldingsSheet(h, prices) {
 function styleLedgerSheet(sheet) {
   styleHeader(sheet, LEDGER_HEADERS.length);
   const rows = Math.max(sheet.getMaxRows() - 1, 1);
-  sheet.getRange(2, LG.DATE + 1, rows, 1).setNumberFormat('yyyy-MM-dd');
-  sheet.getRange(2, LG.QTY + 1, rows, 1).setNumberFormat('0.00000###');
+  sheet.getRange(2, LG.DATE + 1, rows, 1).setNumberFormat('yyyy-MM-dd').setHorizontalAlignment('center');
+  sheet.getRange(2, LG.ACCOUNT + 1, rows, 1).setFontWeight('bold').setFontColor(DASH_THEME.navy);
+  sheet.getRange(2, LG.TICKER + 1, rows, 1).setFontWeight('bold').setHorizontalAlignment('center');
+  sheet.getRange(2, LG.QTY + 1, rows, 1).setNumberFormat('#,##0.00000###');
   sheet.getRange(2, LG.PRICE + 1, rows, 1).setNumberFormat('#,##0.00######');   // up to 8 decimals (SHIB-sized prices)
   sheet.getRange(2, LG.AMOUNT + 1, rows, 2).setNumberFormat('#,##0.00');
-  sheet.getRange(2, LG.TYPE + 1, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+  sheet.getRange(2, LG.CURRENCY + 1, rows, 2).setHorizontalAlignment('center');
+  sheet.getRange(2, LG.NOTES + 1, rows, 1).setFontColor('#6B7280');
+  sheet.getRange(2, LG.TYPE + 1, rows, 1).setHorizontalAlignment('center').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(LEDGER_TYPES, true).setAllowInvalid(false).build());
   const colours = { Buy: ['#E8F5E9', '#2E7D32'], Sell: ['#FDECEC', '#B91C1C'], Dividend: ['#F3E8FF', '#7E22CE'],
     Deposit: ['#EAF1FE', '#1D4ED8'], Withdrawal: ['#FFF4E5', '#B45309'], Fee: ['#F3F4F6', '#4B5563'],
     Snapshot: ['#E0F2F1', '#00695C'], Valuation: ['#FEF9C3', '#854D0E'] };
-  const typeCol = sheet.getRange(2, LG.TYPE + 1, rows, 1);
+  const sources = { email: ['#EAF1FE', '#1D4ED8'], bank: ['#E0F2F1', '#00695C'], manual: ['#F3F4F6', '#4B5563'] };
+  const typeCol = sheet.getRange(2, LG.TYPE + 1, rows, 1), sourceCol = sheet.getRange(2, LG.SOURCE + 1, rows, 1);
   const rules = Object.keys(colours).map(t => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(t)
-    .setBackground(colours[t][0]).setFontColor(colours[t][1]).setRanges([typeCol]).build());
+    .setBackground(colours[t][0]).setFontColor(colours[t][1]).setRanges([typeCol]).build())
+    .concat(Object.keys(sources).map(s => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(s)
+      .setBackground(sources[s][0]).setFontColor(sources[s][1]).setRanges([sourceCol]).build()));
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(ROW()))')
     .setBackground(SHEET_THEME.stripe).setRanges([sheet.getRange(2, 1, rows, LEDGER_HEADERS.length)]).build());
   sheet.setConditionalFormatRules(rules);
+  [95, 150, 95, 80, 115, 115, 110, 70, 75, 75, 280].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+}
+
+/** v1.1.34: Portfolio History — day bands, TOTAL rows stand out, number formats. */
+function styleHistorySheet(sheet) {
+  styleHeader(sheet, HISTORY_HEADERS.length);
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  sheet.getRange(2, 1, rows, 1).setNumberFormat('yyyy-MM-dd').setHorizontalAlignment('center');
+  sheet.getRange(2, 3, rows, 1).setFontWeight('bold').setHorizontalAlignment('center');
+  sheet.getRange(2, 4, rows, 1).setNumberFormat('#,##0.00000###');
+  sheet.getRange(2, 5, rows, 1).setNumberFormat(USD_PRICE_FORMAT);
+  sheet.getRange(2, 6, rows, 1).setNumberFormat('"US$"#,##0.00');
+  const all = sheet.getRange(2, 1, rows, HISTORY_HEADERS.length);
+  sheet.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$B2="' + HISTORY_TOTAL + '"')
+      .setBackground(DASH_THEME.total).setFontColor(DASH_THEME.navy).setBold(true).setRanges([all]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(INT($A2)))')   // alternate by day
+      .setBackground(SHEET_THEME.stripe).setRanges([all]).build()]);
+  [95, 150, 90, 120, 120, 130].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
+}
+
+/** v1.1.34: Investment Accounts — kind chips, readable notes. */
+function styleAccountsSheet(sheet) {
+  styleHeader(sheet, ACCOUNTS_HEADERS.length);
+  const rows = Math.max(sheet.getMaxRows() - 1, 1);
+  sheet.getRange(2, 1, rows, 1).setFontWeight('bold').setFontColor(DASH_THEME.navy);
+  sheet.getRange(2, 2, rows, 1).setHorizontalAlignment('center');
+  sheet.getRange(2, 4, rows, 1).setWrap(true).setFontSize(9).setFontColor('#6B7280');
+  const kinds = { Broker: ['#EAF1FE', '#1D4ED8'], Fund: ['#FEF9C3', '#854D0E'], Pension: ['#F3E8FF', '#7E22CE'], Other: ['#F3F4F6', '#4B5563'] };
+  sheet.setConditionalFormatRules(Object.keys(kinds).map(k => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(k)
+    .setBackground(kinds[k][0]).setFontColor(kinds[k][1]).setRanges([sheet.getRange(2, 2, rows, 1)]).build()));
+  [170, 90, 150, 460].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
 
 /** The investments part of a run: broker emails → ledger, bank deposits → ledger, Holdings rebuilt. */
@@ -563,7 +656,10 @@ function refreshHoldings() {
   const current = {};
   valueRows.forEach(r => { current[r.account] = (current[r.account] || 0) + (Number(r.value) || 0); });
   h.returns = computeReturns(ledger.getDataRange().getValues(), current, { usdRate: usdRate, today: todayKey });
-  writePerformanceBlock(built.sheet, built.rows.notesEnd + 3, h.returns, readHistory());
+  const byAccount = {};
+  valueRows.forEach(r => { byAccount[r.account] = (byAccount[r.account] || 0) + (Number(r.value) || 0); });
+  writePerformanceBlock(built.sheet, built.rows.notesEnd + 3, h.returns, readHistory(),
+    Object.keys(byAccount).map(a => ({ account: a, value: byAccount[a] })), { row: built.rows.kpiValue, col: built.rows.kpiReturnCol });
   return h;
 }
 
@@ -740,7 +836,14 @@ function computeReturns(ledgerValues, currentValues, opts) {
     accounts[x.account].flows.forEach(f => flows.push(f));
   });
   flows.sort((a, b) => a.day < b.day ? -1 : 1);
-  return { accounts: list, total: start ? measure(start, startValue, flows, value) : null };
+  const total = start ? measure(start, startValue, flows, value) : null;
+  if (total) {
+    // v1.1.34: the return counts later-starting accounts as flows, but the row must read right — "Start value" is every
+    // account's start value and "Net deposits" only real deposits (it showed accounts' start values as deposits)
+    total.startValue = list.reduce((s, x) => s + x.startValue, 0);
+    total.netDeposits = list.reduce((s, x) => s + x.netDeposits, 0);
+  }
+  return { accounts: list, total: total };
 }
 
 /**
@@ -817,39 +920,75 @@ function investmentsMonthlyBrief(historyValues, ledgerValues, opts) {
   return brief;
 }
 
-/** Holdings: a Performance block and a chart of the total over time (below everything else). */
-function writePerformanceBlock(sheet, startRow, returns, historyValues) {
-  const T = SHEET_THEME, usd = '"US$"#,##0.00';
-  sheet.getRange(startRow, 2).setValue('Performance').setFontWeight('bold').setFontColor(T.headerBg);
+/** Holdings: the Performance block (Dashboard look), the KPI return, an allocation pie and the history line chart. */
+function writePerformanceBlock(sheet, startRow, returns, historyValues, allocation, kpi) {
+  const T = DASH_THEME, border = SpreadsheetApp.BorderStyle, usd = '"US$"#,##0.00';
+  sheet.getRange(startRow, 2, 1, 8).merge().setValue('📐  Performance').setFontWeight('bold').setFontSize(11).setFontColor(T.navy)
+    .setBorder(null, null, true, null, null, null, T.accent, border.SOLID_MEDIUM);
+  sheet.setRowHeight(startRow, 28);
   const heads = ['Account', 'Tracked since', 'Start value', 'Net deposits', 'Value now', 'Gain', 'Return', 'Annualized'];
-  sheet.getRange(startRow + 1, 2, 1, heads.length).setValues([heads]).setBackground(T.headerBg).setFontColor(T.headerFg).setFontWeight('bold');
-  const line = x => [x.account, x.start, x.startValue, x.netDeposits, x.value, x.gain,
+  sheet.getRange(startRow + 1, 2, 1, heads.length).setValues([heads]).setFontWeight('bold').setFontSize(8).setFontColor(T.muted)
+    .setBackground(T.soft).setBorder(null, null, true, null, null, null, T.line, border.SOLID);
+  const dayDate = k => { const p = String(k).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2], 12); };
+  const line = x => [x.account, dayDate(x.start), x.startValue, x.netDeposits, x.value, x.gain,   // v1.1.34: real dates
     x.periodReturn === null ? '—' : x.periodReturn, x.annualized === null ? 'after ' + ANNUALIZE_MIN_DAYS + ' days' : x.annualized];
   const body = returns.accounts.map(line);
   if (returns.total) body.push(line(Object.assign({ account: 'All accounts' }, returns.total)));
   if (!body.length) body.push(['Performance appears after the first refresh', '', '', '', '', '', '', '']);
-  sheet.getRange(startRow + 2, 2, body.length, heads.length).setValues(body);
-  sheet.getRange(startRow + 2, 4, body.length, 4).setNumberFormat(usd);
-  sheet.getRange(startRow + 2, 8, body.length, 2).setNumberFormat('+0.00%;-0.00%;0.00%');
-  if (returns.total) sheet.getRange(startRow + 1 + body.length, 2, 1, heads.length).setFontWeight('bold');
-  // total value over time → a small table off to the side, and a line chart of it
+  const first = startRow + 2;
+  sheet.getRange(first, 2, body.length, heads.length).setValues(body)
+    .setBackgrounds(body.map((_, i) => new Array(heads.length).fill(i % 2 ? T.stripe : '#FFFFFF')));
+  sheet.getRange(first, 3, body.length, 1).setNumberFormat('yyyy-mm-dd').setHorizontalAlignment('center');
+  sheet.getRange(first, 4, body.length, 4).setNumberFormat(usd);
+  sheet.getRange(first, 7, body.length, 1).setNumberFormat('"+US$"#,##0.00;"−US$"#,##0.00;"US$"0.00');
+  sheet.getRange(first, 8, body.length, 2).setNumberFormat('+0.00%;-0.00%;0.00%').setHorizontalAlignment('right');
+  sheet.getRange(first, 9, body.length, 1).setFontColor(T.muted);
+  const totalRow = first + body.length - 1;
+  if (returns.total) {
+    sheet.getRange(totalRow, 2, 1, heads.length).setFontWeight('bold').setBackground(T.total)
+      .setBorder(true, null, null, null, null, null, T.accent, border.SOLID);
+    if (kpi) {   // the KPI card shows the all-accounts return
+      sheet.getRange(kpi.row, kpi.col).setFormula('=H' + totalRow);
+      sheet.getRange(kpi.row + 1, kpi.col).setValue('Since ' + returns.total.start + ' · deposits left out');
+    }
+  }
+  const signed = sheet.getRange(first, 7, body.length, 2);
+  sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().concat([
+    SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(0).setFontColor(T.good).setRanges([signed]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(0).setFontColor(T.bad).setRanges([signed]).build()]));
+
+  // charts: value over time (line) and where it is (pie), side by side
+  const chartRow = totalRow + 3;
+  const col = 16;   // P:S, hidden helper tables
   const totals = historyValues.slice(1).filter(r => r[0] && r[1] === HISTORY_TOTAL)
     .map(r => [r[0], invNumber(r[5])]).sort((a, b) => normalizeDateForCompare(a[0]) < normalizeDateForCompare(b[0]) ? -1 : 1);
-  const chartRow = startRow + body.length + 4;
+  const alloc = (allocation || []).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
+  sheet.getRange(chartRow - 1, 2, 1, 12).merge().setValue('📈  Value over time and allocation').setFontWeight('bold').setFontSize(11)
+    .setFontColor(T.navy).setBorder(null, null, true, null, null, null, T.accent, border.SOLID_MEDIUM);
   if (totals.length >= 2) {
-    const col = 16;   // column P, outside the tables
     sheet.getRange(1, col, 1, 2).setValues([['Date', 'Total (US$)']]);
     ensureRowCapacity(sheet, totals.length + 1);
     sheet.getRange(2, col, totals.length, 2).setValues(totals);
-    sheet.getRange(2, col, totals.length, 1).setNumberFormat('yyyy-MM-dd');
-    sheet.hideColumns(col, 2);
+    sheet.getRange(2, col, totals.length, 1).setNumberFormat('yyyy-mm-dd');
     sheet.insertChart(sheet.newChart().setChartType(Charts.ChartType.LINE)
       .addRange(sheet.getRange(1, col, totals.length + 1, 2)).setNumHeaders(1)
-      .setPosition(chartRow, 2, 0, 0).setOption('title', 'Portfolio value (US$)').setOption('legend', { position: 'none' })
-      .setOption('colors', ['#0F766E']).setOption('width', 760).setOption('height', 260).build());
+      .setPosition(chartRow + 1, 2, 0, 0).setOption('title', 'Portfolio value (US$)').setOption('legend', { position: 'none' })
+      .setOption('colors', [T.accent]).setOption('width', 620).setOption('height', 280).build());
   } else {
-    sheet.getRange(chartRow, 2).setValue('The chart appears once there are two days of history.').setFontSize(9).setFontColor('#6B7280');
+    sheet.getRange(chartRow + 1, 2, 1, 5).merge().setValue('The value chart appears once there are two days of history.')
+      .setFontSize(9).setFontColor(T.muted);
   }
+  if (alloc.length) {
+    sheet.getRange(1, col + 2, 1, 2).setValues([['Account', 'Value (US$)']]);
+    ensureRowCapacity(sheet, alloc.length + 1);
+    sheet.getRange(2, col + 2, alloc.length, 2).setValues(alloc.map(a => [a.account, +a.value.toFixed(2)]));
+    sheet.insertChart(sheet.newChart().setChartType(Charts.ChartType.PIE)
+      .addRange(sheet.getRange(1, col + 2, alloc.length + 1, 2)).setNumHeaders(1)
+      .setPosition(chartRow + 1, 8, 20, 0).setOption('title', 'Allocation by account').setOption('pieHole', 0.45)
+      .setOption('colors', [T.navy, T.accent, '#0F766E', '#7FA6E8', '#C9D7EF', '#A6A6A6'])
+      .setOption('width', 460).setOption('height', 280).build());
+  }
+  sheet.hideColumns(col, 4);
   return chartRow;
 }
 

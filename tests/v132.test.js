@@ -40,6 +40,9 @@ test('returns since tracking began: snapshot value, deposits (DOP converted), Mo
   assert.equal(r.total.start, '2026-08-31');
   near(r.total.value, 3370);
   near(r.total.gain, 3370 - 1500 - (700 + 100 + 1000));
+  near(r.total.startValue, 1500 + 700 + 0, 1e-9);                 // every account's start value (v1.1.34)
+  near(r.total.netDeposits, 100 + 1000, 1e-9);                    // real deposits only — not the start values
+  near(r.total.value - r.total.startValue - r.total.netDeposits, r.total.gain, 1e-9);
 });
 
 test('returns: annualized after 180 days', () => {
@@ -144,9 +147,8 @@ test('Holdings: a Performance block, and the chart is replaced — not stacked �
   h.ctx.refreshHoldings();
   h.ctx.refreshHoldings();
   const sheet = mock.ss.getSheetByName('Holdings');
-  assert.equal(sheet.charts.length, 1, 'one chart after two rebuilds');
-  assert.equal(sheet.charts[0].cfg.type, 'LINE');
+  assert.deepEqual(sheet.charts.map(c => c.cfg.type).sort(), ['LINE', 'PIE'], 'one of each after two rebuilds — not stacked (v1.1.34: + allocation pie)');
   const values = [...sheet.cells.values()].map(String);
-  assert.ok(values.includes('Performance') && values.includes('All accounts'));
+  assert.ok(values.some(v => v.endsWith('Performance')) && values.includes('All accounts'), 'Performance section and its total row');
   assert.equal(mock.ss.getSheetByName('Portfolio History')._rows(6).filter(r => r[1] === 'TOTAL').length, 2, 'today recorded once');
 });

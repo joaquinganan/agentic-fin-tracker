@@ -2,6 +2,23 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.34 (Sept 27, 2026) — investment tabs with the Dashboard's look; Código Cash; one date format
+- **Holdings redesigned** like the Dashboard: navy title band, six KPI cards (portfolio value, cost basis, unrealized
+  P/L, return since start, dividends, deposited), underlined sections, striped tables with total rows, price-source
+  chips, a weight colour scale, and two charts — value over time and allocation by account. The Investment Ledger
+  (type and source chips), Portfolio History (day bands, TOTAL rows) and Investment Accounts (kind chips) are styled too.
+- **Reported:** balances saved as units × price and as an amount showed their date differently ("9/27/2026" vs
+  "2026-09-08") — dates were written as text, which Sheets converts or not depending on the cell. Dates are now real
+  dates with one format, in Other accounts and Performance.
+- **All accounts** in Performance showed later-starting accounts' start values as "Net deposits"; the return was right,
+  the row wasn't. It now shows every account's start value and real deposits only.
+- **Código Cash** (POPULAR): a withdrawal has no merchant column, so the status word "Aprobada" was saved as the merchant.
+  A status word is never a merchant: these rows read "Código Cash (cash withdrawal)" (category Dining/Other) — new ones at
+  parse time, saved ones repaired by recategorize, in a narrow step kept outside `computeRecategorization`, which still
+  can never rewrite merchants (v1.1.19's C5 test caught the first attempt).
+- Test mock: `hideColumns(column, count)` now hides every column, as Sheets does; style calls keep all their arguments.
+  Tests: 103 (mutation-checked: text dates, "Aprobada" as a merchant).
+
 ### v1.1.33 (Sept 26, 2026) — progress toasts close; a dialog for fund and pension balances
 - Reported from the live sheet: "Refreshing investments..." stayed on screen after the summary. A progress toast with
   no timeout stays until another toast replaces it, and nothing replaced it — nor any progress toast on an error path

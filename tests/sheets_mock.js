@@ -51,7 +51,7 @@ class FakeRange {
       throw new Error(`Mock: range R${row}C${col}:${numRows}x${numCols} is outside the dimensions of sheet "${sheet.name}" (${sheet.maxRows}x${sheet.maxCols})`);
     }
     Object.assign(this, { sheet, row, col, numRows, numCols });
-    STYLE_METHODS.forEach(m => { this[m] = v => { this.sheet.styles.push({ m, rect: this._rect(), v }); return this; }; });
+    STYLE_METHODS.forEach(m => { this[m] = (...args) => { this.sheet.styles.push({ m, rect: this._rect(), v: args[0], args }); return this; }; });
   }
   _rect() { return { r1: this.row, c1: this.col, r2: this.getLastRow(), c2: this.getLastColumn() }; }
   _addMerge(rect) {
@@ -208,7 +208,7 @@ class FakeSheet {
   }
   getSheetId() { return this.id; }
   setTabColor() { return this; }
-  hideColumns(c) { this.hidden.push(c); }
+  hideColumns(c, n) { for (let i = 0; i < (n || 1); i++) this.hidden.push(c + i); }   // like Sheets: (column, numColumns)
   /** Test helper: rows 2..lastRow as arrays of `numCols` values. */
   _rows(numCols) {
     const last = this.getLastRow();
@@ -269,7 +269,7 @@ function makeServices(options) {
     const rule = { ranges: [] };
     const b = {};
     ['whenNumberLessThan', 'whenNumberGreaterThan', 'whenFormulaSatisfied', 'whenTextEqualTo',
-     'setGradientMinpoint', 'setGradientMaxpoint', 'setBackground', 'setFontColor', 'setBold', 'setItalic']
+     'setGradientMinpoint', 'setGradientMaxpoint', 'setBackground', 'setFontColor', 'setBold', 'setItalic', 'whenTextStartsWith']
       .forEach(m => { b[m] = v => { rule[m] = v; return b; }; });
     b.setRanges = ranges => { rule.ranges = ranges; return b; };
     b.build = () => rule;
