@@ -184,8 +184,8 @@ suite against another copy of the code.
 3. **Snapshot** each broker account once, in the **Investment Ledger**: one row per ticker — Date, Account,
    `Snapshot`, Ticker, Quantity, Price, Amount = cost basis, Currency — plus a `CASH` row. Positions start from it and
    add only the movements after that day.
-4. Funds and pensions: a `Valuation` row whenever you get the statement (Quantity = units and Price = unit price, or
-   just the Amount).
+4. Funds and pensions: **📊 Tracker › ➕ Add Fund / Pension Balance** whenever you get a statement (units × unit
+   price, or the balance). It adds a new `Valuation` row each time — Holdings shows the latest of each account.
 5. **📊 Tracker › 📈 Refresh Investments** rebuilds Holdings. Regular runs read broker emails and bank deposits on
    their own. Holdings is rebuilt every time — don't edit it by hand; edit the ledger.
 6. Every run records the day's values in **Portfolio History**. Holdings shows the return of each account since it

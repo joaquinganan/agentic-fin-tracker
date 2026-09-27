@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.32"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.33"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -42,6 +42,7 @@ function onOpen() {
     .addItem("📬 Send Daily Summary Now", "sendDailySummaryNow")
     .addItem("🗓️ Send Monthly Summary Now", "sendMonthlySummaryNow")
     .addItem("📈 Refresh Investments", "refreshInvestmentsNow")
+    .addItem("➕ Add Fund / Pension Balance", "openValuationDialog")
     .addItem("⚙️ View Config", "viewConfig")
     .addSeparator()
     .addItem("🗑️ Reset System", "resetSystem")
@@ -91,6 +92,7 @@ function withRunLock(fn) {
   try {
     return fn();
   } finally {
+    if (PROGRESS_TOAST_OPEN) safeToast("Finished.", "📊 Financial Tracker", 3);   // v1.1.33
     lock.releaseLock();
   }
 }
@@ -821,9 +823,14 @@ function safeAlert(message) {
   }
 }
 
+// v1.1.33: a progress toast shown with no timeout (-1) stays on screen until another toast replaces it —
+// "Refreshing investments..." did, and so did every progress toast on an error path. withRunLock() now
+// closes whichever is still open when its action ends.
+let PROGRESS_TOAST_OPEN = false;
 function safeToast(message, title, timeout) {
   try {
     SpreadsheetApp.getActiveSpreadsheet().toast(message, title, timeout);
+    PROGRESS_TOAST_OPEN = timeout === -1;
   } catch (e) {
     Logger.log("[Toast unavailable] " + title + ": " + message);
   }

@@ -2,6 +2,15 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.33 (Sept 26, 2026) — progress toasts close; a dialog for fund and pension balances
+- Reported from the live sheet: "Refreshing investments..." stayed on screen after the summary. A progress toast with
+  no timeout stays until another toast replaces it, and nothing replaced it — nor any progress toast on an error path
+  (daily run, date range, Setup Wizard). `withRunLock()` now closes whichever is still open when its action ends,
+  successful or not; a test runs the actions and fails if a progress toast is left (mutation-checked).
+- **📊 Tracker › ➕ Add Fund / Pension Balance**: a dialog that adds the Valuation row (units × unit price, or a
+  balance), lists the account in Investment Accounts and rebuilds Holdings — instead of typing ledger rows by hand.
+  A new row per statement; Holdings shows the latest of each account. Tests: 97.
+
 ### v1.1.32 (Sept 26, 2026) — portfolio history, real returns, investments in the emails
 - **Portfolio History** sheet: every run records each position (quantity, price, value), cash and balance-tracked
   account in US$, plus a TOTAL row — one set per day (a second run the same day replaces it). Values are what

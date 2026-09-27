@@ -217,7 +217,7 @@ class FakeSheet {
 }
 
 class FakeSpreadsheet {
-  constructor() { this.sheets = []; this.active = null; this.namedRanges = {}; this.toasts = []; }
+  constructor() { this.sheets = []; this.active = null; this.namedRanges = {}; this.toasts = []; this.toastLog = []; }
   getSheetByName(n) { return this.sheets.find(s => s.name === n) || null; }
   insertSheet(n) {
     if (this.getSheetByName(n)) throw new Error('Mock: sheet exists ' + n);
@@ -244,7 +244,7 @@ class FakeSpreadsheet {
     if (!this.namedRanges[name]) throw new Error('Mock: no named range ' + name);
     delete this.namedRanges[name];
   }
-  toast(msg) { this.toasts.push(msg); }
+  toast(msg, title, timeout) { this.toasts.push(msg); this.toastLog.push({ msg, title, timeout }); }
   getUrl() { return 'https://docs.google.com/spreadsheets/d/TEST_ID/edit'; }
   getName() { return 'Financial_Tracker_Test'; }
 }

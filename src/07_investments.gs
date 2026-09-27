@@ -579,6 +579,7 @@ function refreshInvestmentsNow() {
       ensureSheetOrder();
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOLDINGS_SHEET);
       if (sheet) SpreadsheetApp.setActiveSheet(sheet);
+      safeToast('Done.', '📈 Investments', 3);   // v1.1.33: the progress toast used to stay open
       safeAlert('📈 Investments refreshed\n\n' + r.positions + ' position(s) · ' + r.saved + ' new ledger row(s) from bank deposits' +
         (r.warnings.length ? '\n\n⚠️ ' + r.warnings.join('\n⚠️ ') : ''));
     } catch (error) {
@@ -869,4 +870,157 @@ function investmentsReportData(kind, opts) {
   return kind === 'daily'
     ? investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns })
     : investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
+}
+
+/* ======================================================================
+ * FUND / PENSION BALANCES — v1.1.33
+ * A dialog that adds a Valuation row, so balances aren't typed by hand into the ledger.
+ * ====================================================================== */
+const VALUATION_KINDS = ['Fund', 'Pension', 'Other'];
+
+/** null when the entry can be saved, otherwise what's wrong. Pure. */
+function validateValuationEntry(e, todayKey) {
+  if (!e || !String(e.account || '').trim()) return 'Give the account a name.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(e.date || ''))) return 'Pick the statement date.';
+  if (todayKey && e.date > todayKey) return 'The statement date is in the future.';
+  if (['DOP', 'USD'].indexOf(e.currency) === -1) return 'Currency must be DOP or USD.';
+  if (e.mode === 'units') {
+    if (!(Number(e.units) > 0) || !(Number(e.unitPrice) > 0)) return 'Units and unit price must both be greater than 0.';
+  } else if (!(Number(e.amount) > 0)) {
+    return 'The balance must be greater than 0.';
+  }
+  return null;
+}
+
+/** Ledger row of a validated entry. Pure. */
+function valuationRow(e) {
+  const p = e.date.split('-').map(Number);
+  const units = e.mode === 'units';
+  return [new Date(p[0], p[1] - 1, p[2], 12), String(e.account).trim(), 'Valuation', '', units ? Number(e.units) : '',
+    units ? Number(e.unitPrice) : '', units ? '' : Number(e.amount), '', e.currency, 'manual', String(e.notes || '').trim(), ''];
+}
+
+function openValuationDialog() {
+  const config = getConfig();
+  if (!config) {
+    SpreadsheetApp.getUi().alert("❌ Setup not completed. Please run Setup Wizard first.");
+    return;
+  }
+  const ledger = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_LEDGER_SHEET);
+  const known = [];
+  if (ledger && ledger.getLastRow() > 1) {
+    ledger.getRange(2, 1, ledger.getLastRow() - 1, LEDGER_HEADERS.length).getValues().forEach(r => {
+      const a = String(r[LG.ACCOUNT] || '').trim();
+      if (r[LG.TYPE] === 'Valuation' && a && known.indexOf(a) === -1) known.push(a);
+    });
+  }
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const html = HtmlService.createHtmlOutput(`
+<!DOCTYPE html><html><head><base target="_top"><style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 18px 20px; color: #1F2937; font-size: 14px; }
+  label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 5px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 14px; }
+  .row { display: flex; gap: 10px; } .row > div { flex: 1; }
+  .modes { display: flex; gap: 16px; margin-top: 4px; } .modes label { font-weight: 400; margin: 0; display: flex; gap: 6px; align-items: center; }
+  .modes input { width: auto; }
+  .hint { font-size: 12px; color: #6B7280; margin-top: 5px; line-height: 1.4; }
+  button { margin-top: 18px; width: 100%; padding: 11px; border: 0; border-radius: 7px; background: #0F766E; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  #status { display: none; margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 13px; }
+  #status.error { display: block; background: #FDECEC; color: #B91C1C; } #status.info { display: block; background: #EAF1FE; color: #1D4ED8; }
+</style></head><body>
+  <label for="account">Account</label>
+  <input id="account" list="known" placeholder="e.g. Liquidity fund, Pension fund" value="">
+  <datalist id="known">${known.map(a => `<option value="${esc(a)}">`).join('')}</datalist>
+  <div class="hint">Use the same name every time — Holdings keeps the latest balance of each account.</div>
+  <div class="row">
+    <div><label for="kind">Kind</label><select id="kind">${VALUATION_KINDS.map(k => `<option>${k}</option>`).join('')}</select></div>
+    <div><label for="date">Statement date</label><input id="date" type="date" value="${today}" max="${today}"></div>
+  </div>
+  <label>Balance as</label>
+  <div class="modes">
+    <label><input type="radio" name="mode" value="units" checked onchange="mode()"> Units × unit price</label>
+    <label><input type="radio" name="mode" value="amount" onchange="mode()"> A balance</label>
+  </div>
+  <div id="unitsBox" class="row">
+    <div><label for="units">Units</label><input id="units" type="number" step="any" min="0"></div>
+    <div><label for="unitPrice">Unit price</label><input id="unitPrice" type="number" step="any" min="0"></div>
+  </div>
+  <div class="hint" id="unitsHint">A fund: units (cuotas) are in your statement; the unit price (valor cuota) in the fund's fact sheet.</div>
+  <div id="amountBox" style="display:none"><label for="amount">Balance</label><input id="amount" type="number" step="any" min="0">
+    <div class="hint">A pension: the balance of your latest statement.</div></div>
+  <div class="row">
+    <div><label for="currency">Currency</label><select id="currency"><option>DOP</option><option>USD</option></select></div>
+    <div><label for="notes">Notes</label><input id="notes" placeholder="optional"></div>
+  </div>
+  <button id="save" onclick="save()">Save balance</button>
+  <div id="status"></div>
+<script>
+  function el(id) { return document.getElementById(id); }
+  function pick() { return document.querySelector('input[name="mode"]:checked').value; }
+  function mode() {
+    const u = pick() === 'units';
+    el('unitsBox').style.display = u ? 'flex' : 'none'; el('unitsHint').style.display = u ? 'block' : 'none';
+    el('amountBox').style.display = u ? 'none' : 'block';
+  }
+  function fail(m) { el('status').className = 'error'; el('status').textContent = m; }
+  function save() {
+    const e = { account: el('account').value.trim(), kind: el('kind').value, date: el('date').value, mode: pick(),
+      units: el('units').value, unitPrice: el('unitPrice').value, amount: el('amount').value,
+      currency: el('currency').value, notes: el('notes').value };
+    if (!e.account) return fail('Give the account a name.');
+    if (e.mode === 'units' && !(Number(e.units) > 0 && Number(e.unitPrice) > 0)) return fail('Units and unit price must both be greater than 0.');
+    if (e.mode === 'amount' && !(Number(e.amount) > 0)) return fail('The balance must be greater than 0.');
+    el('save').disabled = true;
+    el('status').className = 'info';
+    el('status').textContent = '⏳ Saving and updating Holdings — a summary pops up in the sheet. This window will close.';
+    google.script.run.withFailureHandler(function(err) { fail('Error: ' + err); el('save').disabled = false; }).addValuationEntry(e);
+    setTimeout(function() { google.script.host.close(); }, 1500);
+  }
+</script></body></html>`).setWidth(460).setHeight(610);
+  SpreadsheetApp.getUi().showModalDialog(html, '➕ Fund or pension balance');
+}
+
+/** Saves one balance as a Valuation row (a new row every statement — history is kept), then rebuilds Holdings. */
+function addValuationEntry(entry) {
+  const todayKey = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const problem = validateValuationEntry(entry, todayKey);
+  if (problem) {
+    safeAlert('❌ Balance not saved: ' + problem);
+    return false;
+  }
+  return withRunLock(() => {
+    try {
+      safeToast('Saving the balance...', '📈 Investments', -1);
+      const sheet = getOrCreateLedgerSheet();
+      const row = valuationRow(entry);
+      const last = sheet.getLastRow();
+      ensureRowCapacity(sheet, last + 1);
+      sheet.getRange(last + 1, 1, 1, LEDGER_HEADERS.length).setValues([row]);
+      sortSheetByDateDesc(sheet, LG.DATE + 1);
+      // the account is listed in Investment Accounts (no deposit keyword needed for a balance)
+      readInvestmentAccounts();
+      const accounts = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_ACCOUNTS_SHEET);
+      const names = accounts.getLastRow() > 1 ? accounts.getRange(2, 1, accounts.getLastRow() - 1, 1).getValues().map(r => String(r[0]).trim().toLowerCase()) : [];
+      if (names.indexOf(row[LG.ACCOUNT].toLowerCase()) === -1) {
+        accounts.getRange(accounts.getLastRow() + 1, 1, 1, ACCOUNTS_HEADERS.length)
+          .setValues([[row[LG.ACCOUNT], VALUATION_KINDS.indexOf(entry.kind) !== -1 ? entry.kind : 'Other', '', 'Balance from statements (Valuation rows)']]);
+      }
+      safeToast('Updating Holdings...', '📈 Investments', -1);
+      refreshHoldings();
+      formatDataSheets();
+      ensureSheetOrder();
+      safeToast('Done.', '📈 Investments', 3);
+      const value = entry.mode === 'units' ? Number(entry.units) * Number(entry.unitPrice) : Number(entry.amount);
+      safeAlert('✅ Balance saved\n\n' + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' +
+        value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' as of ' + entry.date +
+        (entry.mode === 'units' ? ' (' + entry.units + ' × ' + entry.unitPrice + ')' : '') +
+        '\n\nIt now shows in Holdings › Other accounts. Add a new balance with every statement.');
+      return true;
+    } catch (error) {
+      safeAlert('❌ Could not save the balance: ' + error);
+      return false;
+    }
+  });
 }
