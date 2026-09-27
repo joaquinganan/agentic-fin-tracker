@@ -202,3 +202,10 @@ The **Unrecognized** sheet lists every bank or broker email the tracker couldn't
 says and a link to open it in Gmail. Send those emails (Gmail › ⋮ › Show original › Download) to get their format
 supported; set Status to *Ignore* for ones that don't matter. Rows disappear by themselves once a later version reads
 the email.
+
+## Long runs
+
+Apps Script stops any run at 6 minutes. The tracker stops reading emails before that, saves what it read, finishes its
+steps and tells you in the summary ("⏸ Stopped reading early…"): run the same range again and it continues — emails
+already saved are skipped without being read.
+

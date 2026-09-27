@@ -411,7 +411,8 @@ function newParseStats() {
   return {
     messagesSeen: 0, outOfRange: 0, notOwnBank: 0, promotional: 0,
     nonTransactional: 0, declined: 0, amountNotFound: 0, parseErrors: 0, placeholders: 0, reversals: 0,
-    unrecognized: [], readIds: []   // v1.1.35: emails for the Unrecognized sheet, and emails read cleanly
+    unrecognized: [], readIds: [],  // v1.1.35: emails for the Unrecognized sheet, and emails read cleanly
+    alreadySaved: 0                  // v1.1.36: skipped without reading — already in Transactions
   };
 }
 
@@ -430,18 +431,32 @@ function newParseStats() {
  *    markEmailsAsProcessed() now leaves UNREAD so they stay visible (M4).
  *  - the merged `customRules` argument is gone (see categorizeTransaction()).
  */
-function extractTransactionsFromThreads(threads, rawCustomRules, range) {
+function extractTransactionsFromThreads(threads, rawCustomRules, range, opts) {
+  opts = opts || {};
   const transactions = [];
   const stats = newParseStats();
   const failedThreadIds = new Set();
+  // v1.1.36: an email already in Transactions isn't read again (reading is what takes time), and reading stops at
+  // opts.deadline — the threads not reached stay unread and are picked up by the next run.
+  const skipIds = opts.skipIds || new Set();
+  const clock = opts.clock || (() => Date.now());
+  const processedThreads = [];
+  let stopped = null;
 
-  for (let thread of threads) {
+  for (let t = 0; t < threads.length; t++) {
+    const thread = threads[t];
+    if (opts.deadline && clock() > opts.deadline) {
+      stopped = { remaining: threads.length - t, processed: t };
+      Logger.log("⏸ Stopped reading at the time budget: " + stopped.remaining + " thread(s) left for the next run");
+      break;
+    }
     for (let message of thread.getMessages()) {
       if (range) {
         const d = message.getDate();
         if (d < range.start || d >= range.endExclusive) { stats.outOfRange++; continue; }
       }
       stats.messagesSeen++;
+      if (skipIds.has(message.getId())) { stats.alreadySaved++; continue; }
       const result = parseEmailMessage(message, rawCustomRules, stats);
       if (result.status === 'failed') failedThreadIds.add(thread.getId());
       transactions.push(...result.items);
@@ -455,8 +470,9 @@ function extractTransactionsFromThreads(threads, rawCustomRules, range) {
         stats.readIds.push(message.getId());
       }
     }
+    processedThreads.push(thread);
   }
-  return { transactions: transactions, stats: stats, failedThreadIds: failedThreadIds };
+  return { transactions: transactions, stats: stats, failedThreadIds: failedThreadIds, processedThreads: processedThreads, stopped: stopped };
 }
 
 /**

@@ -2,6 +2,17 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.36 (Sept 27, 2026) — runs stop in time and resume; saved emails aren't read again
+- Reported: a long run (a big date range) hit Apps Script's 6-minute limit — killed mid-step, with the "Saving…" toast
+  left on screen and the last steps (recategorize, derived sheets, investments, Unrecognized) never run. A hard kill
+  runs no `finally`, so the fix is not to reach it: reading emails — the slow part, one `getPlainBody()` each — stops
+  3.5 minutes after the action started, which leaves time to save, mark and run every step. Threads not reached stay
+  unread and the summary says to run it again; the next run continues.
+- **Already-saved emails are skipped before being read** (their Gmail id is in Transactions). Every run used to read
+  them again and drop them as duplicates — even the daily run, whose window re-reads the previous month — so a
+  stopped range could keep re-reading the same emails and never finish. Same for HAPI emails already in the ledger.
+- Tests: 112 (mutation-checked: saved emails not re-read, the time budget, unread threads not marked processed).
+
 ### v1.1.35 (Sept 27, 2026) — the Unrecognized sheet; balances update instead of duplicating
 - **Unrecognized** lists every bank or broker email the tracker couldn't read — amount not found, a reading error, a
   HAPI email that didn't validate — and emails saved with an unreadable merchant: date, bank, subject, reason, what the

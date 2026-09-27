@@ -160,7 +160,8 @@ function parseHapiMessage(message) {
 }
 
 /** Broker emails in the run's range → { events, parsed, skipped, unparsed, threads, failedThreadIds }. */
-function captureBrokerEmails(range) {
+function captureBrokerEmails(range, skipIds) {
+  skipIds = skipIds || new Set();   // v1.1.36: emails already in the ledger aren't read again
   const out = { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set(), unrecognized: [], readIds: [] };
   Object.keys(BROKER_PATTERNS).forEach(broker => {
     const p = BROKER_PATTERNS[broker];
@@ -170,6 +171,7 @@ function captureBrokerEmails(range) {
         if (String(message.getFrom()).toLowerCase().indexOf(p.sender) === -1) return;
         const when = message.getDate();
         if (when < range.start || when >= range.endExclusive) return;
+        if (skipIds.has('gmail:' + message.getId())) return;
         let result;
         try { result = p.parse(message); } catch (error) { result = { kind: 'unparsed', reason: String(error) }; }
         if (result.kind === 'event') { out.events.push(result.event); out.parsed++; out.readIds.push(message.getId()); }
@@ -626,7 +628,10 @@ function styleAccountsSheet(sheet) {
 
 /** The investments part of a run: broker emails → ledger, bank deposits → ledger, Holdings rebuilt. */
 function runInvestmentsStep(range) {
-  const capture = range ? captureBrokerEmails(range)
+  const ledgerSheet = getOrCreateLedgerSheet();
+  const ledgerIds = new Set(ledgerSheet.getLastRow() > 1
+    ? ledgerSheet.getRange(2, LG.ID + 1, ledgerSheet.getLastRow() - 1, 1).getValues().map(r => String(r[0])).filter(Boolean) : []);
+  const capture = range ? captureBrokerEmails(range, ledgerIds)
     : { events: [], parsed: 0, skipped: 0, unparsed: 0, threads: [], failedThreadIds: new Set(), unrecognized: [], readIds: [] };
   const accounts = readInvestmentAccounts();
   const tx = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);

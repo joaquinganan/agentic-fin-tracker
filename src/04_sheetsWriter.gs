@@ -1582,3 +1582,15 @@ function styleUnrecognizedSheet(sheet) {
   ]);
   [125, 85, 260, 250, 420, 60, 70, 85, 85].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
+
+/** v1.1.36: Gmail ids of every email already in Transactions (MessageId is "<gmail id>_<n>"), to skip re-reading them. */
+function savedMessageIds() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+  const ids = new Set();
+  if (!sheet || sheet.getLastRow() < 2) return ids;
+  sheet.getRange(2, TX_COL.MESSAGE_ID + 1, sheet.getLastRow() - 1, 1).getValues().forEach(r => {
+    const v = String(r[0] || '');
+    if (v) ids.add(v.replace(/_\d+$/, ''));
+  });
+  return ids;
+}

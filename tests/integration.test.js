@@ -81,7 +81,10 @@ test('full-year run: every fixture lands in the right place; re-run is fully ded
 
   h.ctx.runGmailMonitorForDateRange('2026-01-01', '2026-12-31');
   assert.equal(tx().length, 7, 'second run saves nothing new');
-  assert.match(h.logs.filter(l => l.includes('Email threads found')).pop(), /Saved: 0 \| Duplicates: 7/);
+  // v1.1.36: already-saved emails are skipped before being read (they used to be read and dropped as duplicates)
+  const second = h.logs.filter(l => l.includes('Email threads found')).pop();
+  assert.match(second, /Saved: 0 \| Duplicates: 0/);
+  assert.match(second, /Already saved, not read again: 7 email\(s\)/);
 });
 
 test('recategorize repairs a mis-typed row and keeps Raw_ notes (C3, C5, M7)', () => {
