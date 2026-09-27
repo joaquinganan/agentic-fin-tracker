@@ -1140,7 +1140,7 @@ function openValuationDialog() {
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const html = HtmlService.createHtmlOutput(`
-<!DOCTYPE html><html><head><base target="_top"><style>
+<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top"><style>
   body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 18px 20px; color: #1F2937; font-size: 14px; }
   label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 5px; }
   input, select { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 14px; }
@@ -1160,7 +1160,7 @@ function openValuationDialog() {
     A broker with positions (e.g. HAPI): its total value on a past date sets where its return starts.</div>
   <div class="row">
     <div><label for="kind">Kind</label><select id="kind">${VALUATION_KINDS.map(k => `<option>${k}</option>`).join('')}</select></div>
-    <div><label for="date">Statement date</label><input id="date" type="date" value="${today}" max="${today}"></div>
+    <div><label for="date" id="dateLabel">Statement date</label><input id="date" type="date" value="${today}" max="${today}"></div>
   </div>
   <label>What to record</label>
   <div class="modes">
@@ -1191,8 +1191,9 @@ function openValuationDialog() {
     const d = pick() === 'deposit';
     el('amountLabel').textContent = d ? 'Deposit' : 'Balance';
     el('amountHint').textContent = d ? 'Money you put into the account on that date — only deposits NOT already in the Investment Ledger ' +
-      '(bank transfers matching the account\'s keyword are added by themselves).' : 'A pension: the balance of your latest statement.';
+      '(bank transfers that match the keyword in Investment Accounts are added by themselves).' : 'A pension: the balance of your latest statement.';
     el('save').textContent = d ? 'Save deposit' : 'Save balance';
+    el('dateLabel').textContent = d ? 'Deposit date' : 'Statement date';
   }
   function fail(m) { el('status').className = 'error'; el('status').textContent = m; }
   function save() {

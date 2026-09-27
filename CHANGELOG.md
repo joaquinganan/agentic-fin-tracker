@@ -2,6 +2,16 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.41 (Sept 28, 2026) — the balance/deposit dialog works again; every dialog's script is tested
+- **Reported:** in ➕ Add Balance or Deposit, "A balance" and "A deposit" still showed the Units fields. v1.1.40 added a help
+  text with an apostrophe ("account's") inside a quoted string of the dialog's own script; the template literal consumed
+  its escape, the browser got a broken string and the whole script failed to load — so no option switched and **nothing
+  could be saved**. The text no longer has it; the dialog declares UTF-8 and says "Deposit date" for deposits.
+- Why the tests missed it: they checked the dialog's HTML for text and never ran its script. A new test compiles every
+  dialog's page script as the browser gets it (Setup Wizard, date range, balance/deposit) and checks that every button
+  and option calls a function that exists — it fails on the v1.1.40 file. The three modes were also exercised in a real
+  browser. Tests: 132.
+
 ### v1.1.40 (Sept 28, 2026) — missing deposits are flagged; deposits can be added by hand
 - **Reported:** HAPI's 2026 gain looked like it included the money put in. The maths was right (value − start − deposits);
   the data wasn't: only the deposits the tracker saw as bank transfers were recorded, and every missing one shows up as
