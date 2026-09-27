@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.28"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.29"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -41,6 +41,7 @@ function onOpen() {
     .addItem("🔁 Recategorize Saved Transactions", "recategorizeAllTransactionsPrompt")
     .addItem("📬 Send Daily Summary Now", "sendDailySummaryNow")
     .addItem("🗓️ Send Monthly Summary Now", "sendMonthlySummaryNow")
+    .addItem("📈 Refresh Investments", "refreshInvestmentsNow")
     .addItem("⚙️ View Config", "viewConfig")
     .addSeparator()
     .addItem("🗑️ Reset System", "resetSystem")
@@ -853,6 +854,7 @@ function runGmailMonitorCore(search, config) {
   let results = { success: 0, failed: 0, duplicates: 0 };
   let marked = null;
   let recatChanged = 0;
+  let investments = null;   // v1.1.29
   const errors = [];
 
   try {
@@ -874,6 +876,13 @@ function runGmailMonitorCore(search, config) {
         recatChanged = recategorizeAllTransactions(config.email);
         Logger.log("Auto-recategorize: " + recatChanged + " cell(s) updated");
       }],
+      // v1.1.29: broker emails → Investment Ledger, bank deposits → ledger, Holdings rebuilt.
+      // Isolated like every step here: an investments problem never affects the bank side.
+      ["investments", () => {
+        safeToast("Updating investments...", "📊 Financial Tracker", -1);
+        investments = runInvestmentsStep(search.range);
+        styleTrackerSheets();
+      }],
       ["sheet order", () => ensureSheetOrder()],
       ["open Dashboard", () => {
         const dashboardSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dashboard");
@@ -890,10 +899,12 @@ function runGmailMonitorCore(search, config) {
 
   // v1.1.26: the summary emails report whether the morning update ran and how it went
   recordLastRun({ at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
-    failed: results.failed, unparsed: stats.amountNotFound + stats.parseErrors, errors: errors.length });
+    failed: results.failed, unparsed: stats.amountNotFound + stats.parseErrors + (investments ? investments.unparsed : 0),
+    errors: errors.length });
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
-                              results: results, marked: marked, recatChanged: recatChanged, errors: errors }));
+                              results: results, marked: marked, recatChanged: recatChanged, errors: errors,
+                              investments: investments }));
 }
 
 /** v1.1.19 (E7): run summary text — pure, so tests/ can check it. */
@@ -916,6 +927,13 @@ function buildRunSummary(r) {
     lines.push("⚠️ Could not parse: " + unparsed + " email(s) — left UNREAD in Gmail; details in View > Executions");
   }
   if (s.placeholders) lines.push("⚠️ Saved with placeholder merchant: " + s.placeholders);
+  const inv = r.investments;   // v1.1.29
+  if (inv && (inv.parsed || inv.deposits || inv.unparsed || inv.saved)) {
+    lines.push("📈 Investments: " + inv.saved + " new ledger row(s) (" + inv.parsed + " from broker emails, " +
+      inv.deposits + " deposit(s) from bank transfers) · duplicates " + inv.duplicates);
+    if (inv.unparsed) lines.push("⚠️ Broker emails not read: " + inv.unparsed + " — left UNREAD; details in View > Executions");
+  }
+  if (inv && inv.warnings && inv.warnings.length) lines.push("⚠️ Holdings: " + inv.warnings.join(" · "));
   if (s.reversals) lines.push("↩️ Reversals: " + s.reversals + " — saved as negative rows that cancel the original purchase");
   if (r.results.reversalsUnmatched) {
     lines.push("⚠️ Reversal without its original purchase: " + r.results.reversalsUnmatched +

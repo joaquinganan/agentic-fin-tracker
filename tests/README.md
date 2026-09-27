@@ -16,6 +16,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v126.test.js` | Day-to-day comparison without bills, redesigned daily email (blocks, preheader, links, data health), monthly summary (totals, comparisons, subscriptions, missed cashback, year to date, calendar), monthly trigger and on/off, run status recorded. |
 | `v127.test.js` | Other income (Dashboard, emails), card catalogue and configured cards, Setup Wizard save flow (toasts, summary, errors after the window closes). |
 | `v128.test.js` | Category colours (distinct, WCAG AA contrast), data-sheet rules and their priority, Bank Transfers Category column and migration, Custom Rules dropdown, Categories colours. |
+| `v129.test.js` | Investments: HAPI email parsing (incl. HTML-only and inconsistent orders), holdings maths, a full run from emails and bank deposits to Holdings, run summary. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

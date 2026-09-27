@@ -2,6 +2,24 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.29 (Sept 26, 2026) — investments: ledger, HAPI emails, holdings
+- New file **`07_investments.gs`** and three sheets: **Investment Ledger** (every movement), **Holdings** (positions
+  valued with `GOOGLEFINANCE`, other accounts, total in US$ and DOP-equivalent) and **Investment Accounts**.
+- **HAPI emails** are read in every run, like the bank alerts: executed orders (ticker, quantity, average price,
+  cost and the per-order fee — its label is blank in HAPI's template) and dividends (net amount, payment date). An
+  order is only saved when its own numbers agree (quantity × average price = cost). "Deposit Completed" has no
+  amount, so **deposits come from the bank side**: transfers whose beneficiary contains the account's keyword
+  (HAPI: its DR collection account) become Deposit rows — the transfer keeps its own category, e.g. Exclude.
+- **Snapshots** make positions exact without history: positions start from each account's latest Snapshot and add
+  only later movements, so re-reading older emails never counts a trade twice. Funds and pensions tracked by
+  balance use a **Valuation** row (units × unit price, or the amount).
+- Prices: a live price more than 50% away from the last known one is treated as a wrong symbol and the last known
+  price is used instead ("check symbol" in Price source) — a ticker Google maps to another security can't
+  silently misprice a position.
+- Menu **📈 Refresh Investments**; the run summary reports the step. Checked end to end against the broker's own
+  portfolio screen: per-position P/L and percentages match. Tests: 81 (mutation-checked: order validation,
+  snapshot day, de-duplication). The test mock's Gmail search now honours `from:`, as Gmail does.
+
 ### v1.1.28 (Sept 26, 2026) — formatting of the data sheets
 - **Category colours** (one source: `color` in `DEFAULT_CATEGORIES`): each category shows as a coloured chip in
   Transactions, Bank Transfers, every Raw_ sheet, Custom Rules and Categories. "Exclude" is muted; your own

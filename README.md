@@ -83,6 +83,8 @@ The full history — what was wrong, how it was found and what changed — is in
   between your own accounts). Card payments are excluded automatically; reversals are saved as negative rows that
   cancel the original purchase.
 - **Deduplicates** by Gmail message id and by the bank's own reference number.
+- **Investments** (Investment Ledger → Holdings): broker emails (HAPI orders and dividends), deposits from bank
+  transfers, snapshots and balances for funds or pensions; positions valued live with `GOOGLEFINANCE`.
 - **Readable data sheets:** a coloured chip per category, and the rows that need attention — transfers without a
   category, unreadable merchants — highlighted automatically.
 - **Dashboard** with KPI cards, categories by month, fixed vs. variable, spend by bank, a year heat map, and a
@@ -119,6 +121,7 @@ src/                  Apps Script sources (bound to the spreadsheet) + appsscrip
   04_sheetsWriter.gs  save / dedup, recategorize, derived sheets, Dashboard
   05_dailySummary.gs  email kit + daily summary
   06_monthlySummary.gs monthly summary
+  07_investments.gs   investment ledger, broker emails, holdings
 tests/                automated test framework (see below)
 docs/USER_GUIDE.md    setup and day-to-day use
 CHANGELOG.md          every release, with the defect behind it
@@ -127,7 +130,7 @@ CHANGELOG.md          every release, with the defect behind it
 ## Getting started
 
 Follow **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**: create a Google Sheet, open *Extensions › Apps Script*,
-add the six files from `src/`, run `onOpen` once to authorize, then use **📊 Tracker › Setup Wizard**.
+add the seven files from `src/`, run `onOpen` once to authorize, then use **📊 Tracker › Setup Wizard**.
 
 With [clasp](https://github.com/google/clasp), you can push from this repo instead: copy `.clasp.json.example`
 to `.clasp.json`, set your script id, then run `clasp push`.
@@ -169,6 +172,8 @@ npm test            # node --test tests/*.test.js  (Node 18+)
 | `v124.test.js` | DR payroll, Setup Wizard, privacy, column auto-fit, daily email |
 | `v126.test.js` | email redesign, monthly summary, triggers, data health |
 | `v127.test.js` | other income, credit cards from the Setup Wizard, save flow and messages |
+| `v128.test.js` | category colours (WCAG AA), data-sheet highlights, Bank Transfers Category column |
+| `v129.test.js` | investments: HAPI emails, holdings maths, a full run from emails and bank deposits to Holdings |
 
 Adding a real email as a new fixture, and the manual checks a mock can't cover, are described in
 [tests/README.md](tests/README.md).

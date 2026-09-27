@@ -175,3 +175,17 @@ suite against another copy of the code.
 - A shared setup for a friend's banks (multi-user).
 
 ---
+
+## Investments
+
+1. Add the file `07_investments.gs` to the Apps Script project (like the others).
+2. **Investment Accounts** (created on the first run): one row per account. *Deposit keyword* identifies the bank
+   transfers that fund it (for HAPI it is pre-filled with its DR collection account).
+3. **Snapshot** each broker account once, in the **Investment Ledger**: one row per ticker — Date, Account,
+   `Snapshot`, Ticker, Quantity, Price, Amount = cost basis, Currency — plus a `CASH` row. Positions start from it and
+   add only the movements after that day.
+4. Funds and pensions: a `Valuation` row whenever you get the statement (Quantity = units and Price = unit price, or
+   just the Amount).
+5. **📊 Tracker › 📈 Refresh Investments** rebuilds Holdings. Regular runs read broker emails and bank deposits on
+   their own. Holdings is rebuilt every time — don't edit it by hand; edit the ledger.
+

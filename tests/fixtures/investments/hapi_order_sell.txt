@@ -1,0 +1,44 @@
+Hello Alex,
+Your order has been executed. You are now a shareholder of:
+Order type:
+Market order
+Buy/Sell:
+Sell
+Ticker:
+UNH
+Quantity Shares:
+0.40000
+US$ 0.15
+Average price:
+US$ 410.50000
+Cost:
+US$ 164.20
+Status:
+Order completed
+Your funds will be available after the T+1 settlement period. Happy investing!
+Any questions?
+Check out our Help Center
+here
+, or send a message to contacto@imhapi.app to get help.
+Home
+|
+Help Center
+|
+Contact Us
+|
+Privacy Policy
+Hapi Corp.
+(member of
+SIPC
+) is a registered US broker dealer that provides brokerage services. Hapi Crypto LLC provides crypto currency trading.
+© 2026 Hapi Corp.®
+All rights reserved.
+Commission-free trading of stocks and ETFs refers to US$0 trading commissions at Hapi. Other fees may apply. Please see Hapi's Fee Schedule to
+https://app.hapi.trade
+Fractional shares are lliquid outside the Hapi platform and are not transferable to other brokerage accounts. Not all investments available through Hapi are eligible for fractional share orders.
+Trading during extended hours involves additional risks such as higher price volatility and lower trading volume.
+All investments involve risk and loss of principal is possible.
+Find Hapi's Terms and Conditions Disclosure Library
+here.
+You are receiving this email in response to your request for information or Hapi servicing your account. You cannot unsubscribe from these emails.
+We are required to send you this non-promotional communication without the option to unsubscribe.

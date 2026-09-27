@@ -290,7 +290,11 @@ function makeServices(options) {
     GmailApp: {
       search(query, start, max) {
         gmail.queries.push(query);
-        return gmail.threads.slice(start, start + max);
+        // like Gmail: "from:" clauses restrict the result to threads from those senders
+        const senders = (query.match(/from:\s*([^\s)]+)/gi) || []).map(f => f.replace(/from:\s*/i, '').toLowerCase());
+        const matches = senders.length === 0 ? gmail.threads : gmail.threads.filter(t => t.getMessages()
+          .some(m => senders.some(s => String(m.getFrom()).toLowerCase().includes(s))));
+        return matches.slice(start, start + max);
       },
       markThreadsRead(threads) { gmail.markedRead.push(...threads.map(t => t.getId())); },
       getUserLabelByName: n => gmail.labels[n] || null,
