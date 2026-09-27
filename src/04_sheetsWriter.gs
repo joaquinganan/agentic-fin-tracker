@@ -15,9 +15,13 @@ const TX_COL = {
   DATE: 0, BANK: 1, MERCHANT: 2, AMOUNT: 3, CURRENCY: 4, CATEGORY: 5,
   DESCRIPTION: 6, SUBJECT: 7, TIMESTAMP: 8, IS_CREDIT: 9, IS_CASHBACK: 10, TYPE: 11,
   MESSAGE_ID: 12,
-  TX_REF: 13   // v1.1.23: "<BANK>:<bank's own id>" when the email has one (hidden column N)
+  TX_REF: 13,  // v1.1.23: "<BANK>:<bank's own id>" when the email has one (hidden column N)
+  AUTO_CATEGORY: 14   // v1.1.39: the category the tracker last set (hidden column O) — see recategorizeAllTransactions
 };
-const TX_NUM_COLS = TX_COL.TX_REF + 1;
+const TX_NUM_COLS = TX_COL.AUTO_CATEGORY + 1;
+// v1.1.39: stored when the tracker's own category is empty (a transfer with no rule), so "set to nothing" and
+// "not recorded yet" (rows saved before v1.1.39) can be told apart
+const AUTO_NONE = '(none)';
 
 /**
  * v1.1.4: canonical sheet order, applied by ensureSheetOrder() below.
@@ -137,7 +141,7 @@ function getOrCreateRawBankSheet(bank) {
  * v1.1.28: Bank Transfers now shows each transfer's Category (column D) — the
  * sheet where you review transfers didn't show which ones still had none.
  */
-const TRANSFERS_HEADERS = ["Date", "Bank", "Beneficiary / Description", "Category", "Amount", "Currency", "Email Subject"];
+const TRANSFERS_HEADERS = ["Date", "Bank", "Beneficiary / Description", "Category", "Amount", "Currency", "Email Subject", "Id"];   // v1.1.39: Id (hidden)
 
 /**
  * v1.1.2: dedicated sheet for Type = "Transfer" rows.
@@ -150,6 +154,7 @@ function getOrCreateTransfersSheet() {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(name);
     sheet.appendRow(TRANSFERS_HEADERS);
     sheet.getRange(1, 1, 1, TRANSFERS_HEADERS.length).setFontWeight("bold");
+    sheet.hideColumns(TRANSFERS_HEADERS.length);   // v1.1.39: Id — internal, matches your edits back to Transactions
     ensureRowCapacity(sheet, 2000); // v1.1.19: formats below cover 2,000 rows
     sheet.getRange(2, 1, 1999).setNumberFormat('yyyy-MM-dd');
     sheet.getRange(2, 5, 1999).setNumberFormat('#,##0.00');
@@ -471,7 +476,7 @@ function transactionToRow(t) {
   return [
     t.date, t.bank, t.merchant, t.amount, t.currency || 'DOP', t.category || '',
     t.description, t.subject, t.timestamp, t.isCredit ? 'YES' : 'NO',
-    t.isCashback ? 'YES' : 'NO', t.type || 'Transaction', t.messageId || '', t.txRef || ''
+    t.isCashback ? 'YES' : 'NO', t.type || 'Transaction', t.messageId || '', t.txRef || '', t.category || AUTO_NONE
   ];
 }
 
@@ -523,13 +528,63 @@ function resolveReversals(transactions, existingValues) {
   return unmatched;
 }
 
-/** v1.1.23: adds the hidden TxRef header (column N) to a sheet created before it existed. */
+/** v1.1.23: adds the hidden TxRef header (column N) to a sheet created before it existed; v1.1.39: Auto Category (O). */
 function ensureTransactionsSchema(sheet) {
-  const header = sheet.getRange(1, TX_COL.TX_REF + 1).getValue();
-  if (header !== 'TxRef') {
-    sheet.getRange(1, TX_COL.TX_REF + 1).setValue('TxRef').setFontWeight('bold');
-    sheet.hideColumns(TX_COL.TX_REF + 1);
+  [[TX_COL.TX_REF, 'TxRef'], [TX_COL.AUTO_CATEGORY, 'Auto Category']].forEach(pair => {
+    if (sheet.getRange(1, pair[0] + 1).getValue() !== pair[1]) {
+      sheet.getRange(1, pair[0] + 1).setValue(pair[1]).setFontWeight('bold');
+      sheet.hideColumns(pair[0] + 1);
+    }
+  });
+}
+
+/**
+ * v1.1.39: a category you set yourself is kept. The tracker stores the category IT set (Auto Category); a category
+ * that differs from it was changed by hand. Rows saved before v1.1.39 have no Auto Category: there, a transfer with a
+ * category no rule gives is taken as yours. An empty category is never "yours" — clear a cell to get the automatic one
+ * back. Pure — see tests/.
+ */
+function isManualCategory(row, computedCategory) {
+  const current = String(row[TX_COL.CATEGORY] || '').trim();
+  if (!current) return false;
+  const stored = row[TX_COL.AUTO_CATEGORY];
+  if (stored !== undefined && stored !== null && String(stored) !== '') {
+    return current !== (String(stored) === AUTO_NONE ? '' : String(stored));
   }
+  return (row[TX_COL.TYPE] || '') === 'Transfer' && !computedCategory;   // before v1.1.39
+}
+
+/**
+ * v1.1.39: Bank Transfers is rebuilt from Transactions on every run, so a category typed THERE was lost. Before
+ * recategorizing, a Bank Transfers category that differs from its Transactions row is copied back as your own.
+ * Rows are matched by the hidden Id (Gmail message id), or — on a sheet from before it — by date, beneficiary and amount.
+ */
+function syncTransferCategoryEdits(txValues) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Bank Transfers');
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const width = Math.max(sheet.getLastColumn(), TRANSFERS_HEADERS.length);
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0];
+  if (header[3] !== 'Category') return [];
+  const idCol = header.indexOf('Id');
+  const keyOf = (date, merchant, amount) => normalizeDateForCompare(date) + '|' + String(merchant).trim() + '|' + Number(amount);
+  const byId = {}, byKey = {};
+  txValues.forEach((r, i) => {
+    if (r[TX_COL.TYPE] !== 'Transfer') return;
+    if (r[TX_COL.MESSAGE_ID]) byId[String(r[TX_COL.MESSAGE_ID])] = i;
+    byKey[keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], r[TX_COL.AMOUNT])] = i;
+  });
+  const changed = [];
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues().forEach(b => {
+    if (!b[0]) return;
+    const i = idCol !== -1 && b[idCol] && byId[String(b[idCol])] !== undefined ? byId[String(b[idCol])] : byKey[keyOf(b[0], b[2], b[4])];
+    if (i === undefined) return;
+    const edited = String(b[3] || '').trim();
+    if (edited && edited !== String(txValues[i][TX_COL.CATEGORY] || '').trim()) {
+      txValues[i][TX_COL.CATEGORY] = edited;
+      changed.push(i);
+    }
+  });
+  return changed;
 }
 
 function saveTransactions(transactions) {
@@ -633,6 +688,14 @@ function recategorizeAllTransactions(userEmail) {
     const values = txSheet.getRange(2, 1, numRows, numCols).getValues();
     const asText = v => (v === null || v === undefined) ? '' : String(v);
     const changedCols = new Set();
+    ensureTransactionsSchema(txSheet);
+    const fromTransfers = syncTransferCategoryEdits(values);   // v1.1.39: categories typed in Bank Transfers
+    if (fromTransfers.length) {
+      changedCols.add(TX_COL.CATEGORY);
+      totalChanged += fromTransfers.length;
+      Logger.log('✍️ Categories set in Bank Transfers kept: ' + fromTransfers.length);
+    }
+    let keptManual = 0;
 
     values.forEach(row => {
       // v1.1.34: the ONE merchant repair recategorize makes, kept outside computeRecategorization (which must never
@@ -648,7 +711,12 @@ function recategorizeAllTransactions(userEmail) {
         totalChanged++;
       }
       const r = computeRecategorization(row, rawCustomRules);
-      [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, r.category], [TX_COL.CURRENCY, r.currency],
+      // v1.1.39: a category you set by hand is kept; the tracker's own category is recorded either way
+      const manual = isManualCategory(row, r.category);
+      if (manual) keptManual++;
+      const auto = r.category || AUTO_NONE;
+      if (asText(row[TX_COL.AUTO_CATEGORY]) !== auto) { row[TX_COL.AUTO_CATEGORY] = auto; changedCols.add(TX_COL.AUTO_CATEGORY); }
+      [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, manual ? row[TX_COL.CATEGORY] : r.category], [TX_COL.CURRENCY, r.currency],
        [TX_COL.IS_CREDIT, r.isCredit], [TX_COL.IS_CASHBACK, r.isCashback]].forEach(pair => {
         const c = pair[0], v = pair[1];
         if (asText(row[c]) !== asText(v)) {
@@ -662,6 +730,7 @@ function recategorizeAllTransactions(userEmail) {
     changedCols.forEach(c => {
       txSheet.getRange(2, c + 1, numRows, 1).setValues(values.map(row => [row[c]]));
     });
+    if (keptManual) Logger.log('✍️ Categories you set by hand, kept: ' + keptManual);
   }
 
   const rebuildCounts = rebuildDerivedSheets();
@@ -701,7 +770,14 @@ function rawNoteKey(date, merchant, amount, subject) {
 function migrateTransfersLayout(sheet) {
   const width = Math.max(sheet.getLastColumn(), TRANSFERS_HEADERS.length);
   const header = sheet.getRange(1, 1, 1, width).getValues()[0];
-  if (header[3] === TRANSFERS_HEADERS[3]) return false;
+  if (header[3] === TRANSFERS_HEADERS[3]) {
+    if (header[7] !== 'Id') {   // v1.1.39: the hidden Id column
+      sheet.getRange(1, 8).setValue('Id');
+      sheet.hideColumns(8);
+      ensureAutoFilter(sheet, TRANSFERS_HEADERS.length, 2000);
+    }
+    return false;
+  }
   const filter = sheet.getFilter();
   if (filter) filter.remove();
   sheet.getRange(1, 1, 1, width).clearContent();
@@ -734,7 +810,7 @@ function rebuildDerivedSheets() {
     } else if (type === 'Transfer') {
       transfers.push([
         row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], row[TX_COL.AMOUNT],
-        row[TX_COL.CURRENCY], row[TX_COL.SUBJECT]
+        row[TX_COL.CURRENCY], row[TX_COL.SUBJECT], row[TX_COL.MESSAGE_ID] || ''
       ]);
     }
   }

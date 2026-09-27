@@ -54,7 +54,7 @@ test('dedup: messageId, legacy rows and same-run repeats (E1)', () => {
   const sel = h.ctx.selectNewTransactions(incoming, index);
   assert.equal(sel.duplicates, 5);
   assert.deepEqual(h.plain(sel.fresh).map(t => t.messageId), ['m2_0', 'm3_0', 'g3_0']);
-  assert.equal(h.ctx.transactionToRow(sel.fresh[0]).length, COLS);
+  assert.equal(h.ctx.transactionToRow(sel.fresh[0]).length, h.get('TX_NUM_COLS'), 'a saved row fills every Transactions column (v1.1.39: 15, with Auto Category)');
 });
 
 test('recategorize repairs the CACHAREPA row and never touches the merchant (C3, C5)', () => {

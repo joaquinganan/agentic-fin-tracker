@@ -290,6 +290,10 @@ function computeHoldings(values, opts) {
     if (!snapshotDay[a] || x.key > snapshotDay[a]) snapshotDay[a] = x.key;
   });
   const positions = {}, cash = {}, cashEstimated = {}, valuations = {};
+  // v1.1.39: a Valuation of an account that has positions (a broker's value on a past date) only marks where its return
+  // starts — it isn't an "other account", and its value isn't added twice
+  const positionAccounts = new Set(rows.filter(x => ['Snapshot', 'Buy', 'Sell'].indexOf(x.r[LG.TYPE]) !== -1)
+    .map(x => String(x.r[LG.ACCOUNT]).trim()));
   const totals = { dividendsYtd: 0, feesYtd: 0, realizedYtd: 0, contributionsYtd: { USD: 0, DOP: 0 } };
   const warnings = [];
   const pos = (a, t) => positions[a + '|' + t] ||
@@ -301,6 +305,7 @@ function computeHoldings(values, opts) {
     const cur = String(r[LG.CURRENCY] || 'USD').toUpperCase();
     const inYear = key.slice(0, 4) === year;
     if (type === 'Valuation') {
+      if (positionAccounts.has(a)) return;
       const value = amount || q * p;
       if (!valuations[a] || key >= valuations[a].day) valuations[a] = { account: a, value: value, currency: cur, day: key, units: q, unitPrice: p };
       return;
@@ -616,7 +621,7 @@ function styleHistorySheet(sheet) {
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$B2="' + HISTORY_TOTAL + '"')
       .setBackground(DASH_THEME.total).setFontColor(DASH_THEME.navy).setBold(true).setRanges([all]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(INT($A2)))')   // alternate by day
-      .setBackground(SHEET_THEME.stripe).setRanges([all]).build()]);
+      .setBackground(HISTORY_DAY_BAND).setRanges([all]).build()]);   // v1.1.39: the row stripe was too faint to see days
   [95, 150, 90, 120, 120, 130].forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
 
@@ -706,6 +711,7 @@ function refreshInvestmentsNow() {
 const HISTORY_SHEET = 'Portfolio History';
 const HISTORY_HEADERS = ['Date', 'Account', 'Ticker', 'Quantity', 'Price (US$)', 'Value (US$)'];
 const HISTORY_TOTAL = 'TOTAL';
+const HISTORY_DAY_BAND = '#E8EEF8';   // v1.1.39: every other day, so one day's rows read as a block
 const ANNUALIZE_MIN_DAYS = 180;   // annualizing a few weeks of returns gives absurd numbers
 
 /**
@@ -798,11 +804,21 @@ function computeReturns(ledgerValues, currentValues, opts) {
     const acc = accounts[a];
     const mine = rows.filter(x => x.account === a);
     if (snapDay[a]) {
-      acc.start = snapDay[a];
-      mine.filter(x => x.r[LG.TYPE] === 'Snapshot' && x.key === snapDay[a]).forEach(x => {
-        const t = String(x.r[LG.TICKER]).toUpperCase().trim();
-        acc.startValue += t === 'CASH' ? invNumber(x.r[LG.AMOUNT]) : invNumber(x.r[LG.QTY]) * invNumber(x.r[LG.PRICE]);
-      });
+      // v1.1.39: from the EARLIEST of its first Snapshot and its first balance (e.g. the broker's value on January 1)
+      // — it used to start at the latest snapshot, so a portfolio snapshotted in September was "tracked since" September
+      const firstSnap = mine.find(x => x.r[LG.TYPE] === 'Snapshot');
+      const firstVal = mine.find(x => x.r[LG.TYPE] === 'Valuation');
+      if (firstVal && firstVal.key < firstSnap.key) {
+        acc.start = firstVal.key;
+        acc.startValue = toUsd(invNumber(firstVal.r[LG.AMOUNT]) || invNumber(firstVal.r[LG.QTY]) * invNumber(firstVal.r[LG.PRICE]),
+          firstVal.r[LG.CURRENCY]);
+      } else {
+        acc.start = firstSnap.key;
+        mine.filter(x => x.r[LG.TYPE] === 'Snapshot' && x.key === firstSnap.key).forEach(x => {
+          const t = String(x.r[LG.TICKER]).toUpperCase().trim();
+          acc.startValue += t === 'CASH' ? invNumber(x.r[LG.AMOUNT]) : invNumber(x.r[LG.QTY]) * invNumber(x.r[LG.PRICE]);
+        });
+      }
     } else {
       const firstVal = mine.find(x => x.r[LG.TYPE] === 'Valuation');
       if (firstVal && !mine.some(x => x.r[LG.TYPE] === 'Deposit' && x.key < firstVal.key)) {
@@ -1057,7 +1073,7 @@ function investmentsReportData(kind, opts) {
  * FUND / PENSION BALANCES — v1.1.33
  * A dialog that adds a Valuation row, so balances aren't typed by hand into the ledger.
  * ====================================================================== */
-const VALUATION_KINDS = ['Fund', 'Pension', 'Other'];
+const VALUATION_KINDS = ['Fund', 'Pension', 'Broker', 'Other'];
 
 /** null when the entry can be saved, otherwise what's wrong. Pure. */
 function validateValuationEntry(e, todayKey) {
@@ -1114,7 +1130,8 @@ function openValuationDialog() {
   <label for="account">Account</label>
   <input id="account" list="known" placeholder="e.g. Liquidity fund, Pension fund" value="">
   <datalist id="known">${known.map(a => `<option value="${esc(a)}">`).join('')}</datalist>
-  <div class="hint">Use the same name every time — Holdings keeps the latest balance of each account.</div>
+  <div class="hint">Use the same name every time — Holdings keeps the latest balance of each account.
+    A broker with positions (e.g. HAPI): its total value on a past date sets where its return starts.</div>
   <div class="row">
     <div><label for="kind">Kind</label><select id="kind">${VALUATION_KINDS.map(k => `<option>${k}</option>`).join('')}</select></div>
     <div><label for="date">Statement date</label><input id="date" type="date" value="${today}" max="${today}"></div>
@@ -1207,11 +1224,21 @@ function addValuationEntry(entry) {
       safeAlert((updated ? '✅ Balance updated (same account and date)\n\n' : '✅ Balance saved\n\n') + row[LG.ACCOUNT] + ' — ' + entry.currency + ' ' +
         value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' as of ' + entry.date +
         (entry.mode === 'units' ? ' (' + entry.units + ' × ' + entry.unitPrice + ')' : '') +
-        '\n\nIt now shows in Holdings › Other accounts. Add a new balance with every statement.');
+        (isPositionAccount(row[LG.ACCOUNT]) ? '\n\nThis account has positions: the balance sets where its return starts (Holdings › Performance).'
+          : '\n\nIt now shows in Holdings › Other accounts. Add a new balance with every statement.'));
       return true;
     } catch (error) {
       safeAlert('❌ Could not save the balance: ' + error);
       return false;
     }
   });
+}
+
+/** v1.1.39: whether the ledger holds positions (Snapshot, Buy or Sell rows) for this account. */
+function isPositionAccount(account) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_LEDGER_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return false;
+  const name = String(account).trim().toLowerCase();
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, LEDGER_HEADERS.length).getValues()
+    .some(r => String(r[LG.ACCOUNT]).trim().toLowerCase() === name && ['Snapshot', 'Buy', 'Sell'].indexOf(r[LG.TYPE]) !== -1);
 }

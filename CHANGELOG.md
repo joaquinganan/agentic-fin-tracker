@@ -2,6 +2,22 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.39 (Sept 28, 2026) — categories you set by hand are kept; HAPI's return from an earlier date
+- **Reported:** recategorizing — from the menu and in every daily run — wiped categories set by hand: a transfer you
+  categorised went back to empty, a purchase you re-categorised went back to the tracker's choice. And Bank Transfers,
+  where transfers are reviewed, is rebuilt from Transactions, so a category typed there was lost too.
+  - Transactions gains a hidden **Auto Category** column (O): the category the tracker last set. A category different
+    from it was set by hand and is kept. Rows from before this version: a transfer with a category no rule gives is taken
+    as yours. Clear a cell to get the automatic category back.
+  - Bank Transfers gains a hidden **Id**: before recategorizing, a category typed there is copied to Transactions as yours
+    (a sheet from before the Id is matched by date, beneficiary and amount).
+- **Reported:** HAPI showed "tracked since 2026-09-26" — an account with positions started at its latest snapshot. It now
+  starts at the earliest of its first snapshot and its first balance: add HAPI's value on a past date (➕ Add Fund /
+  Pension Balance, kind Broker) and its return runs from there, deposits since then counted as deposits. That balance
+  only marks the start — it isn't listed under Other accounts.
+- Portfolio History: every other day is banded in a visible colour (the row stripe was too faint to tell days apart).
+- Tests: 126 (mutation-checked: manual categories kept, Bank Transfers edits carried back, HAPI's earlier start).
+
 ### v1.1.38 (Sept 28, 2026) — HAPI limit orders; Recategorize reorders tabs; hidden tabs stay hidden
 - **HAPI limit orders** (from a live email in Unrecognized): a limit order's Cost includes the fee — e.g. 2 × 150.25 + 2.99
   = 303.49 — while a market order's doesn't. Both are accepted now; the cost basis is quantity × price either way (what HAPI

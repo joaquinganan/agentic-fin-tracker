@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.38"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.39"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -790,7 +790,8 @@ function initializeTransactionsSheet() {
       "IsCashback",
       "Type",
       "MessageId",
-      "TxRef"      // v1.1.23: bank's own transaction id, hidden
+      "TxRef",     // v1.1.23: bank's own transaction id, hidden
+      "Auto Category"   // v1.1.39: the category the tracker last set, hidden — a different one was set by hand
     ];
     sheet.appendRow(headers);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
@@ -807,6 +808,7 @@ function initializeTransactionsSheet() {
     // share the same date/bank/amount. Not meant to be read by a person.
     sheet.hideColumns(TX_COL.MESSAGE_ID + 1);
     sheet.hideColumns(TX_COL.TX_REF + 1);
+    sheet.hideColumns(TX_COL.AUTO_CATEGORY + 1);   // v1.1.39
   }
 }
 

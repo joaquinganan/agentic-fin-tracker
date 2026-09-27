@@ -209,3 +209,9 @@ Apps Script stops any run at 6 minutes. The tracker stops reading emails before 
 steps and tells you in the summary ("⏸ Stopped reading early…"): run the same range again and it continues — emails
 already saved are skipped without being read.
 
+## Categories you set by hand
+
+You can set or change a category directly in **Transactions** or **Bank Transfers**: the tracker keeps it — recategorizing
+and the daily run no longer overwrite it. To go back to the automatic category, clear the cell. For something that should
+apply to every future transaction too, add a Custom Rule instead. (Edits in the Raw_ sheets aren't kept: those are copies.)
+
