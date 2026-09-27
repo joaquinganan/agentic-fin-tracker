@@ -232,7 +232,8 @@ class FakeSpreadsheet {
   getSheets() { return this.sheets.slice(); }
   deleteSheet(s) { this.sheets = this.sheets.filter(x => x !== s); }
   getActiveSheet() { return this.active || this.sheets[0]; }
-  setActiveSheet(s) { this.active = s; return s; }
+  // conservative: activating a hidden tab shows it (as clicking it does), so code that reorders must hide it again
+  setActiveSheet(s) { if (s && s.sheetHidden) s.sheetHidden = false; this.activations = (this.activations || 0) + 1; this.active = s; return s; }
   moveActiveSheet(pos) {
     const s = this.getActiveSheet();
     this.sheets = this.sheets.filter(x => x !== s);
@@ -299,7 +300,17 @@ function makeServices(options) {
           };
           return m;
         };
-        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert: m => ui.alerts.push(m), createMenu };
+        // Ui.alert(prompt) or Ui.alert(title, prompt, buttons) → the Button pressed (ui.nextButton, YES by default)
+        const Button = { OK: 'OK', CANCEL: 'CANCEL', YES: 'YES', NO: 'NO', CLOSE: 'CLOSE' };
+        const ButtonSet = { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO: 'YES_NO', YES_NO_CANCEL: 'YES_NO_CANCEL' };
+        const isSet = v => Object.values(ButtonSet).indexOf(v) !== -1;
+        const alert = (a, b, c) => {                         // alert(prompt[, buttons]) or alert(title, prompt[, buttons])
+          const titled = b !== undefined && !isSet(b);
+          ui.alerts.push(titled ? a + '\n' + b : a);
+          const set = titled ? c : b;
+          return set && set !== ButtonSet.OK ? (ui.nextButton || Button.YES) : Button.OK;
+        };
+        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert, createMenu, Button, ButtonSet };
       },
       newDataValidation: validationBuilder,
       newConditionalFormatRule: cfBuilder,

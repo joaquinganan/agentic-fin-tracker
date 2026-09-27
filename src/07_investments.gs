@@ -132,13 +132,20 @@ function parseHapiMessage(message) {
       return { kind: 'unparsed', reason: 'order email without side, ticker, quantity, price or cost' };
     }
     if (!/completed/i.test(status)) return { kind: 'unparsed', reason: 'order status "' + status + '"' };
-    const q = invNumber(qty[1]), p = invNumber(price), amount = invNumber(cost);
-    if (!(q > 0) || !(p > 0) || Math.abs(q * p - amount) > Math.max(0.05, amount * 0.005)) {
+    const q = invNumber(qty[1]), p = invNumber(price), cost$ = invNumber(cost), fee = qty[2] ? invNumber(qty[2]) : 0;
+    const tolerance = Math.max(0.05, cost$ * 0.005), gross = q * p;
+    // v1.1.38: a market order's Cost is quantity × price (the fee apart); a LIMIT order's Cost includes the fee
+    // (e.g. 2 × 150.25 + 2.99 = 303.49 — the rule seen in a live email). Either way the cost basis is quantity × price, as HAPI shows it.
+    const feeApart = Math.abs(gross - cost$) <= tolerance;
+    const feeIncluded = fee > 0 && (Math.abs(gross + fee - cost$) <= tolerance || Math.abs(gross - fee - cost$) <= tolerance);
+    if (!(q > 0) || !(p > 0) || !(feeApart || feeIncluded)) {
       return { kind: 'unparsed', reason: 'quantity × average price does not match the cost' };
     }
+    const orderType = ((text.match(/Order type:\s*(.+?)\s+Buy\/Sell:/i) || [])[1] || '').trim();
     return { kind: 'event', event: Object.assign(base, {
       date: message.getDate(), type: side.charAt(0).toUpperCase() + side.slice(1).toLowerCase(), ticker: ticker,
-      qty: q, price: p, amount: amount, fee: qty[2] ? invNumber(qty[2]) : 0
+      qty: q, price: p, amount: feeApart ? cost$ : +gross.toFixed(2), fee: fee,
+      notes: /limit/i.test(orderType) ? 'Limit order' : ''
     }) };
   }
   if (/Dividend/i.test(subject)) {

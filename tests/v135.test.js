@@ -82,11 +82,11 @@ test('balances: the same account and date again updates it; another date adds a 
   const { h, mock } = configured();
   const add = (date, amount) => h.ctx.addValuationEntry({ account: 'Pension fund', kind: 'Pension', date, mode: 'amount', amount, currency: 'DOP' });
   add('2026-09-08', '890000');
-  add('2026-09-08', '892972.13');                       // same statement, corrected
+  add('2026-09-08', '760000');                       // same statement, corrected
   assert.match(mock.ui.alerts[mock.ui.alerts.length - 1], /Balance updated \(same account and date\)/);
-  add('2026-01-01', '807733.26');                       // an earlier statement: the start
+  add('2026-01-01', '700000');                       // an earlier statement: the start
   const rows = h.plain(mock.ss.getSheetByName('Investment Ledger')._rows(12).filter(r => r[2] === 'Valuation'));
-  assert.deepEqual(rows.map(r => [h.ctx.normalizeDateForCompare(r[0]), r[6]]).sort(), [['2026-01-01', 807733.26], ['2026-09-08', 892972.13]]);
+  assert.deepEqual(rows.map(r => [h.ctx.normalizeDateForCompare(r[0]), r[6]]).sort(), [['2026-01-01', 700000], ['2026-09-08', 760000]]);
   const perf = mock.ss.getSheetByName('Holdings')._rows(8).find(r => r[1] === 'Pension fund' && typeof r[2] !== 'number');
   assert.equal(h.ctx.normalizeDateForCompare(perf[2]), '2026-01-01', 'tracked since the earliest balance');
 });

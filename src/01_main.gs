@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.37"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.38"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1184,6 +1184,7 @@ function recategorizeAllTransactionsPrompt() {
     try {
       SpreadsheetApp.getActiveSpreadsheet().toast("Recategorizing...", "📊 Financial Tracker", -1);
       const changed = recategorizeAllTransactions(config.email);
+      ensureSheetOrder();   // v1.1.38: this menu item didn't reorder tabs
       SpreadsheetApp.getActiveSpreadsheet().toast("Done.", "📊 Financial Tracker", 3);
       ui.alert("✅ Done — " + changed + " cell(s) updated.");
     } catch (error) {

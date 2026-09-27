@@ -81,16 +81,20 @@ const RAW_BANK_TAB_COLOR = "#999999";
 function ensureSheetOrder() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const previousActive = ss.getActiveSheet();
-
-  let pos = 1;
-  CANONICAL_SHEET_ORDER.forEach(name => {
-    const sheet = ss.getSheetByName(name);
-    if (sheet) {
-      ss.setActiveSheet(sheet);
+  // v1.1.38: moving a tab means activating it, which can show a hidden one — remember which were hidden and hide them
+  // again afterwards; and when the order is already right, move nothing
+  const wanted = CANONICAL_SHEET_ORDER.filter(name => ss.getSheetByName(name));
+  const current = ss.getSheets().map(s => s.getName()).filter(n => wanted.indexOf(n) !== -1);
+  if (current.join('|') !== wanted.join('|')) {
+    const hidden = ss.getSheets().filter(s => s.isSheetHidden());
+    let pos = 1;
+    wanted.forEach(name => {
+      ss.setActiveSheet(ss.getSheetByName(name));
       ss.moveActiveSheet(pos);
       pos++;
-    }
-  });
+    });
+    hidden.forEach(s => { if (!s.isSheetHidden()) s.hideSheet(); });
+  }
 
   ss.getSheets().forEach(sheet => {
     const name = sheet.getName();
@@ -101,7 +105,7 @@ function ensureSheetOrder() {
     }
   });
 
-  ss.setActiveSheet(previousActive);
+  if (previousActive && !previousActive.isSheetHidden()) ss.setActiveSheet(previousActive);
 }
 
 /**

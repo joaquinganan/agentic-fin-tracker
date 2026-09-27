@@ -2,6 +2,17 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.38 (Sept 28, 2026) — HAPI limit orders; Recategorize reorders tabs; hidden tabs stay hidden
+- **HAPI limit orders** (from a live email in Unrecognized): a limit order's Cost includes the fee — e.g. 2 × 150.25 + 2.99
+  = 303.49 — while a market order's doesn't. Both are accepted now; the cost basis is quantity × price either way (what HAPI
+  itself shows as cost), the fee goes in its column and the row is noted "Limit order". A cost matching neither is still
+  refused. The quantity was there all along; a one-character quantity line had been dropped while inspecting the email.
+- **Reported:** tabs weren't reorganized after 🔁 Recategorize — that menu item never reordered them (only runs, the
+  wizard, the Dashboard and investments did). It does now.
+- Reordering activates each tab, which can show a hidden one: hidden tabs are hidden again afterwards, and nothing is
+  moved when the order is already right. The test mock now treats activating a hidden tab as showing it (the worst
+  case), and supports confirmation dialogs (`Button`, `ButtonSet`). Tests: 120.
+
 ### v1.1.37 (Sept 28, 2026) — investment changes account by account; distinct status colours; tab groups
 - **Reported:** the daily email showed "+US$17,104 since Sat 26 Sep" — the day a fund and a pension were added. The change
   compared totals, so accounts added to the tracker counted as gain. Daily and monthly changes are now measured account
