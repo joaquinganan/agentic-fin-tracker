@@ -32,7 +32,8 @@ const HOLDINGS_SHEET = 'Holdings';
 const INVESTMENT_ACCOUNTS_SHEET = 'Investment Accounts';
 const LEDGER_HEADERS = ['Date', 'Account', 'Type', 'Ticker', 'Quantity', 'Price', 'Amount', 'Fee', 'Currency', 'Source', 'Notes', 'Id'];
 const LG = { DATE: 0, ACCOUNT: 1, TYPE: 2, TICKER: 3, QTY: 4, PRICE: 5, AMOUNT: 6, FEE: 7, CURRENCY: 8, SOURCE: 9, NOTES: 10, ID: 11 };
-const LEDGER_TYPES = ['Buy', 'Sell', 'Dividend', 'Deposit', 'Withdrawal', 'Fee', 'Snapshot', 'Valuation'];
+// v1.1.42: Notice — a broker said a deposit happened but not how much (HAPI's "Deposit Completed"); it moves nothing
+const LEDGER_TYPES = ['Buy', 'Sell', 'Dividend', 'Deposit', 'Withdrawal', 'Fee', 'Snapshot', 'Valuation', 'Notice'];
 const ACCOUNTS_HEADERS = ['Account', 'Kind', 'Deposit keyword', 'Notes'];
 const DEFAULT_INVESTMENT_ACCOUNTS = [
   ['HAPI', 'Broker', 'OUROSR', "Orders and dividends come from HAPI's emails; deposits from bank transfers whose " +
@@ -161,7 +162,9 @@ function parseHapiMessage(message) {
     }) };
   }
   if (/Deposit Completed/i.test(subject)) {
-    return { kind: 'skipped', reason: 'deposit confirmation — it has no amount; deposits come from the bank transfer' };
+    // v1.1.42: no amount, but the date says a deposit happened — kept as a Notice, checked against recorded deposits
+    return { kind: 'event', event: Object.assign(base, { date: message.getDate(), type: 'Notice', ticker: '', qty: '', price: '',
+      amount: '', notes: 'Deposit completed — HAPI sends no amount' }) };
   }
   return { kind: 'skipped', reason: 'not an order or a dividend' };
 }
@@ -181,7 +184,10 @@ function captureBrokerEmails(range, skipIds) {
         if (skipIds.has('gmail:' + message.getId())) return;
         let result;
         try { result = p.parse(message); } catch (error) { result = { kind: 'unparsed', reason: String(error) }; }
-        if (result.kind === 'event') { out.events.push(result.event); out.parsed++; out.readIds.push(message.getId()); }
+        if (result.kind === 'event') {
+          out.events.push(result.event); out.parsed++;
+          if (result.event.type !== 'Notice') out.readIds.push(message.getId());   // a Notice's Unrecognized row is managed by checkDepositNotices
+        }
         else if (result.kind === 'skipped') { out.skipped++; out.readIds.push(message.getId()); }
         else {
           out.unparsed++;
@@ -594,7 +600,7 @@ function styleLedgerSheet(sheet) {
     .requireValueInList(LEDGER_TYPES, true).setAllowInvalid(false).build());
   const colours = { Buy: ['#E8F5E9', '#2E7D32'], Sell: ['#FDECEC', '#B91C1C'], Dividend: ['#F3E8FF', '#7E22CE'],
     Deposit: ['#EAF1FE', '#1D4ED8'], Withdrawal: ['#FFF4E5', '#B45309'], Fee: ['#F3F4F6', '#4B5563'],
-    Snapshot: ['#E0F2F1', '#00695C'], Valuation: ['#FEF9C3', '#854D0E'] };
+    Snapshot: ['#E0F2F1', '#00695C'], Valuation: ['#FEF9C3', '#854D0E'], Notice: ['#EEF2F7', '#475569'] };
   const sources = { email: ['#EAF1FE', '#1D4ED8'], bank: ['#E0F2F1', '#00695C'], manual: ['#F3F4F6', '#4B5563'] };
   const typeCol = sheet.getRange(2, LG.TYPE + 1, rows, 1), sourceCol = sheet.getRange(2, LG.SOURCE + 1, rows, 1);
   const rules = Object.keys(colours).map(t => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(t)
@@ -681,7 +687,50 @@ function refreshHoldings() {
   valueRows.forEach(r => { byAccount[r.account] = (byAccount[r.account] || 0) + (Number(r.value) || 0); });
   writePerformanceBlock(built.sheet, built.rows.notesEnd + 3, h.returns, readHistory(),
     Object.keys(byAccount).map(a => ({ account: a, value: byAccount[a] })), { row: built.rows.kpiValue, col: built.rows.kpiReturnCol });
+  // v1.1.42: every deposit notice without a recorded deposit goes to Unrecognized; recorded ones drop off it
+  const notices = checkDepositNotices(ledger.getDataRange().getValues());
+  if (notices.missing.length || notices.matchedIds.length) {
+    recordUnrecognized(notices.missing, notices.matchedIds, new Date());
+    h.unmatchedDeposits = notices.missing.length;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(UNRECOGNIZED_SHEET);
+    if (sheet) styleUnrecognizedSheet(sheet);
+  }
   return h;
+}
+
+const NOTICE_WINDOW_BEFORE_DAYS = 7;   // a bank transfer usually leaves a few days before the broker completes the deposit
+const NOTICE_WINDOW_AFTER_DAYS = 2;
+
+/**
+ * v1.1.42: pairs each deposit Notice with a recorded Deposit of the same account dated from 7 days before to 2 days after
+ * it (each deposit used once, the closest first). Notices on or before the account's tracking start (its first Snapshot
+ * or balance) are inside the start value and aren't checked. Returns the Unrecognized entries for the unpaired ones and
+ * the Gmail ids of the paired ones. Pure.
+ */
+function checkDepositNotices(ledgerValues) {
+  const rows = ledgerValues.slice(1).filter(r => r[LG.DATE] && String(r[LG.ACCOUNT]).trim())
+    .map(r => ({ r: r, key: normalizeDateForCompare(r[LG.DATE]), account: String(r[LG.ACCOUNT]).trim() }));
+  const start = {};
+  rows.filter(x => x.r[LG.TYPE] === 'Snapshot' || x.r[LG.TYPE] === 'Valuation')
+    .forEach(x => { if (!start[x.account] || x.key < start[x.account]) start[x.account] = x.key; });
+  const deposits = rows.filter(x => x.r[LG.TYPE] === 'Deposit').map(x => ({ account: x.account, key: x.key, used: false }));
+  const missing = [], matchedIds = [];
+  rows.filter(x => x.r[LG.TYPE] === 'Notice').sort((a, b) => a.key < b.key ? -1 : 1).forEach(n => {
+    const id = String(n.r[LG.ID] || '').replace(/^gmail:/, '');
+    if (start[n.account] && n.key <= start[n.account]) { if (id) matchedIds.push(id); return; }
+    const candidates = deposits.filter(d => !d.used && d.account === n.account &&
+      daysBetween(d.key, n.key) <= NOTICE_WINDOW_BEFORE_DAYS && daysBetween(n.key, d.key) <= NOTICE_WINDOW_AFTER_DAYS)
+      .sort((a, b) => Math.abs(daysBetween(a.key, n.key)) - Math.abs(daysBetween(b.key, n.key)));
+    if (candidates.length) {
+      candidates[0].used = true;
+      if (id) matchedIds.push(id);
+    } else {
+      missing.push({ id: id || ('notice:' + n.account + ':' + n.key), date: n.r[LG.DATE], bank: n.account, subject: 'Deposit Completed',
+        reason: 'Deposit without amount — add it: 📊 Tracker › ➕ Add Balance or Deposit › A deposit (' + n.key + ')',
+        snippet: n.account + ' confirmed a deposit on ' + n.key + ' but its email has no amount, and no deposit is recorded near that date.' });
+    }
+  });
+  return { missing: missing, matchedIds: matchedIds };
 }
 
 /** Menu "📈 Refresh Investments": deposits from bank transfers + Holdings (emails are read by the regular runs). */

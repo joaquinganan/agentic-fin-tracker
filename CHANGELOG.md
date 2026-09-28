@@ -2,6 +2,15 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.42 (Sept 28, 2026) — HAPI deposits missing from the ledger are flagged, one by one
+- HAPI's "Deposit Completed" email has no amount, so it was skipped — and a deposit that didn't also arrive as a bank
+  transfer the tracker reads went unrecorded, counted as gain. The email is now kept as a **Notice** row in the Investment
+  Ledger (it moves no money), and every refresh pairs each notice with a recorded deposit of the same account dated from
+  7 days before to 2 days after it (each deposit used once). Each notice left without one goes to **Unrecognized** —
+  "Deposit without amount", with its date and a Gmail link — and leaves it once the deposit is added (➕ Add Balance or
+  Deposit › A deposit). Notices on or before the account's tracking start are inside its start value and aren't checked.
+- Tests: 137 (mutation-checked: the date window, one deposit per notice, notices before the start).
+
 ### v1.1.41 (Sept 28, 2026) — the balance/deposit dialog works again; every dialog's script is tested
 - **Reported:** in ➕ Add Balance or Deposit, "A balance" and "A deposit" still showed the Units fields. v1.1.40 added a help
   text with an apostrophe ("account's") inside a quoted string of the dialog's own script; the template literal consumed

@@ -221,4 +221,6 @@ An account's gain is its value now − its value at the start − the money put 
 themselves when they're bank transfers matching the account's keyword (Investment Accounts); anything else — another
 route, a bank whose transfers aren't read yet, pension contributions — add with **➕ Add Balance or Deposit › A deposit**.
 If purchases since the start exceed the recorded deposits, Holdings › Performance warns you: a missing deposit counts as gain.
+HAPI emails a notice for every completed deposit, without the amount: the tracker keeps them and lists in
+**Unrecognized** each one with no deposit recorded near its date — add that deposit's amount and the row goes away.
 

@@ -1675,6 +1675,7 @@ function styleUnrecognizedSheet(sheet) {
     rule().whenTextStartsWith('Could not read').setBackground('#FDECEC').setFontColor('#B91C1C').setRanges([reason]).build(),
     rule().whenTextStartsWith('Broker email').setBackground('#E0F2F1').setFontColor('#00695C').setRanges([reason]).build(),
     rule().whenTextStartsWith('Saved').setBackground('#F3E8FF').setFontColor('#7E22CE').setRanges([reason]).build(),
+    rule().whenTextStartsWith('Deposit without amount').setBackground('#EAF1FE').setFontColor('#1D4ED8').setRanges([reason]).build(),   // v1.1.42
     rule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(ROW()))').setBackground(SHEET_THEME.stripe).setRanges([all]).build()
   ]);
   [125, 85, 260, 250, 420, 60, 70, 85, 85].forEach((w, i) => sheet.setColumnWidth(i + 1, w));

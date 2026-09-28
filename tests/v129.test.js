@@ -20,9 +20,10 @@ test('HAPI emails: orders (with the per-order fee), dividends; deposit confirmat
   const div = h.plain(h.ctx.parseHapiMessage(hapi(h, 'hapi_dividend', '💸 Dividend from UNH received!', h.date(2026, 8, 18, 8))));
   assert.deepEqual([div.event.type, div.event.ticker, div.event.amount], ['Dividend', 'UNH', 1.95]);
   assert.equal(new Date(div.event.date).getDate(), 18, 'the payment date in the email');
+  // v1.1.42: kept as a Notice (no amount) so a deposit missing from the ledger can be flagged
   const dep = h.plain(h.ctx.parseHapiMessage(hapi(h, 'hapi_deposit', 'Deposit Completed 🟢', h.date(2026, 9, 8))));
-  assert.equal(dep.kind, 'skipped');
-  assert.match(dep.reason, /no amount/);
+  assert.deepEqual([dep.kind, dep.event.type, dep.event.amount], ['event', 'Notice', '']);
+  assert.match(dep.event.notes, /no amount/);
 });
 
 test('HAPI emails: HTML-only bodies are read; inconsistent or unfinished orders are never saved', () => {
@@ -195,8 +196,8 @@ test('a run: HAPI emails and the bank deposit reach the ledger, Holdings is rebu
   assert.deepEqual(h.logs.filter(l => /Error during investments|Could not style/.test(l)), []);
   const rows = mock.ss.getSheetByName('Investment Ledger')._rows(12);
   const kinds = rows.map(r => r[2] + ' ' + (r[3] || r[1]) + ' ' + r[9]).sort();
-  assert.deepEqual(kinds, ['Buy GOOGL email', 'Deposit HAPI bank', 'Dividend UNH email', 'Sell UNH email',
-    'Snapshot CASH manual', 'Snapshot GOOGL manual', 'Snapshot UNH manual']);
+  assert.deepEqual(kinds, ['Buy GOOGL email', 'Deposit HAPI bank', 'Dividend UNH email', 'Notice HAPI email', 'Sell UNH email',
+    'Snapshot CASH manual', 'Snapshot GOOGL manual', 'Snapshot UNH manual']);   // v1.1.42: the deposit notice
   assert.ok(mock.gmail.queries.some(q => q.startsWith('from:no-reply@hapi.trade after:')), 'searched by sender and range');
   assert.ok(mock.gmail.markedRead.includes('t-hapi-buy') && mock.gmail.markedRead.includes('t-hapi-dep'), 'read → processed');
   assert.equal(mock.ss.getSheetByName('Transactions')._rows(14).length, 1, 'HAPI emails never become spending rows');
