@@ -134,7 +134,7 @@ CHANGELOG.md          every release, with the defect behind it
 
 ## Getting started
 
-Follow **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**: create a Google Sheet, open *Extensions › Apps Script*,
+Follow **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** (en español: **[docs/GUIA.md](docs/GUIA.md)**): create a Google Sheet, open *Extensions › Apps Script*,
 paste **[dist/FinancialTracker.gs](dist/FinancialTracker.gs)** as the project's only code file, save, reload the sheet
 and use **📊 Tracker › Setup Wizard**, then **📊 Tracker › 📘 Start here** — a checklist of what's left, checked against the
 sheet. Updating is the same: replace that file's content with the new one.

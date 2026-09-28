@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.48"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.49"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -901,7 +901,9 @@ function runGmailMonitorCore(search, config) {
     results = timed('save', () => saveTransactions(transactions));
     marked = timed('mark', () => markEmailsAsProcessed(extraction.processedThreads, extraction.failedThreadIds,   // unread ones stay for the next run
       { query: search.query, deadline: (RUN_STARTED_AT || runClock()) + RUN_STEPS_DEADLINE_MS, clock: runClock }));
-    timed('read log', () => logReadEmails(stats.readIds));   // v1.1.43: promotions, statements, notices… aren't read again either
+    // v1.1.43: statements, promotions, declined… aren't read again. v1.1.49: ONLY those — saved emails are recognized by
+    // Transactions itself, so a row you delete is read again (logging them too meant it never came back)
+    timed('read log', () => logReadEmails(stats.filteredIds));
   } catch (error) {
     errors.push("parse/save — " + error);
     Logger.log("❌ Error during parse/save: " + error);
@@ -1267,8 +1269,10 @@ function resetSystem() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.alert(
     '⚠️ This will delete everything the system created: Configuration, Transactions, every ' +
-    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, and ' +
-    'the daily triggers (update and summary email). Continue?',
+    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
+    'record of emails already read, and the daily triggers (update and summary email). It cannot be undone.\n\n' +
+    'Kept: the investment tabs (Investment Ledger, Holdings, Portfolio History, Investment Accounts) — ' +
+    'they hold what you typed, which no email can bring back. Continue?',
     ui.ButtonSet.YES_NO);
   
   if (response === ui.Button.YES) {
@@ -1276,7 +1280,8 @@ function resetSystem() {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const fixedNames = new Set([
         CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", "Dashboard",
-        "Pivot - Category x Bank", CUSTOM_RULES_SHEET
+        "Pivot - Category x Bank", CUSTOM_RULES_SHEET,
+        UNRECOGNIZED_SHEET, READ_LOG_SHEET   // v1.1.49: without these, re-reading after a reset skipped every email
       ]);
       const toDelete = ss.getSheets().filter(s => {
         const name = s.getName();
@@ -1287,6 +1292,7 @@ function resetSystem() {
         if (ss.getSheets().length > 1) ss.deleteSheet(s);
       });
       deleteSystemTriggers(); // v1.1.19 (M12) / v1.1.24: only this system's triggers
+      PropertiesService.getScriptProperties().deleteProperty(LAST_RUN_PROPERTY);   // v1.1.49: no "last update" from before the reset
       ui.alert("✅ System reset (" + toDelete.length + " sheet(s) deleted). Run Setup Wizard to start again.");
     } catch (error) {
       ui.alert("❌ Error: " + error);

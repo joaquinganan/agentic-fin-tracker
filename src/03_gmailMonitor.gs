@@ -412,7 +412,8 @@ function newParseStats() {
     messagesSeen: 0, outOfRange: 0, notOwnBank: 0, promotional: 0,
     nonTransactional: 0, declined: 0, amountNotFound: 0, parseErrors: 0, placeholders: 0, reversals: 0,
     unrecognized: [], readIds: [],  // v1.1.35: emails for the Unrecognized sheet, and emails read cleanly
-    alreadySaved: 0                  // v1.1.36: skipped without reading — already in Transactions
+    alreadySaved: 0,                 // v1.1.36: skipped without reading — already in Transactions
+    filteredIds: []                  // v1.1.49: read, nothing to save (statements, promotions…) — for the read log
   };
 }
 
@@ -468,6 +469,7 @@ function extractTransactionsFromThreads(threads, rawCustomRules, range, opts) {
           snippet: result.snippet || (unreadable ? (result.items[0].description || '') : '') });
       } else if (result.status === 'ok' || result.status === 'filtered') {
         stats.readIds.push(message.getId());
+        if (result.status === 'filtered') stats.filteredIds.push(message.getId());
       }
     }
     processedThreads.push(thread);

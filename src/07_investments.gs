@@ -1150,9 +1150,14 @@ function investmentsReportData(kind, opts) {
   rows.filter(r => normalizeDateForCompare(r[0]) === latest && r[1] !== HISTORY_TOTAL)
     .forEach(r => { current[r[1]] = (current[r[1]] || 0) + invNumber(r[5]); });
   const returns = computeReturns(ledger, current, { usdRate: usdRate, today: latest }).total;
-  return kind === 'daily'
-    ? investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns })
-    : investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
+  if (kind === 'daily') return investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns });
+  const monthly = investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
+  if (monthly) return monthly;
+  // v1.1.49: a month before the history began used to leave the section out without a word (reported: "nothing about
+  // investments in the monthly report") — say when it starts instead
+  const first = rows.map(r => normalizeDateForCompare(r[0])).sort()[0];
+  const p = first.split('-').map(Number);
+  return { none: true, firstDay: first, firstReport: Utilities.formatDate(new Date(p[0], p[1], 1, 12), Session.getScriptTimeZone(), 'yyyy-MM-dd') };
 }
 
 /* ======================================================================

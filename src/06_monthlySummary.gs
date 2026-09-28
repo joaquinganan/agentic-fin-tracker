@@ -304,7 +304,12 @@ function buildMonthlySummaryEmail(m, opts) {
   T.push('', m.month.getFullYear() + ' so far: ' + summaryMoney(m.ytdTotal) + ' in ' + m.ytdMonths + ' month(s)');
 
   // investments (v1.1.32)
-  if (m.investments) {
+  if (m.investments && m.investments.none) {   // v1.1.49: the history starts after this month
+    rows.push(ekSection('Investments', '<div style="font-size:13px;color:' + EK.muted + '">Your investment history starts on ' +
+      summaryEscape(m.investments.firstDay) + ' — this section fills in from that month\'s summary, sent on ' +
+      summaryEscape(m.investments.firstReport) + '.</div>'));
+    T.push('', 'Investments: history starts on ' + m.investments.firstDay + ' — first monthly figures on ' + m.investments.firstReport);
+  } else if (m.investments) {
     const iv = m.investments;
     let inner = ekKpis([
       { label: 'Value at month end', value: summaryUsd(iv.endValue), sub: iv.partial ? 'tracking began this month'

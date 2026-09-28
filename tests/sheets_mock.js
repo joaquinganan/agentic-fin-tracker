@@ -359,7 +359,8 @@ function makeServices(options) {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: k => (k in props ? props[k] : null),
-        setProperty: (k, v) => { props[k] = String(v); }
+        setProperty: (k, v) => { props[k] = String(v); },
+        deleteProperty: k => { delete props[k]; }
       })
     },
     UrlFetchApp: {

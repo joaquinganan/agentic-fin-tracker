@@ -33,6 +33,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `bundle.test.js` | `dist/FinancialTracker.gs` is what `src/` builds; every file in load order; compiles as one script. (`npm run test:bundle` runs the whole suite against that file.) |
 | `v147.test.js` | 📘 Start here: a new sheet, a sheet with real problems, unscheduled runs, the sidebar's script and allowed actions, allowed tabs, menu and wizard pointer. |
 | `v148.test.js` | Pasting a broker's portfolio screen: parsing (plain and linked), Total assets check, cash, duplicates, saving and same-day replacement, entry points. |
+| `v149.test.js` | Deleted rows re-imported, Reset System re-importing everything and keeping investments, the Spanish guide in sync with the menu, the monthly note before the investment history. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

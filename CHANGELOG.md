@@ -2,6 +2,21 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.49 (Sept 28, 2026) — a Spanish guide; deleted rows come back; Reset System starts over for real
+- **docs/GUIA.md**, the user guide in Spanish (install, setup, 📘 Start here, daily use, categories, investments with
+  HAPI, updating, common problems, adding a bank, privacy), linked from the README and from 📘 Start here. A test checks
+  that it names every menu item exactly as the menu shows it and that its links resolve — so it can't fall behind.
+- Found while documenting: the read log (v1.1.43) also recorded emails that WERE saved, so a transaction row you deleted
+  was never read again — and after 🗑️ Reset System, re-reading the year skipped every email. The log now holds only
+  emails with nothing to save (statements, promotions, declined); saved ones are recognized by Transactions itself.
+- **🗑️ Reset System** also deletes Unrecognized, the read log and the "last update" record, and its confirmation says
+  what's kept (the investment tabs: what you typed, which no email can bring back) and that it can't be undone. The
+  guide's first draft had described it as only clearing settings — checked against the code before publishing.
+- **Reported:** no investments in the monthly report — "Send Monthly Summary Now" reports the previous month, which was
+  before the investment history began, so the section was left out without a word. It now says when the history starts
+  and which summary will be the first with figures.
+- Tests: 165, on `src/` and on the single file (mutation-checked: the read log, the reset, the guide).
+
 ### v1.1.48 (Sept 28, 2026) — paste the broker's portfolio screen to make a Snapshot
 - **📊 Tracker › 📋 Paste Broker Positions** (also from 📘 Start here): paste the broker's portfolio screen as copied from
   the web app — plain, or with links — and the tracker reads each asset's ticker, quantity, value and gain into a

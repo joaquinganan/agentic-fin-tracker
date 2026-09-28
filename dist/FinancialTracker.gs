@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.48 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.49 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.48"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.49"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -914,7 +914,9 @@ function runGmailMonitorCore(search, config) {
     results = timed('save', () => saveTransactions(transactions));
     marked = timed('mark', () => markEmailsAsProcessed(extraction.processedThreads, extraction.failedThreadIds,   // unread ones stay for the next run
       { query: search.query, deadline: (RUN_STARTED_AT || runClock()) + RUN_STEPS_DEADLINE_MS, clock: runClock }));
-    timed('read log', () => logReadEmails(stats.readIds));   // v1.1.43: promotions, statements, notices… aren't read again either
+    // v1.1.43: statements, promotions, declined… aren't read again. v1.1.49: ONLY those — saved emails are recognized by
+    // Transactions itself, so a row you delete is read again (logging them too meant it never came back)
+    timed('read log', () => logReadEmails(stats.filteredIds));
   } catch (error) {
     errors.push("parse/save — " + error);
     Logger.log("❌ Error during parse/save: " + error);
@@ -1280,8 +1282,10 @@ function resetSystem() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.alert(
     '⚠️ This will delete everything the system created: Configuration, Transactions, every ' +
-    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, and ' +
-    'the daily triggers (update and summary email). Continue?',
+    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
+    'record of emails already read, and the daily triggers (update and summary email). It cannot be undone.\n\n' +
+    'Kept: the investment tabs (Investment Ledger, Holdings, Portfolio History, Investment Accounts) — ' +
+    'they hold what you typed, which no email can bring back. Continue?',
     ui.ButtonSet.YES_NO);
   
   if (response === ui.Button.YES) {
@@ -1289,7 +1293,8 @@ function resetSystem() {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const fixedNames = new Set([
         CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", "Dashboard",
-        "Pivot - Category x Bank", CUSTOM_RULES_SHEET
+        "Pivot - Category x Bank", CUSTOM_RULES_SHEET,
+        UNRECOGNIZED_SHEET, READ_LOG_SHEET   // v1.1.49: without these, re-reading after a reset skipped every email
       ]);
       const toDelete = ss.getSheets().filter(s => {
         const name = s.getName();
@@ -1300,6 +1305,7 @@ function resetSystem() {
         if (ss.getSheets().length > 1) ss.deleteSheet(s);
       });
       deleteSystemTriggers(); // v1.1.19 (M12) / v1.1.24: only this system's triggers
+      PropertiesService.getScriptProperties().deleteProperty(LAST_RUN_PROPERTY);   // v1.1.49: no "last update" from before the reset
       ui.alert("✅ System reset (" + toDelete.length + " sheet(s) deleted). Run Setup Wizard to start again.");
     } catch (error) {
       ui.alert("❌ Error: " + error);
@@ -2222,7 +2228,8 @@ function newParseStats() {
     messagesSeen: 0, outOfRange: 0, notOwnBank: 0, promotional: 0,
     nonTransactional: 0, declined: 0, amountNotFound: 0, parseErrors: 0, placeholders: 0, reversals: 0,
     unrecognized: [], readIds: [],  // v1.1.35: emails for the Unrecognized sheet, and emails read cleanly
-    alreadySaved: 0                  // v1.1.36: skipped without reading — already in Transactions
+    alreadySaved: 0,                 // v1.1.36: skipped without reading — already in Transactions
+    filteredIds: []                  // v1.1.49: read, nothing to save (statements, promotions…) — for the read log
   };
 }
 
@@ -2278,6 +2285,7 @@ function extractTransactionsFromThreads(threads, rawCustomRules, range, opts) {
           snippet: result.snippet || (unreadable ? (result.items[0].description || '') : '') });
       } else if (result.status === 'ok' || result.status === 'filtered') {
         stats.readIds.push(message.getId());
+        if (result.status === 'filtered') stats.filteredIds.push(message.getId());
       }
     }
     processedThreads.push(thread);
@@ -5778,7 +5786,12 @@ function buildMonthlySummaryEmail(m, opts) {
   T.push('', m.month.getFullYear() + ' so far: ' + summaryMoney(m.ytdTotal) + ' in ' + m.ytdMonths + ' month(s)');
 
   // investments (v1.1.32)
-  if (m.investments) {
+  if (m.investments && m.investments.none) {   // v1.1.49: the history starts after this month
+    rows.push(ekSection('Investments', '<div style="font-size:13px;color:' + EK.muted + '">Your investment history starts on ' +
+      summaryEscape(m.investments.firstDay) + ' — this section fills in from that month\'s summary, sent on ' +
+      summaryEscape(m.investments.firstReport) + '.</div>'));
+    T.push('', 'Investments: history starts on ' + m.investments.firstDay + ' — first monthly figures on ' + m.investments.firstReport);
+  } else if (m.investments) {
     const iv = m.investments;
     let inner = ekKpis([
       { label: 'Value at month end', value: summaryUsd(iv.endValue), sub: iv.partial ? 'tracking began this month'
@@ -7034,9 +7047,14 @@ function investmentsReportData(kind, opts) {
   rows.filter(r => normalizeDateForCompare(r[0]) === latest && r[1] !== HISTORY_TOTAL)
     .forEach(r => { current[r[1]] = (current[r[1]] || 0) + invNumber(r[5]); });
   const returns = computeReturns(ledger, current, { usdRate: usdRate, today: latest }).total;
-  return kind === 'daily'
-    ? investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns })
-    : investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
+  if (kind === 'daily') return investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns });
+  const monthly = investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
+  if (monthly) return monthly;
+  // v1.1.49: a month before the history began used to leave the section out without a word (reported: "nothing about
+  // investments in the monthly report") — say when it starts instead
+  const first = rows.map(r => normalizeDateForCompare(r[0])).sort()[0];
+  const p = first.split('-').map(Number);
+  return { none: true, firstDay: first, firstReport: Utilities.formatDate(new Date(p[0], p[1], 1, 12), Session.getScriptTimeZone(), 'yyyy-MM-dd') };
 }
 
 /* ======================================================================
@@ -7623,7 +7641,8 @@ function startHereHtml() {
   <div class="bar"><div id="fill" style="width:0"></div></div>
   <div id="steps"></div>
   <div class="foot">Every step is checked against your sheet — nothing to tick by hand. Something breaks later? It shows up
-    here again. The full guide: <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/USER_GUIDE.md" target="_blank">USER_GUIDE</a>.</div>
+    here again. The full guide: <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/USER_GUIDE.md" target="_blank">USER_GUIDE</a>
+    · <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/GUIA.md" target="_blank">Guía en español</a>.</div>
 <script>
   var ICONS = { done: '✅', todo: '⬜', warn: '⚠️', error: '❌', optional: '○' };
   var current = [];

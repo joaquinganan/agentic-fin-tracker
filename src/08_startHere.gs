@@ -190,7 +190,8 @@ function startHereHtml() {
   <div class="bar"><div id="fill" style="width:0"></div></div>
   <div id="steps"></div>
   <div class="foot">Every step is checked against your sheet — nothing to tick by hand. Something breaks later? It shows up
-    here again. The full guide: <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/USER_GUIDE.md" target="_blank">USER_GUIDE</a>.</div>
+    here again. The full guide: <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/USER_GUIDE.md" target="_blank">USER_GUIDE</a>
+    · <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/GUIA.md" target="_blank">Guía en español</a>.</div>
 <script>
   var ICONS = { done: '✅', todo: '⬜', warn: '⚠️', error: '❌', optional: '○' };
   var current = [];
