@@ -124,6 +124,7 @@ src/                  Apps Script sources (bound to the spreadsheet) + appsscrip
   05_dailySummary.gs  email kit + daily summary
   06_monthlySummary.gs monthly summary
   07_investments.gs   investment ledger, broker emails, holdings
+  08_startHere.gs     📘 Start here: the checklist / health check sidebar
 dist/FinancialTracker.gs   the seven files as ONE file — what you paste (generated: npm run bundle)
 tools/bundle.js       builds and checks dist/
 tests/                automated test framework (see below)
@@ -135,7 +136,8 @@ CHANGELOG.md          every release, with the defect behind it
 
 Follow **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**: create a Google Sheet, open *Extensions › Apps Script*,
 paste **[dist/FinancialTracker.gs](dist/FinancialTracker.gs)** as the project's only code file, save, reload the sheet
-and use **📊 Tracker › Setup Wizard**. Updating is the same: replace that file's content with the new one.
+and use **📊 Tracker › Setup Wizard**, then **📊 Tracker › 📘 Start here** — a checklist of what's left, checked against the
+sheet. Updating is the same: replace that file's content with the new one.
 
 With [clasp](https://github.com/google/clasp), you can push from this repo instead: `clasp pull` once (it brings your
 project's `appsscript.json`, which you move into `dist/`), copy `.clasp.json.example` to `.clasp.json` with your script

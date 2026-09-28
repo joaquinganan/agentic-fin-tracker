@@ -1363,3 +1363,182 @@ function styleInvestmentSheets() {
       try { style(sheet); } catch (error) { Logger.log('Could not style ' + name + ': ' + error); }
     });
 }
+
+/* ======================================================================
+ * PASTE A BROKER'S PORTFOLIO — v1.1.48
+ * The positions screen (HAPI's "My Assets") copied from the browser and pasted in a dialog becomes a Snapshot:
+ * per ticker, quantity; value; gain — cost = value − gain, price = value ÷ quantity. "Total assets" in the paste is
+ * checked against the positions' sum (a position left out of the copy shows up), "Total money" becomes the CASH row.
+ * ====================================================================== */
+const PASTE_TOTAL_TOLERANCE = 0.1;   // US$: values on the screen are rounded to cents, one rounding per position
+
+/** Text as copied from the broker's screen → { positions, cash, totalAssets, warnings }. Pure. */
+function parsePortfolioPaste(text) {
+  const lines = String(text || '').split(/\r?\n/)
+    .map(l => l.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[\u00a0\u200b]/g, ' ').trim())   // [text](link) → text
+    .filter(Boolean);
+  const money = s => { const m = String(s).match(/^([+\-−]?)\s*(?:US)?\$\s*([\d,]*\.?\d+)/); return m ? (m[1] && m[1] !== '+' ? -1 : 1) * Number(m[2].replace(/,/g, '')) : null; };
+  const number = s => /^[\d,]*\.?\d+$/.test(s) ? Number(s.replace(/,/g, '')) : null;
+  const isTicker = s => /^[A-Z][A-Z0-9.\-]{0,11}$/.test(s);
+  const out = { positions: [], cash: null, totalAssets: null, warnings: [] };
+  const labelled = (label, i) => {   // "Total money $7.77" or "Total money" / "$7.77" on the next line
+    const same = lines[i].slice(label.length).trim();
+    if (money(same) !== null) return money(same);
+    return i + 1 < lines.length && money(lines[i + 1]) !== null ? money(lines[i + 1]) : null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^total money/i.test(line)) { out.cash = labelled('Total money', i); continue; }
+    if (/^total assets/i.test(line)) { out.totalAssets = labelled('Total assets', i); continue; }
+    if (!isTicker(line)) continue;
+    const qty = number(lines[i + 1] || ''), value = money(lines[i + 2] || ''), gain = money(lines[i + 3] || '');
+    if (qty === null || value === null || gain === null) continue;   // a word in capitals, not a position
+    if (!(qty > 0)) { out.warnings.push(line + ': quantity is 0 — skipped'); continue; }
+    if (out.positions.some(p => p.ticker === line)) { out.warnings.push(line + ' appears twice — the first one is kept'); i += 3; continue; }
+    const cost = +(value - gain).toFixed(2);
+    out.positions.push({ ticker: line, qty: qty, value: value, gain: gain, cost: cost, price: Number((value / qty).toPrecision(10)) });
+    i += 3;
+  }
+  if (!out.positions.length) out.warnings.push('No positions found. Copy the list of assets from the broker\'s portfolio screen — ticker, quantity, value and gain for each.');
+  const sum = out.positions.reduce((t, p) => t + p.value, 0);
+  out.positionsValue = +sum.toFixed(2);
+  if (out.totalAssets !== null && Math.abs(out.totalAssets - sum) > PASTE_TOTAL_TOLERANCE) {
+    out.warnings.push('The positions add up to US$' + sum.toFixed(2) + ' but the screen says US$' + out.totalAssets.toFixed(2) +
+      ' — US$' + Math.abs(out.totalAssets - sum).toFixed(2) + (out.totalAssets > sum ? ' is missing: a position was probably left out of the copy (scroll down the list and copy again).'
+        : ' too much: a position may be pasted twice.'));
+  }
+  return out;
+}
+
+/** Rows of the Snapshot to save. Pure. */
+function snapshotRows(parsed, account, dateKey) {
+  const p = dateKey.split('-').map(Number), when = new Date(p[0], p[1] - 1, p[2], 12);
+  const rows = parsed.positions.map(x => [when, account, 'Snapshot', x.ticker, x.qty, x.price, x.cost, '', 'USD', 'manual', 'pasted from the broker\'s screen', '']);
+  if (parsed.cash !== null) rows.push([when, account, 'Snapshot', 'CASH', '', '', parsed.cash, '', 'USD', 'manual', 'pasted from the broker\'s screen', '']);
+  return rows;
+}
+
+/** From the dialog: what the paste would save (nothing is written). */
+function previewPortfolioPaste(text) {
+  return parsePortfolioPaste(text);
+}
+
+/** From the dialog: saves the Snapshot — replacing that account's snapshot of the same day — and rebuilds Holdings. */
+function savePortfolioPaste(entry) {
+  const account = String(entry && entry.account || '').trim();
+  const todayKey = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (!account) { safeAlert('❌ Not saved: give the account a name.'); return false; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date || '')) || entry.date > todayKey) { safeAlert('❌ Not saved: pick the date the screen shows (today or earlier).'); return false; }
+  const parsed = parsePortfolioPaste(entry.text);
+  if (!parsed.positions.length) { safeAlert('❌ Not saved: ' + parsed.warnings.join(' ')); return false; }
+  return withRunLock(() => {
+    try {
+      safeToast('Saving the snapshot...', '📈 Investments', -1);
+      const sheet = getOrCreateLedgerSheet();
+      const last = sheet.getLastRow();
+      const width = LEDGER_HEADERS.length;
+      const existing = last > 1 ? sheet.getRange(2, 1, last - 1, width).getValues() : [];
+      const same = r => r[LG.TYPE] === 'Snapshot' && r[LG.DATE] && normalizeDateForCompare(r[LG.DATE]) === entry.date &&
+        String(r[LG.ACCOUNT]).trim().toLowerCase() === account.toLowerCase();
+      const kept = existing.filter(r => !same(r));
+      const replaced = existing.length - kept.length;
+      const all = kept.concat(snapshotRows(parsed, account, entry.date));
+      if (last > 1) sheet.getRange(2, 1, last - 1, width).clearContent();
+      ensureRowCapacity(sheet, all.length + 1);
+      sheet.getRange(2, 1, all.length, width).setValues(all);
+      sortSheetByDateDesc(sheet, LG.DATE + 1);
+      readInvestmentAccounts();
+      refreshHoldings();
+      formatDataSheets();
+      ensureSheetOrder();
+      safeToast('Done.', '📈 Investments', 3);
+      safeAlert('✅ Snapshot saved — ' + account + ', ' + entry.date + '\n\n' + parsed.positions.length + ' position(s), US$' +
+        parsed.positionsValue.toFixed(2) + (parsed.cash !== null ? ' + cash US$' + parsed.cash.toFixed(2) : '') +
+        (replaced ? '\nIt replaced the ' + replaced + ' row(s) of that day\'s earlier snapshot.' : '') +
+        (parsed.warnings.length ? '\n\n⚠️ ' + parsed.warnings.join('\n⚠️ ') : '') +
+        '\n\nPositions now start from this snapshot; movements after that day are added from the broker\'s emails.');
+      return true;
+    } catch (error) {
+      safeAlert('❌ Could not save the snapshot: ' + error);
+      return false;
+    }
+  });
+}
+
+function openPortfolioPasteDialog() {
+  const ledger = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_LEDGER_SHEET);
+  const known = ['HAPI'];
+  if (ledger && ledger.getLastRow() > 1) {
+    ledger.getRange(2, 1, ledger.getLastRow() - 1, LEDGER_HEADERS.length).getValues().forEach(r => {
+      const a = String(r[LG.ACCOUNT] || '').trim();
+      if (a && ['Snapshot', 'Buy', 'Sell'].indexOf(r[LG.TYPE]) !== -1 && known.indexOf(a) === -1) known.push(a);
+    });
+  }
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const html = HtmlService.createHtmlOutput(`
+<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top"><style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 16px 18px; color: #1F2937; font-size: 13px; }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; }
+  textarea { height: 150px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .row { display: flex; gap: 10px; } .row > div { flex: 1; }
+  .hint { font-size: 12px; color: #6B7280; margin-top: 4px; line-height: 1.4; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #EEF1F5; text-align: right; } th:first-child, td:first-child { text-align: left; }
+  th { color: #6B7280; font-weight: 600; font-size: 11px; }
+  .warn { background: #FFF4D6; color: #92400E; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 12px; }
+  .ok { background: #E8F5E9; color: #2E7D32; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 12px; }
+  .buttons { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; padding: 10px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid #0F766E; }
+  #preview { background: #fff; color: #0F766E; } #save { background: #0F766E; color: #fff; } button:disabled { opacity: .5; cursor: default; }
+  #result { max-height: 200px; overflow-y: auto; }
+</style></head><body>
+  <div class="row">
+    <div><label for="account">Account</label><input id="account" list="known" value="${esc(known[0])}">
+      <datalist id="known">${known.map(a => '<option value="' + esc(a) + '">').join('')}</datalist></div>
+    <div><label for="date">Date on the screen</label><input id="date" type="date" value="${today}" max="${today}"></div>
+  </div>
+  <label for="text">The broker's portfolio screen, pasted</label>
+  <textarea id="text" placeholder="Total assets&#10;$0.00&#10;Total money&#10;$0.00&#10;GOOGL&#10;1.5&#10;$450.00&#10;+$50.00 (+12.50%)&#10;..."></textarea>
+  <div class="hint">In the broker's app on the web, open the portfolio, select from <b>Total balance</b> down to the last asset
+    (scroll to the end of the list), copy and paste here. Each asset needs its ticker, quantity, value and gain.
+    Including <b>Total assets</b> lets the tracker check nothing was left out; <b>Total money</b> becomes the cash.</div>
+  <div class="buttons"><button id="preview" onclick="preview()">Preview</button><button id="save" onclick="save()" disabled>Save snapshot</button></div>
+  <div id="result"></div>
+<script>
+  function el(id) { return document.getElementById(id); }
+  function money(n) { return 'US$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function show(r) {
+    var h = '';
+    if (r.positions.length) {
+      h += '<table><tr><th>Ticker</th><th>Quantity</th><th>Value</th><th>Cost</th></tr>';
+      r.positions.forEach(function (p) { h += '<tr><td>' + esc(p.ticker) + '</td><td>' + p.qty + '</td><td>' + money(p.value) + '</td><td>' + money(p.cost) + '</td></tr>'; });
+      h += '</table>';
+      h += '<div class="' + (r.warnings.length ? 'warn' : 'ok') + '">' + r.positions.length + ' position(s), ' + money(r.positionsValue) +
+        (r.cash !== null ? ' + cash ' + money(r.cash) : ' · no Total money in the paste: no cash row') +
+        (r.totalAssets !== null && !r.warnings.length ? ' · matches Total assets ✓' : '') + '</div>';
+    }
+    r.warnings.forEach(function (w) { h += '<div class="warn">⚠️ ' + esc(w) + '</div>'; });
+    el('result').innerHTML = h;
+    el('save').disabled = !r.positions.length;
+    el('save').textContent = r.warnings.length ? 'Save anyway' : 'Save snapshot';   // a known gap is saved on purpose
+  }
+  function preview() {
+    el('save').disabled = true;
+    el('result').innerHTML = '<div class="hint">Reading…</div>';
+    google.script.run.withSuccessHandler(show).withFailureHandler(function (e) { el('result').innerHTML = '<div class="warn">' + esc(e) + '</div>'; })
+      .previewPortfolioPaste(el('text').value);
+  }
+  function save() {
+    el('save').disabled = true; el('preview').disabled = true;
+    el('result').innerHTML = '<div class="ok">⏳ Saving and updating Holdings — a summary pops up in the sheet. This window will close.</div>';
+    google.script.run.withFailureHandler(function (e) { el('result').innerHTML = '<div class="warn">' + esc(e) + '</div>'; el('preview').disabled = false; })
+      .savePortfolioPaste({ account: el('account').value.trim(), date: el('date').value, text: el('text').value });
+    setTimeout(function () { google.script.host.close(); }, 1500);
+  }
+  el('text').addEventListener('input', function () { el('save').disabled = true; });
+</script></body></html>`).setWidth(520).setHeight(640);
+  SpreadsheetApp.getUi().showModalDialog(html, '📋 Paste broker positions');
+}

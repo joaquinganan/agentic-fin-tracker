@@ -310,7 +310,8 @@ function makeServices(options) {
           const set = titled ? c : b;
           return set && set !== ButtonSet.OK ? (ui.nextButton || Button.YES) : Button.OK;
         };
-        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert, createMenu, Button, ButtonSet };
+        return { showModalDialog: (html, title) => ui.dialogs.push({ html: html.content, title }), alert, createMenu, Button, ButtonSet,
+          showSidebar: html => ui.dialogs.push({ html: html.content, title: html.title, sidebar: true }) };
       },
       newDataValidation: validationBuilder,
       newConditionalFormatRule: cfBuilder,
@@ -342,7 +343,7 @@ function makeServices(options) {
       }
     },
     HtmlService: {
-      createHtmlOutput: content => { const o = { content, setWidth: () => o, setHeight: () => o }; return o; }
+      createHtmlOutput: content => { const o = { content, setWidth: () => o, setHeight: () => o, setTitle: t => { o.title = t; return o; } }; return o; }
     },
     ScriptApp: {
       getProjectTriggers: () => triggers.slice(),

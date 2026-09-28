@@ -2,6 +2,29 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.48 (Sept 28, 2026) — paste the broker's portfolio screen to make a Snapshot
+- **📊 Tracker › 📋 Paste Broker Positions** (also from 📘 Start here): paste the broker's portfolio screen as copied from
+  the web app — plain, or with links — and the tracker reads each asset's ticker, quantity, value and gain into a
+  Snapshot (cost = value − gain, price = value ÷ quantity, tiny prices kept exact) plus the cash from "Total money".
+  A preview comes first; Save is enabled only after it, and again only after previewing any edit.
+- "Total assets" in the paste is checked against the positions' sum: a position left out of the copy is named with the
+  amount missing (the way a missing SHIB-sized position had to be found by hand before), and Save becomes "Save anyway".
+- Saving the same account and day again replaces that snapshot instead of adding a second one. Tests: 161, on `src/`
+  and on the single file (mutation-checked: the total check, same-day replacement); the dialog was also exercised in a
+  real browser.
+
+### v1.1.47 (Sept 28, 2026) — 📘 Start here: a checklist that checks itself
+- New **📊 Tracker › 📘 Start here** (first in the menu): a sidebar with every step of setting up and keeping the tracker
+  healthy — settings, the daily update and summary emails being scheduled, this year's emails read (and whether the last
+  run stopped early, failed or is over a day old), emails waiting in Unrecognized, transfers this month without a
+  category, and for investments: each broker's snapshot and where its return starts, undated ledger rows, deposits
+  without an amount, fund and pension balances older than 45 days. Every step is checked against the sheet, never ticked
+  by hand, so the list is also the health check. Each step has a button for what to do; buttons can only call a fixed
+  list of functions and open a fixed list of tabs. The Setup Wizard ends pointing to it.
+- New source file `08_startHere.gs`; the list of source files lives in one place (`tools/bundle.js`), which the test
+  harness reads too. Tests: 155, on `src/` and on the single file (mutation-checked: an unscheduled update, ignored
+  emails counted).
+
 ### v1.1.46 (Sept 28, 2026) — one file to install and update
 - The tracker is published as **one file, `dist/FinancialTracker.gs`**: the seven files of `src/` in load order, built
   by `npm run bundle`. Installing and updating is pasting one file — nothing can be half-updated, mixed with another

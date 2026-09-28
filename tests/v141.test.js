@@ -34,7 +34,8 @@ test('every dialog\'s page script compiles and its buttons call functions that e
   h.ctx.openSetupWizard();
   h.ctx.openDateRangeDialog();
   h.ctx.openValuationDialog();
-  assert.equal(mock.ui.dialogs.length, 3);
+  h.ctx.openPortfolioPasteDialog();   // v1.1.48
+  assert.equal(mock.ui.dialogs.length, 4);
   for (const d of mock.ui.dialogs) assert.ok(checkDialog(d.html, d.title) > 0, d.title + ': has handlers');
 });
 

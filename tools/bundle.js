@@ -14,7 +14,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const FILES = ['01_main.gs', '02_categorizer.gs', '03_gmailMonitor.gs', '04_sheetsWriter.gs', '05_dailySummary.gs', '06_monthlySummary.gs', '07_investments.gs'];
+// the one list of source files, in load order — the test harness reads it too
+const FILES = ['01_main.gs', '02_categorizer.gs', '03_gmailMonitor.gs', '04_sheetsWriter.gs', '05_dailySummary.gs', '06_monthlySummary.gs',
+  '07_investments.gs', '08_startHere.gs'];
 const OUT = path.join(ROOT, 'dist', 'FinancialTracker.gs');
 
 function build() {

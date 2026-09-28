@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.46"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.48"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -34,6 +34,7 @@ const CUSTOM_RULES_SHEET = "Custom Rules";
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu("📊 Tracker")
+    .addItem("📘 Start here", "openStartHere")   // v1.1.47
     .addItem("🔧 Setup Wizard", "openSetupWizard")
     .addItem("🔄 Monitor Gmail Now", "runGmailMonitor")
     .addItem("📅 Monitor by Date Range", "openDateRangeDialog")
@@ -43,6 +44,7 @@ function onOpen() {
     .addItem("🗓️ Send Monthly Summary Now", "sendMonthlySummaryNow")
     .addItem("📈 Refresh Investments", "refreshInvestmentsNow")
     .addItem("➕ Add Balance or Deposit", "openValuationDialog")
+    .addItem("📋 Paste Broker Positions", "openPortfolioPasteDialog")   // v1.1.48
     .addItem("🙈 Show / Hide Settings Tabs", "toggleSettingsTabs")
     .addItem("⚙️ View Config", "viewConfig")
     .addSeparator()
@@ -758,6 +760,7 @@ function setupSavedMessage(config, ss) {
   if (config.notifyMonthly) lines.push("🗓️ Monthly summary on the 1st around " + config.notifyHour + ":00.");
   const cards = resolveCards(config.cards);
   lines.push("💳 Credit cards: " + (cards.length ? cards.map(c => c.bank + (c.name ? ' ' + c.name : '')).join(', ') : 'none set'));
+  lines.push("", "Next: 📊 Tracker › 📘 Start here — a checklist of what's left, checked against your sheet.");   // v1.1.47
   return lines.join("\n");
 }
 

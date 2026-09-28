@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.46 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.48 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.46"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.48"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -47,6 +47,7 @@ const CUSTOM_RULES_SHEET = "Custom Rules";
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu("📊 Tracker")
+    .addItem("📘 Start here", "openStartHere")   // v1.1.47
     .addItem("🔧 Setup Wizard", "openSetupWizard")
     .addItem("🔄 Monitor Gmail Now", "runGmailMonitor")
     .addItem("📅 Monitor by Date Range", "openDateRangeDialog")
@@ -56,6 +57,7 @@ function onOpen() {
     .addItem("🗓️ Send Monthly Summary Now", "sendMonthlySummaryNow")
     .addItem("📈 Refresh Investments", "refreshInvestmentsNow")
     .addItem("➕ Add Balance or Deposit", "openValuationDialog")
+    .addItem("📋 Paste Broker Positions", "openPortfolioPasteDialog")   // v1.1.48
     .addItem("🙈 Show / Hide Settings Tabs", "toggleSettingsTabs")
     .addItem("⚙️ View Config", "viewConfig")
     .addSeparator()
@@ -771,6 +773,7 @@ function setupSavedMessage(config, ss) {
   if (config.notifyMonthly) lines.push("🗓️ Monthly summary on the 1st around " + config.notifyHour + ":00.");
   const cards = resolveCards(config.cards);
   lines.push("💳 Credit cards: " + (cards.length ? cards.map(c => c.bank + (c.name ? ' ' + c.name : '')).join(', ') : 'none set'));
+  lines.push("", "Next: 📊 Tracker › 📘 Start here — a checklist of what's left, checked against your sheet.");   // v1.1.47
   return lines.join("\n");
 }
 
@@ -7243,4 +7246,418 @@ function styleInvestmentSheets() {
       if (!sheet) return;
       try { style(sheet); } catch (error) { Logger.log('Could not style ' + name + ': ' + error); }
     });
+}
+
+/* ======================================================================
+ * PASTE A BROKER'S PORTFOLIO — v1.1.48
+ * The positions screen (HAPI's "My Assets") copied from the browser and pasted in a dialog becomes a Snapshot:
+ * per ticker, quantity; value; gain — cost = value − gain, price = value ÷ quantity. "Total assets" in the paste is
+ * checked against the positions' sum (a position left out of the copy shows up), "Total money" becomes the CASH row.
+ * ====================================================================== */
+const PASTE_TOTAL_TOLERANCE = 0.1;   // US$: values on the screen are rounded to cents, one rounding per position
+
+/** Text as copied from the broker's screen → { positions, cash, totalAssets, warnings }. Pure. */
+function parsePortfolioPaste(text) {
+  const lines = String(text || '').split(/\r?\n/)
+    .map(l => l.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[\u00a0\u200b]/g, ' ').trim())   // [text](link) → text
+    .filter(Boolean);
+  const money = s => { const m = String(s).match(/^([+\-−]?)\s*(?:US)?\$\s*([\d,]*\.?\d+)/); return m ? (m[1] && m[1] !== '+' ? -1 : 1) * Number(m[2].replace(/,/g, '')) : null; };
+  const number = s => /^[\d,]*\.?\d+$/.test(s) ? Number(s.replace(/,/g, '')) : null;
+  const isTicker = s => /^[A-Z][A-Z0-9.\-]{0,11}$/.test(s);
+  const out = { positions: [], cash: null, totalAssets: null, warnings: [] };
+  const labelled = (label, i) => {   // "Total money $7.77" or "Total money" / "$7.77" on the next line
+    const same = lines[i].slice(label.length).trim();
+    if (money(same) !== null) return money(same);
+    return i + 1 < lines.length && money(lines[i + 1]) !== null ? money(lines[i + 1]) : null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^total money/i.test(line)) { out.cash = labelled('Total money', i); continue; }
+    if (/^total assets/i.test(line)) { out.totalAssets = labelled('Total assets', i); continue; }
+    if (!isTicker(line)) continue;
+    const qty = number(lines[i + 1] || ''), value = money(lines[i + 2] || ''), gain = money(lines[i + 3] || '');
+    if (qty === null || value === null || gain === null) continue;   // a word in capitals, not a position
+    if (!(qty > 0)) { out.warnings.push(line + ': quantity is 0 — skipped'); continue; }
+    if (out.positions.some(p => p.ticker === line)) { out.warnings.push(line + ' appears twice — the first one is kept'); i += 3; continue; }
+    const cost = +(value - gain).toFixed(2);
+    out.positions.push({ ticker: line, qty: qty, value: value, gain: gain, cost: cost, price: Number((value / qty).toPrecision(10)) });
+    i += 3;
+  }
+  if (!out.positions.length) out.warnings.push('No positions found. Copy the list of assets from the broker\'s portfolio screen — ticker, quantity, value and gain for each.');
+  const sum = out.positions.reduce((t, p) => t + p.value, 0);
+  out.positionsValue = +sum.toFixed(2);
+  if (out.totalAssets !== null && Math.abs(out.totalAssets - sum) > PASTE_TOTAL_TOLERANCE) {
+    out.warnings.push('The positions add up to US$' + sum.toFixed(2) + ' but the screen says US$' + out.totalAssets.toFixed(2) +
+      ' — US$' + Math.abs(out.totalAssets - sum).toFixed(2) + (out.totalAssets > sum ? ' is missing: a position was probably left out of the copy (scroll down the list and copy again).'
+        : ' too much: a position may be pasted twice.'));
+  }
+  return out;
+}
+
+/** Rows of the Snapshot to save. Pure. */
+function snapshotRows(parsed, account, dateKey) {
+  const p = dateKey.split('-').map(Number), when = new Date(p[0], p[1] - 1, p[2], 12);
+  const rows = parsed.positions.map(x => [when, account, 'Snapshot', x.ticker, x.qty, x.price, x.cost, '', 'USD', 'manual', 'pasted from the broker\'s screen', '']);
+  if (parsed.cash !== null) rows.push([when, account, 'Snapshot', 'CASH', '', '', parsed.cash, '', 'USD', 'manual', 'pasted from the broker\'s screen', '']);
+  return rows;
+}
+
+/** From the dialog: what the paste would save (nothing is written). */
+function previewPortfolioPaste(text) {
+  return parsePortfolioPaste(text);
+}
+
+/** From the dialog: saves the Snapshot — replacing that account's snapshot of the same day — and rebuilds Holdings. */
+function savePortfolioPaste(entry) {
+  const account = String(entry && entry.account || '').trim();
+  const todayKey = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (!account) { safeAlert('❌ Not saved: give the account a name.'); return false; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date || '')) || entry.date > todayKey) { safeAlert('❌ Not saved: pick the date the screen shows (today or earlier).'); return false; }
+  const parsed = parsePortfolioPaste(entry.text);
+  if (!parsed.positions.length) { safeAlert('❌ Not saved: ' + parsed.warnings.join(' ')); return false; }
+  return withRunLock(() => {
+    try {
+      safeToast('Saving the snapshot...', '📈 Investments', -1);
+      const sheet = getOrCreateLedgerSheet();
+      const last = sheet.getLastRow();
+      const width = LEDGER_HEADERS.length;
+      const existing = last > 1 ? sheet.getRange(2, 1, last - 1, width).getValues() : [];
+      const same = r => r[LG.TYPE] === 'Snapshot' && r[LG.DATE] && normalizeDateForCompare(r[LG.DATE]) === entry.date &&
+        String(r[LG.ACCOUNT]).trim().toLowerCase() === account.toLowerCase();
+      const kept = existing.filter(r => !same(r));
+      const replaced = existing.length - kept.length;
+      const all = kept.concat(snapshotRows(parsed, account, entry.date));
+      if (last > 1) sheet.getRange(2, 1, last - 1, width).clearContent();
+      ensureRowCapacity(sheet, all.length + 1);
+      sheet.getRange(2, 1, all.length, width).setValues(all);
+      sortSheetByDateDesc(sheet, LG.DATE + 1);
+      readInvestmentAccounts();
+      refreshHoldings();
+      formatDataSheets();
+      ensureSheetOrder();
+      safeToast('Done.', '📈 Investments', 3);
+      safeAlert('✅ Snapshot saved — ' + account + ', ' + entry.date + '\n\n' + parsed.positions.length + ' position(s), US$' +
+        parsed.positionsValue.toFixed(2) + (parsed.cash !== null ? ' + cash US$' + parsed.cash.toFixed(2) : '') +
+        (replaced ? '\nIt replaced the ' + replaced + ' row(s) of that day\'s earlier snapshot.' : '') +
+        (parsed.warnings.length ? '\n\n⚠️ ' + parsed.warnings.join('\n⚠️ ') : '') +
+        '\n\nPositions now start from this snapshot; movements after that day are added from the broker\'s emails.');
+      return true;
+    } catch (error) {
+      safeAlert('❌ Could not save the snapshot: ' + error);
+      return false;
+    }
+  });
+}
+
+function openPortfolioPasteDialog() {
+  const ledger = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_LEDGER_SHEET);
+  const known = ['HAPI'];
+  if (ledger && ledger.getLastRow() > 1) {
+    ledger.getRange(2, 1, ledger.getLastRow() - 1, LEDGER_HEADERS.length).getValues().forEach(r => {
+      const a = String(r[LG.ACCOUNT] || '').trim();
+      if (a && ['Snapshot', 'Buy', 'Sell'].indexOf(r[LG.TYPE]) !== -1 && known.indexOf(a) === -1) known.push(a);
+    });
+  }
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const html = HtmlService.createHtmlOutput(`
+<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top"><style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 16px 18px; color: #1F2937; font-size: 13px; }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; }
+  textarea { height: 150px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .row { display: flex; gap: 10px; } .row > div { flex: 1; }
+  .hint { font-size: 12px; color: #6B7280; margin-top: 4px; line-height: 1.4; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #EEF1F5; text-align: right; } th:first-child, td:first-child { text-align: left; }
+  th { color: #6B7280; font-weight: 600; font-size: 11px; }
+  .warn { background: #FFF4D6; color: #92400E; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 12px; }
+  .ok { background: #E8F5E9; color: #2E7D32; padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 12px; }
+  .buttons { display: flex; gap: 8px; margin-top: 12px; }
+  button { flex: 1; padding: 10px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid #0F766E; }
+  #preview { background: #fff; color: #0F766E; } #save { background: #0F766E; color: #fff; } button:disabled { opacity: .5; cursor: default; }
+  #result { max-height: 200px; overflow-y: auto; }
+</style></head><body>
+  <div class="row">
+    <div><label for="account">Account</label><input id="account" list="known" value="${esc(known[0])}">
+      <datalist id="known">${known.map(a => '<option value="' + esc(a) + '">').join('')}</datalist></div>
+    <div><label for="date">Date on the screen</label><input id="date" type="date" value="${today}" max="${today}"></div>
+  </div>
+  <label for="text">The broker's portfolio screen, pasted</label>
+  <textarea id="text" placeholder="Total assets&#10;$0.00&#10;Total money&#10;$0.00&#10;GOOGL&#10;1.5&#10;$450.00&#10;+$50.00 (+12.50%)&#10;..."></textarea>
+  <div class="hint">In the broker's app on the web, open the portfolio, select from <b>Total balance</b> down to the last asset
+    (scroll to the end of the list), copy and paste here. Each asset needs its ticker, quantity, value and gain.
+    Including <b>Total assets</b> lets the tracker check nothing was left out; <b>Total money</b> becomes the cash.</div>
+  <div class="buttons"><button id="preview" onclick="preview()">Preview</button><button id="save" onclick="save()" disabled>Save snapshot</button></div>
+  <div id="result"></div>
+<script>
+  function el(id) { return document.getElementById(id); }
+  function money(n) { return 'US$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function show(r) {
+    var h = '';
+    if (r.positions.length) {
+      h += '<table><tr><th>Ticker</th><th>Quantity</th><th>Value</th><th>Cost</th></tr>';
+      r.positions.forEach(function (p) { h += '<tr><td>' + esc(p.ticker) + '</td><td>' + p.qty + '</td><td>' + money(p.value) + '</td><td>' + money(p.cost) + '</td></tr>'; });
+      h += '</table>';
+      h += '<div class="' + (r.warnings.length ? 'warn' : 'ok') + '">' + r.positions.length + ' position(s), ' + money(r.positionsValue) +
+        (r.cash !== null ? ' + cash ' + money(r.cash) : ' · no Total money in the paste: no cash row') +
+        (r.totalAssets !== null && !r.warnings.length ? ' · matches Total assets ✓' : '') + '</div>';
+    }
+    r.warnings.forEach(function (w) { h += '<div class="warn">⚠️ ' + esc(w) + '</div>'; });
+    el('result').innerHTML = h;
+    el('save').disabled = !r.positions.length;
+    el('save').textContent = r.warnings.length ? 'Save anyway' : 'Save snapshot';   // a known gap is saved on purpose
+  }
+  function preview() {
+    el('save').disabled = true;
+    el('result').innerHTML = '<div class="hint">Reading…</div>';
+    google.script.run.withSuccessHandler(show).withFailureHandler(function (e) { el('result').innerHTML = '<div class="warn">' + esc(e) + '</div>'; })
+      .previewPortfolioPaste(el('text').value);
+  }
+  function save() {
+    el('save').disabled = true; el('preview').disabled = true;
+    el('result').innerHTML = '<div class="ok">⏳ Saving and updating Holdings — a summary pops up in the sheet. This window will close.</div>';
+    google.script.run.withFailureHandler(function (e) { el('result').innerHTML = '<div class="warn">' + esc(e) + '</div>'; el('preview').disabled = false; })
+      .savePortfolioPaste({ account: el('account').value.trim(), date: el('date').value, text: el('text').value });
+    setTimeout(function () { google.script.host.close(); }, 1500);
+  }
+  el('text').addEventListener('input', function () { el('save').disabled = true; });
+</script></body></html>`).setWidth(520).setHeight(640);
+  SpreadsheetApp.getUi().showModalDialog(html, '📋 Paste broker positions');
+}
+
+// ====================================================================================================
+// 08_startHere.gs
+// ====================================================================================================
+
+/**
+ * START HERE — v1.1.47
+ *
+ * A sidebar that walks through setting the tracker up and keeping it healthy. Every step is CHECKED against the sheet
+ * and the project, never ticked by hand, so the same list is the health check: a step that breaks later (the daily
+ * update unscheduled, emails waiting in Unrecognized, a ledger row without a date) shows up again with what to do.
+ *
+ * startHereStatus() is what the sidebar renders; it returns plain data (no Date objects), so the sidebar can refresh it.
+ */
+const START_HERE_STALE_BALANCE_DAYS = 45;
+const START_HERE_STALE_RUN_HOURS = 36;
+// the only functions the sidebar's buttons may call, and the only tabs it may open
+const START_HERE_ACTIONS = ['openSetupWizard', 'openDateRangeDialog', 'openValuationDialog', 'refreshInvestmentsNow', 'openSheetByName',
+  'openPortfolioPasteDialog'];
+const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
+
+function openStartHere() {
+  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(startHereHtml()).setTitle('📘 Start here'));
+}
+
+function openSheetByName(name) {
+  if (START_HERE_SHEETS.indexOf(name) === -1) return false;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) return false;
+  if (sheet.isSheetHidden()) sheet.showSheet();
+  SpreadsheetApp.setActiveSheet(sheet);
+  return true;
+}
+
+/** Every step, checked. Each: { group, id, title, status: done|todo|warn|error|optional, detail, action: {label, fn, arg} }. */
+function startHereStatus(now) {
+  now = now || new Date();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const steps = [];
+  const add = (group, id, title, status, detail, action) => steps.push({ group: group, id: id, title: title, status: status,
+    detail: detail, action: action || null });
+  const day = d => Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const open = (label, sheet) => ({ label: label, fn: 'openSheetByName', arg: sheet });
+
+  // ---- Setup
+  let config = null;
+  try { config = getConfig(); } catch (error) { config = null; }
+  const banks = config && config.banksToTrack ? Object.keys(config.banksToTrack).filter(b => config.banksToTrack[b]) : [];
+  const configured = !!(config && config.email && banks.length);
+  add('Setup', 'code', 'Tracker v' + SCRIPT_VERSION + ' is installed', 'done',
+    'One file, FinancialTracker.gs. To update: select everything in it, paste the new version, save.');
+  add('Setup', 'settings', 'Your settings', configured ? 'done' : 'todo',
+    configured ? 'Banks: ' + banks.join(', ') + '. Change income, banks, cards or emails in the Setup Wizard.'
+      : 'Income, banks, cards and summary emails — the Setup Wizard asks for all of it.',
+    { label: configured ? 'Change settings' : 'Open the Setup Wizard', fn: 'openSetupWizard' });
+  let handlers = [];
+  try { handlers = ScriptApp.getProjectTriggers().map(t => t.getHandlerFunction()); } catch (error) { handlers = []; }
+  const scheduled = handlers.indexOf('runGmailMonitor') !== -1;
+  add('Setup', 'schedule', 'Daily update scheduled', !configured ? 'todo' : scheduled ? 'done' : 'error',
+    scheduled ? 'New bank emails are read every morning at 6 AM.'
+      : configured ? 'Nothing is scheduled, so nothing updates by itself. Saving the Setup Wizard schedules it.'
+        : 'Scheduled when you save the Setup Wizard.',
+    scheduled ? null : { label: 'Open the Setup Wizard', fn: 'openSetupWizard' });
+  if (configured && config.notifyEnabled) {
+    const ok = handlers.indexOf('sendDailySummary') !== -1;
+    add('Setup', 'dailyEmail', 'Daily summary email', ok ? 'done' : 'error',
+      ok ? 'Sent every morning around ' + config.notifyHour + ':00.' : 'Turned on but not scheduled — save the Setup Wizard again.',
+      ok ? null : { label: 'Open the Setup Wizard', fn: 'openSetupWizard' });
+  }
+  if (configured && config.notifyMonthly) {
+    const ok = handlers.indexOf('sendMonthlySummary') !== -1;
+    add('Setup', 'monthlyEmail', 'Monthly summary email', ok ? 'done' : 'error',
+      ok ? 'Sent on the 1st of every month.' : 'Turned on but not scheduled — save the Setup Wizard again.',
+      ok ? null : { label: 'Open the Setup Wizard', fn: 'openSetupWizard' });
+  }
+
+  // ---- Your data
+  let last = null;
+  try { last = readLastRun(); } catch (error) { last = null; }
+  if (!last || !last.at) {
+    add('Your data', 'firstRun', "Read this year's bank emails", configured ? 'todo' : 'optional',
+      'Run Monitor by Date Range from January 1 to today. Repeat it until its summary has no ⏸ or ⏭ line — each run gets further.',
+      configured ? { label: 'Monitor by Date Range', fn: 'openDateRangeDialog' } : null);
+  } else {
+    const at = new Date(last.at), hours = (now - at) / 3600000;
+    const bits = ['Last update: ' + Utilities.formatDate(at, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') + ' · ' + (last.saved || 0) + ' saved.'];
+    if (last.partial) bits.push('It stopped early to stay within the time limit — run it again to finish.');
+    if (last.errors) bits.push(last.errors + ' error(s): see Extensions › Apps Script › Executions.');
+    if (hours > START_HERE_STALE_RUN_HOURS) bits.push('That is more than a day ago — is the daily update running?');
+    add('Your data', 'lastRun', 'Bank emails up to date', last.partial || last.errors || hours > START_HERE_STALE_RUN_HOURS ? 'warn' : 'done',
+      bits.join(' '), last.partial ? { label: 'Monitor by Date Range', fn: 'openDateRangeDialog' } : null);
+  }
+  const unrec = ss.getSheetByName(UNRECOGNIZED_SHEET);
+  const waiting = unrec && unrec.getLastRow() > 1
+    ? unrec.getRange(2, 7, unrec.getLastRow() - 1, 1).getValues().filter(r => r[0] === 'New').length : 0;
+  add('Your data', 'unrecognized', waiting ? waiting + ' email(s) could not be read' : 'Every email was read', waiting ? 'warn' : 'done',
+    waiting ? 'Each one says why and links to the email. Send it to get its format supported, or set its Status to Ignore.'
+      : 'Emails the tracker cannot read are listed in Unrecognized.', waiting ? open('Open Unrecognized', 'Unrecognized') : null);
+  const tx = ss.getSheetByName(TRANSACTIONS_SHEET);
+  if (tx && tx.getLastRow() > 1) {
+    const month = day(now).slice(0, 7);
+    const open$ = tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues().filter(r => r[TX_COL.DATE] &&
+      r[TX_COL.TYPE] === 'Transfer' && !String(r[TX_COL.CATEGORY] || '').trim() && normalizeDateForCompare(r[TX_COL.DATE]).slice(0, 7) === month).length;
+    add('Your data', 'transfers', open$ ? open$ + ' transfer(s) this month without a category' : 'Transfers categorized',
+      open$ ? 'warn' : 'done', open$ ? 'Type a category in Bank Transfers (Exclude for moves between your own accounts), or add a Custom Rule for ones that repeat.'
+        : 'Every transfer this month has a category.', open$ ? open('Open Bank Transfers', 'Bank Transfers') : null);
+  }
+
+  // ---- Investments (optional)
+  const ledger = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);
+  const values = ledger ? ledger.getDataRange().getValues() : [];
+  if (!ledger || values.length < 2) {
+    add('Investments (optional)', 'investments', 'Track your investments', 'optional',
+      'Broker orders and dividends are read from their emails (HAPI today). Start by pasting your positions from the broker\'s screen.',
+      { label: 'Paste broker positions', fn: 'openPortfolioPasteDialog' });
+  } else {
+    const rows = values.slice(1).filter(r => String(r[LG.ACCOUNT] || '').trim());
+    const accounts = [...new Set(rows.map(r => String(r[LG.ACCOUNT]).trim()))];
+    const positionAccounts = accounts.filter(a => rows.some(r => String(r[LG.ACCOUNT]).trim() === a && ['Snapshot', 'Buy', 'Sell'].indexOf(r[LG.TYPE]) !== -1));
+    const hasSnapshot = a => rows.some(r => String(r[LG.ACCOUNT]).trim() === a && r[LG.TYPE] === 'Snapshot');
+    if (!positionAccounts.length) {
+      add('Investments (optional)', 'snapshot', "Your broker's positions", 'todo',
+        "Paste the broker's portfolio screen — the tracker turns it into a Snapshot (one row per ticker and the cash).",
+        { label: 'Paste broker positions', fn: 'openPortfolioPasteDialog' });
+    }
+    positionAccounts.forEach(a => {
+      if (!hasSnapshot(a)) {
+        add('Investments (optional)', 'snapshot-' + a, a + ': positions', 'todo',
+          "Orders are recorded, but positions need a Snapshot to start from — paste the broker's portfolio screen.",
+          { label: 'Paste broker positions', fn: 'openPortfolioPasteDialog' });
+        return;
+      }
+      const firstSnap = rows.filter(r => String(r[LG.ACCOUNT]).trim() === a && r[LG.TYPE] === 'Snapshot' && r[LG.DATE])
+        .map(r => normalizeDateForCompare(r[LG.DATE])).sort()[0];
+      const start = rows.filter(r => String(r[LG.ACCOUNT]).trim() === a && r[LG.TYPE] === 'Valuation' && r[LG.DATE])
+        .map(r => normalizeDateForCompare(r[LG.DATE])).sort()[0];
+      const fromStart = start && firstSnap && start < firstSnap;
+      add('Investments (optional)', 'start-' + a, a + ': return measured from ' + (fromStart ? start : firstSnap || '—'), fromStart ? 'done' : 'todo',
+        fromStart ? "From its value on that date, with every deposit since counted as money put in."
+          : "It starts at the snapshot. To measure the year, add the account's value on its opening date (from the broker's statement) as a balance.",
+        fromStart ? null : { label: 'Add a balance', fn: 'openValuationDialog' });
+    });
+    const undated = rows.filter(r => !r[LG.DATE] && r[LG.TYPE]).length;
+    if (undated) {
+      add('Investments (optional)', 'undated', undated + ' ledger row(s) without a date', 'error',
+        "They aren't counted anywhere until they have one (highlighted in red in the Investment Ledger).",
+        open('Open the Investment Ledger', 'Investment Ledger'));
+    }
+    let noAmount = 0;
+    try { noAmount = checkDepositNotices(values).missing.length; } catch (error) { noAmount = 0; }
+    if (noAmount) {
+      add('Investments (optional)', 'deposits', noAmount + ' deposit(s) without an amount', 'warn',
+        'The broker confirmed them but its email has no amount — add each one as a deposit, or it counts as gain.',
+        open('Open Unrecognized', 'Unrecognized'));
+    }
+    accounts.filter(a => positionAccounts.indexOf(a) === -1).forEach(a => {
+      const latest = rows.filter(r => String(r[LG.ACCOUNT]).trim() === a && r[LG.TYPE] === 'Valuation' && r[LG.DATE])
+        .map(r => normalizeDateForCompare(r[LG.DATE])).sort().pop();
+      if (!latest) return;
+      const age = daysBetween(latest, day(now));
+      add('Investments (optional)', 'balance-' + a, a + ': balance of ' + latest, age > START_HERE_STALE_BALANCE_DAYS ? 'warn' : 'done',
+        age > START_HERE_STALE_BALANCE_DAYS ? age + ' days ago — add the latest statement.' : 'Recent enough. Add each new statement when it arrives.',
+        age > START_HERE_STALE_BALANCE_DAYS ? { label: 'Add a balance', fn: 'openValuationDialog' } : null);
+    });
+  }
+
+  const counted = steps.filter(s => s.status !== 'optional');
+  return { version: SCRIPT_VERSION, checkedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
+    steps: steps, done: counted.filter(s => s.status === 'done').length, total: counted.length,
+    problems: steps.filter(s => s.status === 'error').length };
+}
+
+function startHereHtml() {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_top"><style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 14px 14px 24px; color: #1F2937; font-size: 13px; }
+  h1 { font-size: 16px; margin: 0 0 4px; color: #1F3864; }
+  .sub { color: #6B7280; font-size: 12px; margin-bottom: 10px; }
+  .bar { height: 6px; background: #E5E7EB; border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+  .bar div { height: 100%; background: #0F766E; }
+  h2 { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #6B7280; margin: 16px 0 6px; }
+  .step { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1px solid #F1F3F6; }
+  .icon { width: 20px; flex: none; font-size: 15px; line-height: 18px; text-align: center; }
+  .title { font-weight: 600; color: #111827; }
+  .detail { color: #4B5563; margin-top: 2px; line-height: 1.4; }
+  .error .title { color: #B91C1C; } .warn .title { color: #92400E; }
+  button { margin-top: 6px; padding: 5px 10px; border: 1px solid #0F766E; background: #fff; color: #0F766E; border-radius: 5px;
+    font-size: 12px; cursor: pointer; } button:hover { background: #E0F2F1; }
+  .top { display: flex; justify-content: space-between; align-items: center; }
+  .refresh { margin: 0; border-color: #D1D5DB; color: #374151; }
+  .foot { margin-top: 18px; color: #6B7280; font-size: 12px; line-height: 1.5; }
+  a { color: #1D4ED8; }
+</style></head><body>
+  <div class="top"><h1>📘 Start here</h1><button class="refresh" onclick="load()">↻ Check again</button></div>
+  <div id="summary" class="sub">Checking your tracker…</div>
+  <div class="bar"><div id="fill" style="width:0"></div></div>
+  <div id="steps"></div>
+  <div class="foot">Every step is checked against your sheet — nothing to tick by hand. Something breaks later? It shows up
+    here again. The full guide: <a href="https://github.com/joaquinganan/agentic-fin-tracker/blob/main/docs/USER_GUIDE.md" target="_blank">USER_GUIDE</a>.</div>
+<script>
+  var ICONS = { done: '✅', todo: '⬜', warn: '⚠️', error: '❌', optional: '○' };
+  var current = [];
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function render(r) {
+    current = r.steps;
+    document.getElementById('summary').textContent = r.done + ' of ' + r.total + ' done' +
+      (r.problems ? ' · ' + r.problems + ' problem(s) to fix' : '') + ' · v' + r.version + ' · checked ' + r.checkedAt;
+    document.getElementById('fill').style.width = (r.total ? Math.round(100 * r.done / r.total) : 0) + '%';
+    var html = '', group = '';
+    r.steps.forEach(function (s, i) {
+      if (s.group !== group) { group = s.group; html += '<h2>' + esc(group) + '</h2>'; }
+      html += '<div class="step ' + s.status + '"><div class="icon">' + ICONS[s.status] + '</div><div><div class="title">' + esc(s.title) +
+        '</div><div class="detail">' + esc(s.detail) + '</div>' +
+        (s.action ? '<button onclick="act(' + i + ')">' + esc(s.action.label) + '</button>' : '') + '</div></div>';
+    });
+    document.getElementById('steps').innerHTML = html;
+  }
+  function fail(e) { document.getElementById('summary').textContent = 'Could not check: ' + e; }
+  function load() {
+    document.getElementById('summary').textContent = 'Checking your tracker…';
+    google.script.run.withSuccessHandler(render).withFailureHandler(fail).startHereStatus();
+  }
+  function act(i) {
+    var a = current[i] && current[i].action;
+    if (!a) return;
+    var run = google.script.run.withSuccessHandler(function () { setTimeout(load, 800); }).withFailureHandler(fail);
+    if (a.fn === 'openSetupWizard') run.openSetupWizard();
+    else if (a.fn === 'openDateRangeDialog') run.openDateRangeDialog();
+    else if (a.fn === 'openValuationDialog') run.openValuationDialog();
+    else if (a.fn === 'refreshInvestmentsNow') run.refreshInvestmentsNow();
+    else if (a.fn === 'openSheetByName') run.openSheetByName(a.arg);
+    else if (a.fn === 'openPortfolioPasteDialog') run.openPortfolioPasteDialog();
+  }
+  load();
+</script></body></html>`;
 }

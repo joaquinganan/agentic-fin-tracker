@@ -26,6 +26,14 @@ which version it is.
 then add `FinancialTracker.gs` as above. Don't keep both: the same code twice stops the project from loading (the
 📊 Tracker menu disappears). Your data, settings and scheduled runs stay as they are.
 
+### 📘 Start here — a checklist that checks itself
+
+**📊 Tracker › 📘 Start here** opens a panel beside the sheet with every step: settings, the daily update, reading this
+year's emails, emails waiting in Unrecognized, transfers without a category and, if you track investments, your
+positions, where each account's return starts and balances to update. Every step is checked against the sheet — nothing
+to tick by hand — so it is also the health check: when something breaks later, it shows up there again with a button
+for what to do. Open it after the Setup Wizard, and whenever something looks off.
+
 ### Step 3: Run Setup Wizard
 
 1. In Apps Script, go to `01_main.gs`
@@ -180,9 +188,10 @@ suite against another copy of the code.
 1. Add the file `07_investments.gs` to the Apps Script project (like the others).
 2. **Investment Accounts** (created on the first run): one row per account. *Deposit keyword* identifies the bank
    transfers that fund it (for HAPI it is pre-filled with its DR collection account).
-3. **Snapshot** each broker account once, in the **Investment Ledger**: one row per ticker — Date, Account,
-   `Snapshot`, Ticker, Quantity, Price, Amount = cost basis, Currency — plus a `CASH` row. Positions start from it and
-   add only the movements after that day.
+3. **Snapshot** each broker account once: **📊 Tracker › 📋 Paste Broker Positions**. In the broker's web app, open the
+   portfolio, select from *Total balance* down to the last asset, copy and paste; check the preview and save. (It can
+   also be typed in the Investment Ledger: one `Snapshot` row per ticker — Quantity, Price, Amount = cost basis — plus a
+   `CASH` row.) Positions start from it and add only the movements after that day.
 4. Funds and pensions: **📊 Tracker › ➕ Add Balance or Deposit** whenever you get a statement (units × unit
    price, or the balance). It adds a new `Valuation` row each time — Holdings shows the latest of each account.
    Saving the same account and date again updates that balance. To measure a return, add an earlier statement too
