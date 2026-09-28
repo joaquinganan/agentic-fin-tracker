@@ -83,3 +83,18 @@ test('a run reads the HAPI deposit email into a Notice and flags it when no depo
   assert.equal(mock.ss.getSheetByName('Investment Ledger')._rows(12).length, 1);
   assert.ok(mock.ss.getSheetByName('Unrecognized')._rows(10).find(r => r[9] === 'm-dep'));
 });
+
+test('a Notice turned into the Deposit itself (type changed, amount typed) clears its Unrecognized row (v1.1.45, reported)', () => {
+  const { h, mock } = book();
+  const led = h.ctx.getOrCreateLedgerSheet();
+  led.getRange(2, 1, 2, 12).setValues([
+    [h.date(2025, 12, 31), 'HAPI', 'Valuation', '', '', '', 3000, '', 'USD', 'manual', '', ''],
+    [h.date(2026, 1, 2), 'HAPI', 'Notice', '', '', '', '', '', 'USD', 'email', 'Deposit completed', 'gmail:n-jan']]);
+  h.ctx.refreshHoldings();
+  assert.deepEqual(h.plain(mock.ss.getSheetByName('Unrecognized')._rows(10).map(r => r[9])), ['n-jan']);
+  const at = led._rows(12).findIndex(r => r[11] === 'gmail:n-jan') + 2;
+  led.getRange(at, 3).setValue('Deposit');           // you edit the notice row itself
+  led.getRange(at, 7).setValue(250);
+  h.ctx.refreshHoldings();
+  assert.equal(mock.ss.getSheetByName('Unrecognized')._rows(10).length, 0);
+});

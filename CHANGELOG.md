@@ -2,6 +2,12 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.45 (Sept 28, 2026) — a deposit notice edited into the deposit clears its flag
+- **Reported:** a HAPI deposit notice stayed in Unrecognized after its amount was added — by editing the Notice row itself
+  (type changed to Deposit, amount typed). Only a Notice paired with a separate Deposit was cleared, so with no Notice
+  left its row stayed forever. A Deposit row carrying the notice's Gmail id now clears it too: both ways of recording the
+  amount work. Tests: 147.
+
 ### v1.1.44 (Sept 28, 2026) — marking only what's pending; timings in the log; start-day sales are cash
 - **Reported:** a year-long range was still killed — reading ended after about a minute, and nothing was logged until
   the 6-minute limit. The time went to marking: every thread in the range was marked read and labelled again, even the

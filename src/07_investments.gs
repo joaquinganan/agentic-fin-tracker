@@ -720,6 +720,10 @@ function checkDepositNotices(ledgerValues) {
     .forEach(x => { if (!start[x.account] || x.key < start[x.account]) start[x.account] = x.key; });
   const deposits = rows.filter(x => x.r[LG.TYPE] === 'Deposit').map(x => ({ account: x.account, key: x.key, used: false }));
   const missing = [], matchedIds = [];
+  // v1.1.45: a Notice you turned into the Deposit itself (type changed, amount typed — same row, same Id) is resolved;
+  // its Unrecognized row used to stay forever, since no Notice was left to pair
+  rows.filter(x => x.r[LG.TYPE] === 'Deposit' && /^gmail:/.test(String(x.r[LG.ID] || '')))
+    .forEach(x => matchedIds.push(String(x.r[LG.ID]).replace(/^gmail:/, '')));
   rows.filter(x => x.r[LG.TYPE] === 'Notice').sort((a, b) => a.key < b.key ? -1 : 1).forEach(n => {
     const id = String(n.r[LG.ID] || '').replace(/^gmail:/, '');
     if (start[n.account] && n.key <= start[n.account]) { if (id) matchedIds.push(id); return; }
