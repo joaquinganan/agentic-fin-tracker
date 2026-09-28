@@ -84,7 +84,7 @@ test('full-year run: every fixture lands in the right place; re-run is fully ded
   // v1.1.36: already-saved emails are skipped before being read (they used to be read and dropped as duplicates)
   const second = h.logs.filter(l => l.includes('Email threads found')).pop();
   assert.match(second, /Saved: 0 \| Duplicates: 0/);
-  assert.match(second, /Already saved, not read again: 7 email\(s\)/);
+  assert.match(second, /Read before, skipped: 8 email\(s\)/);   // v1.1.43: the declined one too (read log)
 });
 
 test('recategorize repairs a mis-typed row and keeps Raw_ notes (C3, C5, M7)', () => {

@@ -287,6 +287,8 @@ function computeHoldings(values, opts) {
   opts = opts || {};
   const year = String(opts.year || new Date().getFullYear());
   const usdRate = Number(opts.usdRate) || 0;
+  // v1.1.43: a row without a date can't be placed in time, so it isn't counted — and that is now said, not silent
+  const undated = values.slice(1).filter(r => !r[LG.DATE] && String(r[LG.ACCOUNT]).trim() && r[LG.TYPE]).length;
   const rows = values.slice(1).filter(r => r[LG.DATE] && String(r[LG.ACCOUNT]).trim() && LEDGER_TYPES.indexOf(r[LG.TYPE]) !== -1)
     .map(r => ({ r: r, key: normalizeDateForCompare(r[LG.DATE]) }))
     .sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
@@ -302,6 +304,7 @@ function computeHoldings(values, opts) {
     .map(x => String(x.r[LG.ACCOUNT]).trim()));
   const totals = { dividendsYtd: 0, feesYtd: 0, realizedYtd: 0, contributionsYtd: { USD: 0, DOP: 0 } };
   const warnings = [];
+  if (undated) warnings.push(undated + ' Investment Ledger row(s) have no date and are not counted — add their date');
   const pos = (a, t) => positions[a + '|' + t] ||
     (positions[a + '|' + t] = { account: a, ticker: t, qty: 0, cost: 0, realized: 0, dividends: 0, lastPrice: 0, lastPriceDay: '' });
 
@@ -607,6 +610,8 @@ function styleLedgerSheet(sheet) {
     .setBackground(colours[t][0]).setFontColor(colours[t][1]).setRanges([typeCol]).build())
     .concat(Object.keys(sources).map(s => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(s)
       .setBackground(sources[s][0]).setFontColor(sources[s][1]).setRanges([sourceCol]).build()));
+  rules.unshift(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2="",$B2<>"")')   // v1.1.43: no date
+    .setBackground(SHEET_THEME.problem).setRanges([sheet.getRange(2, 1, rows, 1)]).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2<>"",ISEVEN(ROW()))')
     .setBackground(SHEET_THEME.stripe).setRanges([sheet.getRange(2, 1, rows, LEDGER_HEADERS.length)]).build());
   sheet.setConditionalFormatRules(rules);
@@ -1336,4 +1341,15 @@ function isPositionAccount(account) {
   const name = String(account).trim().toLowerCase();
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, LEDGER_HEADERS.length).getValues()
     .some(r => String(r[LG.ACCOUNT]).trim().toLowerCase() === name && ['Snapshot', 'Buy', 'Sell'].indexOf(r[LG.TYPE]) !== -1);
+}
+
+/** v1.1.43: the investment tabs only (after the investments step; the full styling runs with recategorize). */
+function styleInvestmentSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  [[INVESTMENT_LEDGER_SHEET, styleLedgerSheet], [HISTORY_SHEET, styleHistorySheet], [INVESTMENT_ACCOUNTS_SHEET, styleAccountsSheet]]
+    .forEach(([name, style]) => {
+      const sheet = ss.getSheetByName(name);
+      if (!sheet) return;
+      try { style(sheet); } catch (error) { Logger.log('Could not style ' + name + ': ' + error); }
+    });
 }

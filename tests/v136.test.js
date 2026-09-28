@@ -66,7 +66,7 @@ test('a run that would hit Google\'s limit stops in time, finishes its steps, an
   assert.equal(mock.gmail.threads[0].getMessages()[0].reads, 1, 'read once in total');
   const second = mock.ui.alerts[mock.ui.alerts.length - 1];
   assert.doesNotMatch(second, /Stopped reading early/);
-  assert.match(second, /Already saved, not read again: 1 email/);
+  assert.match(second, /Read before, skipped: 1 email/);
   assert.equal(JSON.parse(mock.props.FT_LAST_RUN).partial, false);
 });
 

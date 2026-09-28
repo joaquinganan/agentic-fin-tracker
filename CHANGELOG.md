@@ -2,6 +2,22 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.43 (Sept 28, 2026) — long ranges finish; stopped runs stay light; undated ledger rows are flagged
+- **Reported:** a year-long date range stopped reading in time ("54 thread(s) left") and then hit the 6-minute limit
+  anyway. Two causes:
+  - Emails read without saving anything — statements, promotions, notices, declined — were read again on every run (only
+    saved transactions were skipped), so the same range kept re-reading them. Their ids now go to a hidden **Read Emails**
+    sheet, tagged with the tracker version (after an update they're read once more, in case the new version reads them
+    differently). Emails that failed aren't logged: they're retried.
+  - A stopped run still ran every heavy step (sorting, recategorizing with the full formatting, investments with
+    GOOGLEFINANCE). A stopped run now saves, marks and records what it read, and leaves those to the run that completes the
+    range; and no step starts after 5 minutes. The summary lists what was left ("⏭ Left for the next run: …").
+  - The formatting of every sheet ran twice per run (again after the investments step); now only the investment tabs are.
+- **Reported:** two manual deposits showed no date. A ledger row without a date can't be placed in time and wasn't
+  counted — silently. It's now highlighted in red, and Holdings warns how many rows aren't counted.
+- Tests: 142 (mutation-checked: the read log, deferred steps, the 5-minute brake, the undated-row warning; and the
+  deposit dialog's date, which the v1.1.40 test didn't check).
+
 ### v1.1.42 (Sept 28, 2026) — HAPI deposits missing from the ledger are flagged, one by one
 - HAPI's "Deposit Completed" email has no amount, so it was skipped — and a deposit that didn't also arrive as a bank
   transfer the tracker reads went unrecorded, counted as gain. The email is now kept as a **Notice** row in the Investment

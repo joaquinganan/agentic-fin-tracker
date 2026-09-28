@@ -1692,3 +1692,46 @@ function savedMessageIds() {
   });
   return ids;
 }
+
+/* ======================================================================
+ * READ LOG — v1.1.43
+ * Emails read without saving anything (promotions, statements, notices, declined…) used to be read again on every
+ * run — only saved transactions were skipped — so a year-long date range could re-read the same emails and never
+ * finish. Their ids go to a hidden sheet, tagged with the tracker version: after an update they are read once more
+ * (the new version may read them differently), then skipped again. Emails that failed aren't logged: they're retried.
+ * ====================================================================== */
+const READ_LOG_SHEET = 'Read Emails';
+
+function readLogSheet(create) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(READ_LOG_SHEET);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(READ_LOG_SHEET);
+    sheet.getRange(1, 1, 1, 2).setValues([['Id', 'Version']]);
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+/** Gmail ids not to read again: saved transactions, and emails read by this version without saving anything. */
+function alreadyReadIds() {
+  const ids = savedMessageIds();
+  const sheet = readLogSheet(false);
+  if (sheet && sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues().forEach(r => {
+      if (r[0] && String(r[1]) === SCRIPT_VERSION) ids.add(String(r[0]));
+    });
+  }
+  return ids;
+}
+
+function logReadEmails(ids) {
+  if (!ids || !ids.length) return;
+  const sheet = readLogSheet(true);
+  const byId = {};
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues().forEach(r => { if (r[0]) byId[String(r[0])] = r[1]; });
+  ids.forEach(id => { byId[String(id)] = SCRIPT_VERSION; });
+  const rows = Object.keys(byId).map(id => [id, byId[id]]);
+  ensureRowCapacity(sheet, rows.length + 1);
+  sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+}

@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.42"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.43"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -89,6 +89,10 @@ function onEdit(e) {
  * after the action started, which leaves time to save, mark and run every cleanup step; the next run continues.
  */
 const RUN_READ_BUDGET_MS = 3.5 * 60 * 1000;
+// v1.1.43: no step starts after this — reported: a stopped run still ran every heavy step and hit the 6-minute limit
+const RUN_STEPS_DEADLINE_MS = 5 * 60 * 1000;
+// steps a stopped run leaves to the run that completes the range (the data is re-sorted, recategorized and refreshed there)
+const DEFERRABLE_STEPS = ['sort', 'recategorize', 'investments'];
 let RUN_STARTED_AT = 0;
 let runClock = () => Date.now();   // replaceable in tests
 
@@ -878,12 +882,13 @@ function runGmailMonitorCore(search, config) {
   let investments = null;   // v1.1.29
   let unrecognizedOpen = null;   // v1.1.35
   let stopped = null;            // v1.1.36
+  const deferred = [];           // v1.1.43
   const errors = [];
 
   try {
     // v1.1.36: emails already saved are not read again, and reading stops in time (see RUN_READ_BUDGET_MS)
     const extraction = extractTransactionsFromThreads(threads, rawCustomRules, search.range, {
-      skipIds: savedMessageIds(), deadline: (RUN_STARTED_AT || runClock()) + RUN_READ_BUDGET_MS, clock: runClock });
+      skipIds: alreadyReadIds(), deadline: (RUN_STARTED_AT || runClock()) + RUN_READ_BUDGET_MS, clock: runClock });
     transactions = extraction.transactions;
     stats = extraction.stats;
     stopped = extraction.stopped;
@@ -891,6 +896,7 @@ function runGmailMonitorCore(search, config) {
     safeToast("Saving " + transactions.length + " transaction(s)...", "📊 Financial Tracker", -1);
     results = saveTransactions(transactions);
     marked = markEmailsAsProcessed(extraction.processedThreads, extraction.failedThreadIds);   // unread ones stay for the next run
+    logReadEmails(stats.readIds);   // v1.1.43: promotions, statements, notices… aren't read again either
   } catch (error) {
     errors.push("parse/save — " + error);
     Logger.log("❌ Error during parse/save: " + error);
@@ -907,7 +913,7 @@ function runGmailMonitorCore(search, config) {
       ["investments", () => {
         safeToast("Updating investments...", "📊 Financial Tracker", -1);
         investments = runInvestmentsStep(search.range);
-        styleTrackerSheets();
+        styleInvestmentSheets();   // v1.1.43: only these — the full styling already ran with recategorize
       }],
       // v1.1.35: emails that couldn't be read (bank and broker) → Unrecognized; ones read cleanly now drop off it
       ["unrecognized", () => {
@@ -923,6 +929,9 @@ function runGmailMonitorCore(search, config) {
       }]
     ];
     steps.forEach(([name, fn]) => {
+      // v1.1.43: a stopped run leaves the heavy steps to the run that completes the range; and no step starts late
+      if (stopped && DEFERRABLE_STEPS.indexOf(name) !== -1) { deferred.push(name); return; }
+      if (runClock() - (RUN_STARTED_AT || runClock()) > RUN_STEPS_DEADLINE_MS) { deferred.push(name); return; }
       try { fn(); } catch (error) {
         errors.push(name + " — " + error);
         Logger.log("❌ Error during " + name + ": " + error);
@@ -937,7 +946,7 @@ function runGmailMonitorCore(search, config) {
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,
-                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped }));
+                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped, deferred: deferred }));
 }
 
 /** v1.1.19 (E7): run summary text — pure, so tests/ can check it. */
@@ -946,7 +955,10 @@ function buildRunSummary(r) {
   const lines = [];
   if (r.stopped) {   // v1.1.36
     lines.push("⏸ Stopped reading early to stay within Google's 6-minute limit — " + r.stopped.remaining +
-      " of " + r.threads.length + " thread(s) left. Run it again (same range) to continue; saved emails are skipped.", "");
+      " of " + r.threads.length + " thread(s) left. Run it again (same range) to continue; emails already read are skipped.", "");
+  }
+  if (r.deferred && r.deferred.length) {   // v1.1.43
+    lines.push("⏭ Left for the next run: " + r.deferred.join(", ") + " — run it again (same range) until this line is gone.", "");
   }
   lines.push(
     "✅ Email threads found: " + r.threads.length + " (" + s.messagesSeen + " message(s) in range)",
@@ -954,7 +966,7 @@ function buildRunSummary(r) {
     "💾 Saved: " + r.results.success + " | Duplicates: " + r.results.duplicates + " | Failed: " + r.results.failed,
     "🔁 Recategorized: " + r.recatChanged + " cell(s)"
   );
-  if (s.alreadySaved) lines.push("⏭ Already saved, not read again: " + s.alreadySaved + " email(s)");   // v1.1.36
+  if (s.alreadySaved) lines.push("⏭ Read before, skipped: " + s.alreadySaved + " email(s)");   // v1.1.36; v1.1.43: saved or read-only
   const skipped = [];
   if (s.promotional) skipped.push("promotional " + s.promotional);
   if (s.nonTransactional) skipped.push("non-transactional " + s.nonTransactional);
