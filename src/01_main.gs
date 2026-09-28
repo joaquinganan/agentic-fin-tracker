@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.43"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.44"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -894,9 +894,11 @@ function runGmailMonitorCore(search, config) {
     stopped = extraction.stopped;
     Logger.log("Parsed " + transactions.length + " transactions");
     safeToast("Saving " + transactions.length + " transaction(s)...", "📊 Financial Tracker", -1);
-    results = saveTransactions(transactions);
-    marked = markEmailsAsProcessed(extraction.processedThreads, extraction.failedThreadIds);   // unread ones stay for the next run
-    logReadEmails(stats.readIds);   // v1.1.43: promotions, statements, notices… aren't read again either
+    const timed = (label, fn) => { const t0 = Date.now(); const out = fn(); Logger.log('⏱ ' + label + ': ' + Math.round((Date.now() - t0) / 1000) + ' s'); return out; };
+    results = timed('save', () => saveTransactions(transactions));
+    marked = timed('mark', () => markEmailsAsProcessed(extraction.processedThreads, extraction.failedThreadIds,   // unread ones stay for the next run
+      { query: search.query, deadline: (RUN_STARTED_AT || runClock()) + RUN_STEPS_DEADLINE_MS, clock: runClock }));
+    timed('read log', () => logReadEmails(stats.readIds));   // v1.1.43: promotions, statements, notices… aren't read again either
   } catch (error) {
     errors.push("parse/save — " + error);
     Logger.log("❌ Error during parse/save: " + error);
@@ -932,7 +934,8 @@ function runGmailMonitorCore(search, config) {
       // v1.1.43: a stopped run leaves the heavy steps to the run that completes the range; and no step starts late
       if (stopped && DEFERRABLE_STEPS.indexOf(name) !== -1) { deferred.push(name); return; }
       if (runClock() - (RUN_STARTED_AT || runClock()) > RUN_STEPS_DEADLINE_MS) { deferred.push(name); return; }
-      try { fn(); } catch (error) {
+      const started = Date.now();
+      try { fn(); Logger.log('⏱ ' + name + ': ' + Math.round((Date.now() - started) / 1000) + ' s'); } catch (error) {   // v1.1.44: timings
         errors.push(name + " — " + error);
         Logger.log("❌ Error during " + name + ": " + error);
       }

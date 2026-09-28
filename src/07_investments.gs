@@ -921,7 +921,12 @@ function computeReturns(ledgerValues, currentValues, opts) {
         else if (type === 'Dividend') bought -= amt;
       });
       m.netBought = bought;
-      m.unfunded = bought - m.netDeposits > Math.max(50, bought * 0.05) ? bought - m.netDeposits : 0;
+      // v1.1.44: a sale made on the start day is already inside the start value as cash (e.g. a sale on Dec 31 that
+      // settles in January) — its proceeds fund purchases without any deposit
+      m.startCash = rows.filter(x => x.account === a && x.key === m.start && x.r[LG.TYPE] === 'Sell')
+        .reduce((t, x) => t + toUsd(invNumber(x.r[LG.AMOUNT]) - invNumber(x.r[LG.FEE]), x.r[LG.CURRENCY]), 0);
+      const gap = bought - m.netDeposits - m.startCash;
+      m.unfunded = gap > Math.max(50, bought * 0.05) ? gap : 0;
     }
     return m;
   }).filter(x => x.start);
@@ -1081,7 +1086,8 @@ function writePerformanceBlock(sheet, startRow, returns, historyValues, allocati
   }
   // v1.1.40: accounts whose purchases since the start exceed their recorded deposits
   const gaps = returns.accounts.filter(x => x.unfunded > 0).map(x => '⚠️ ' + x.account + ': purchases since ' + x.start + ' (net US$' +
-    x.netBought.toFixed(2) + ') exceed the deposits recorded (US$' + x.netDeposits.toFixed(2) + ') by US$' + x.unfunded.toFixed(2) +
+    x.netBought.toFixed(2) + ') exceed the deposits recorded (US$' + x.netDeposits.toFixed(2) + ')' +
+    (x.startCash ? ' and the start-day sale proceeds (US$' + x.startCash.toFixed(2) + ')' : '') + ' by US$' + x.unfunded.toFixed(2) +
     ' — unless that came from cash already in the account, deposits are missing and show up as gain. Add them: 📊 Tracker › ➕ Add Balance or Deposit.');
   if (gaps.length) {
     sheet.getRange(totalRow + 1, 2, gaps.length, 1).setValues(gaps.map(g => [g])).setFontSize(9).setFontColor('#B45309').setFontWeight('bold');

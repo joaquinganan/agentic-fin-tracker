@@ -2,6 +2,18 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.44 (Sept 28, 2026) — marking only what's pending; timings in the log; start-day sales are cash
+- **Reported:** a year-long range was still killed — reading ended after about a minute, and nothing was logged until
+  the 6-minute limit. The time went to marking: every thread in the range was marked read and labelled again, even the
+  ones earlier runs had marked — minutes of Gmail calls over hundreds of threads. Gmail now lists the threads still
+  unread or without the label (`{is:unread -label:Procesado}`), only those are marked, and marking stops at the time
+  budget. The search returns its query for this.
+- Every phase logs how long it took (⏱ save, mark, read log, each step), so a slow one shows in View › Executions.
+- The missing-deposit check counts the proceeds of a sale made on an account's start day as cash at the start (a sale on
+  Dec 31 that settles in January funds January's purchases without a deposit). Found reconciling a real broker history,
+  whose cash matched the recorded flows to within cents once its deposits were complete.
+- Tests: 146 (mutation-checked: re-marking, start-day sale proceeds).
+
 ### v1.1.43 (Sept 28, 2026) — long ranges finish; stopped runs stay light; undated ledger rows are flagged
 - **Reported:** a year-long date range stopped reading in time ("54 thread(s) left") and then hit the 6-minute limit
   anyway. Two causes:

@@ -1159,17 +1159,40 @@ function isBalanceAmount(text, index) {
  */
 const PROCESSED_LABEL = "Procesado";
 
-function markEmailsAsProcessed(threads, failedThreadIds) {
+function markEmailsAsProcessed(threads, failedThreadIds, opts) {
+  opts = opts || {};
   const failed = failedThreadIds || new Set();
-  const done = threads.filter(t => !failed.has(t.getId()));
+  let done = threads.filter(t => !failed.has(t.getId()));
+  // v1.1.44: every thread in the range used to be marked again — read and labelled — even those marked by earlier
+  // runs; over a year-long range that was minutes of Gmail calls (reported: a run killed right after "Parsed 1
+  // transactions"). Gmail lists the ones still unread or without the label; only those are marked.
+  let alreadyMarked = 0;
+  if (opts.query && done.length) {
+    try {
+      const pending = new Set(gmailSearchAll(opts.query + ' {is:unread -label:' + PROCESSED_LABEL + '}', MAX_THREADS_PER_RUN)
+        .threads.map(t => t.getId()));
+      const before = done.length;
+      done = done.filter(t => pending.has(t.getId()));
+      alreadyMarked = before - done.length;
+    } catch (error) {
+      Logger.log("Could not list the threads still to mark (marking them all): " + error);
+    }
+  }
+  const clock = opts.clock || (() => Date.now());
   let label = null;
   try {
     label = GmailApp.getUserLabelByName(PROCESSED_LABEL) || GmailApp.createLabel(PROCESSED_LABEL);
   } catch (error) {
     Logger.log("Could not get/create the \"" + PROCESSED_LABEL + "\" label: " + error);
   }
+  let marked = 0;
   for (let i = 0; i < done.length; i += 100) {
+    if (opts.deadline && clock() > opts.deadline) {   // v1.1.44: the rest stays for the next run
+      Logger.log("⏸ Stopped marking at the time budget: " + (done.length - i) + " thread(s) left to mark");
+      break;
+    }
     const chunk = done.slice(i, i + 100);
+    marked += chunk.length;
     try {
       GmailApp.markThreadsRead(chunk);
       if (label) label.addToThreads(chunk);
@@ -1177,9 +1200,10 @@ function markEmailsAsProcessed(threads, failedThreadIds) {
       Logger.log("Error marking emails: " + error);
     }
   }
-  Logger.log("Marked " + done.length + " thread(s) as processed; left " +
-             (threads.length - done.length) + " unread because something in them failed to parse.");
-  return { marked: done.length, keptUnread: threads.length - done.length };
+  const keptUnread = threads.filter(t => failed.has(t.getId())).length;
+  Logger.log("Marked " + marked + " thread(s) as processed (" + alreadyMarked + " already were); left " + keptUnread +
+             " unread because something in them failed to parse.");
+  return { marked: marked, alreadyMarked: alreadyMarked, keptUnread: keptUnread };
 }
 
 /**
@@ -1205,5 +1229,5 @@ function searchTransactionEmailsByDateRange(startDate, endDate, banksToTrack) {
   const result = gmailSearchAll(query, MAX_THREADS_PER_RUN);
   Logger.log("Found " + result.threads.length + " thread(s)" +
              (result.capped ? " — hit the " + MAX_THREADS_PER_RUN + "-thread cap, split the range" : ""));
-  return { threads: result.threads, range: range, capped: result.capped };
+  return { threads: result.threads, range: range, capped: result.capped, query: query };   // v1.1.44: query, to mark only what's pending
 }

@@ -323,8 +323,14 @@ function makeServices(options) {
         gmail.queries.push(query);
         // like Gmail: "from:" clauses restrict the result to threads from those senders
         const senders = (query.match(/from:\s*([^\s)]+)/gi) || []).map(f => f.replace(/from:\s*/i, '').toLowerCase());
-        const matches = senders.length === 0 ? gmail.threads : gmail.threads.filter(t => t.getMessages()
+        let matches = senders.length === 0 ? gmail.threads : gmail.threads.filter(t => t.getMessages()
           .some(m => senders.some(s => String(m.getFrom()).toLowerCase().includes(s))));
+        // "{is:unread -label:X}" (either): still unread, or without label X
+        const pending = query.match(/\{is:unread -label:([^}\s]+)\}/);
+        if (pending) {
+          const labelled = (gmail.labels[pending[1]] || { threads: [] }).threads;
+          matches = matches.filter(t => gmail.markedRead.indexOf(t.getId()) === -1 || labelled.indexOf(t.getId()) === -1);
+        }
         return matches.slice(start, start + max);
       },
       markThreadsRead(threads) { gmail.markedRead.push(...threads.map(t => t.getId())); },

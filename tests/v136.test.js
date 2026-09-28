@@ -50,7 +50,8 @@ test('a run that would hit Google\'s limit stops in time, finishes its steps, an
   const names = ['bhd_consumo_cacharepa', 'bhd_consumo_medicar', 'bhd_consumo_pedidosya'];
   mock.gmail.threads.push(...names.map((n, i) => fakeThread('t' + i, [counted(h, n, 'm' + i, 3 + i)])));
   // a slow clock: every check is 2 minutes later — reading stops after the first thread (budget: 3.5 minutes)
-  h.get('runClock = (() => { let t = 0; return () => (t += 120000); })()');
+  // (v1.1.44: time stands still after reading — marking has its own time check now)
+  h.get('runClock = (() => { let n = 0, t = 0; return () => (n++ < 3 ? (t += 120000) : t); })()');
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   const first = mock.ui.alerts[mock.ui.alerts.length - 1];
   assert.match(first, /⏸ Stopped reading early to stay within Google's 6-minute limit — 2 of 3 thread\(s\) left/);
