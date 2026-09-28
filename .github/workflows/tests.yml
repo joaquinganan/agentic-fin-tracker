@@ -17,3 +17,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Run the test suite (no dependencies to install)
         run: npm test
+      - name: dist/FinancialTracker.gs is what src/ builds
+        run: npm run bundle:check
+      - name: The whole suite again, against the single file people paste
+        run: npm run test:bundle

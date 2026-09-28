@@ -30,6 +30,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v142.test.js` | Deposit notices: pairing with recorded deposits (window, one each, same account), no effect on money, Unrecognized rows that clear when the deposit is added, the run path. |
 | `v143.test.js` | Read log (read-only emails not read again; re-read after an update; failures retried), stopped runs defer heavy steps, the 5-minute brake, undated ledger rows, the deposit date. |
 | `v144.test.js` | Marking only pending threads, the marking time budget, per-phase timings, start-day sale proceeds as start cash. |
+| `bundle.test.js` | `dist/FinancialTracker.gs` is what `src/` builds; every file in load order; compiles as one script. (`npm run test:bundle` runs the whole suite against that file.) |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

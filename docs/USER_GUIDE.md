@@ -15,17 +15,16 @@ This script uses `SpreadsheetApp.getActiveSpreadsheet()` and an `onOpen()` menu 
 
 1. In your new Google Sheet, go to the menu: **Extensions > Apps Script**
    - This opens an Apps Script project that's automatically linked to this Sheet.
-2. Delete the default `Code.gs` content
-3. Create 6 script files (use the **+** next to "Files") named exactly like the files in `src/`
-   (or push them with [clasp](https://github.com/google/clasp) — see the main README):
-   - `01_main.gs`
-   - `02_categorizer.gs`
-   - `03_gmailMonitor.gs`
-   - `04_sheetsWriter.gs`
-   - `05_dailySummary.gs` (v1.1.24)
-   - `06_monthlySummary.gs` (v1.1.26)
-4. Paste the matching content into each file
-5. Save the project (Ctrl+S / Cmd+S)
+2. Open **[dist/FinancialTracker.gs](../dist/FinancialTracker.gs)** in the repository, copy all of it, and paste it
+   into `Code.gs`, replacing what's there. That one file is the whole tracker (you can rename it `FinancialTracker`).
+3. Save the project (Ctrl+S / Cmd+S) and reload the Google Sheet: the **📊 Tracker** menu appears.
+
+**Updating:** open `FinancialTracker.gs`, select everything (Ctrl+A), paste the new version, save. The first line says
+which version it is.
+
+**Coming from the seven files (`01_main.gs` … `07_investments.gs`)?** Delete all seven (⋮ next to each file › Delete),
+then add `FinancialTracker.gs` as above. Don't keep both: the same code twice stops the project from loading (the
+📊 Tracker menu disappears). Your data, settings and scheduled runs stay as they are.
 
 ### Step 3: Run Setup Wizard
 

@@ -12,8 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const ROOT = process.env.GS_ROOT || path.join(__dirname, '..', 'src'); // GS_ROOT: run the suite against another copy
-const FILES = ['01_main.gs', '02_categorizer.gs', '03_gmailMonitor.gs', '04_sheetsWriter.gs', '05_dailySummary.gs', '06_monthlySummary.gs', '07_investments.gs'];
+// GS_ROOT: run the suite against another copy of src/. GS_BUNDLE: against the single-file build (npm run test:bundle).
+const ROOT = process.env.GS_BUNDLE ? path.dirname(path.resolve(process.env.GS_BUNDLE)) : (process.env.GS_ROOT || path.join(__dirname, '..', 'src'));
+const FILES = process.env.GS_BUNDLE ? [path.basename(process.env.GS_BUNDLE)]
+  : ['01_main.gs', '02_categorizer.gs', '03_gmailMonitor.gs', '04_sheetsWriter.gs', '05_dailySummary.gs', '06_monthlySummary.gs', '07_investments.gs'];
 const pad = n => String(n).padStart(2, '0');
 
 /** In-memory stand-in for the handful of Spreadsheet calls the pure paths make. */

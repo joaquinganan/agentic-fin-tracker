@@ -1,4 +1,4 @@
 {
   "scriptId": "<your Apps Script project id — Project Settings › IDs>",
-  "rootDir": "src"
+  "rootDir": "dist"
 }

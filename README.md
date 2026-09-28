@@ -124,6 +124,8 @@ src/                  Apps Script sources (bound to the spreadsheet) + appsscrip
   05_dailySummary.gs  email kit + daily summary
   06_monthlySummary.gs monthly summary
   07_investments.gs   investment ledger, broker emails, holdings
+dist/FinancialTracker.gs   the seven files as ONE file — what you paste (generated: npm run bundle)
+tools/bundle.js       builds and checks dist/
 tests/                automated test framework (see below)
 docs/USER_GUIDE.md    setup and day-to-day use
 CHANGELOG.md          every release, with the defect behind it
@@ -132,10 +134,12 @@ CHANGELOG.md          every release, with the defect behind it
 ## Getting started
 
 Follow **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**: create a Google Sheet, open *Extensions › Apps Script*,
-add the seven files from `src/`, run `onOpen` once to authorize, then use **📊 Tracker › Setup Wizard**.
+paste **[dist/FinancialTracker.gs](dist/FinancialTracker.gs)** as the project's only code file, save, reload the sheet
+and use **📊 Tracker › Setup Wizard**. Updating is the same: replace that file's content with the new one.
 
-With [clasp](https://github.com/google/clasp), you can push from this repo instead: copy `.clasp.json.example`
-to `.clasp.json`, set your script id, then run `clasp push`.
+With [clasp](https://github.com/google/clasp), you can push from this repo instead: `clasp pull` once (it brings your
+project's `appsscript.json`, which you move into `dist/`), copy `.clasp.json.example` to `.clasp.json` with your script
+id, then `npm run bundle && clasp push`. A push replaces every file of the project with `dist/`.
 
 ---
 

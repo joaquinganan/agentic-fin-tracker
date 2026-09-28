@@ -2,6 +2,18 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.46 (Sept 28, 2026) — one file to install and update
+- The tracker is published as **one file, `dist/FinancialTracker.gs`**: the seven files of `src/` in load order, built
+  by `npm run bundle`. Installing and updating is pasting one file — nothing can be half-updated, mixed with another
+  version or pasted into the wrong file (what removed the menu in v1.1.33). The whole test suite runs against it too
+  (`npm run test:bundle`), and CI fails when `dist/` isn't what `src/` builds (`npm run bundle:check`).
+- Considered and not taken: an Apps Script **library**. Per Google's documentation, a library's script properties and
+  script lock are one instance shared by every script that includes it — two people's run records and runs would mix
+  and block each other — its dialogs can't call library functions directly (each button needs a bridge function in
+  every user's project), libraries add latency, and updating still means changing a version by hand.
+- The user guide's install steps said six files and missed `07_investments.gs`; they now describe the one file, how to
+  update, and how to move from the seven files. `clasp` pushes `dist/`. Tests: 149, on `src/` and on the single file.
+
 ### v1.1.45 (Sept 28, 2026) — a deposit notice edited into the deposit clears its flag
 - **Reported:** a HAPI deposit notice stayed in Unrecognized after its amount was added — by editing the Notice row itself
   (type changed to Deposit, amount typed). Only a Notice paired with a separate Deposit was cleared, so with no Notice
