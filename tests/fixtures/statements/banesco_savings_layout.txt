@@ -9,7 +9,7 @@ N° de cuenta:                  00000000000    Fecha al corte:                  
 Resumen de tu cuenta
                                                  RD$                                                    RD$
 Balance mes anterior:                                50,000.00         Débitos del mes:                                          26,017.03
-Balance al corte:                                    37,133.22         Créditos del mes:                                         13,150.25
+Balance al corte:                                    38,833.22         Créditos del mes:                                         14,850.25
 Impuestos del mes:                                      2.00         Intereses acumulados al corte:                            150.25
 Detalle de tus transacciones
 ANA MARIA PEREZ SOTO
@@ -18,15 +18,17 @@ Transacciones en RD$ Pesos Dominicanos
         Transacción                Descripción de Movimientos                         Débito               Crédito              Balance
          03/08/2026 Lbtr Pedro Gomez Ramirez                                1,000.00                                 49,000.00
          03/08/2026 Imp. Art. 12 Ley 288-04                                     2.00                                 48,998.00
-         10/08/2026 Lbtr Ana Maria Perez Sot                                5,000.00                                 43,998.00
-         17/08/2026 Ach Ibanking                                                                 6,500.00            50,498.00
-         24/08/2026 Ach Ibanking                                                                 2,300.00            52,798.00
-         26/08/2026 Pago Renta Apartamento 5                               20,000.00                                 32,798.00
+         05/08/2026 Transf Recibida Maria Lopez Rosa                                             1,000.00            49,998.00
+         10/08/2026 Lbtr Ana Maria Perez Sot                                5,000.00                                 44,998.00
+         17/08/2026 Ach Ibanking                                                                 6,500.00            51,498.00
+         20/08/2026 Transf Recibida Ana Maria Perez Soto                                           700.00            52,198.00
+         24/08/2026 Ach Ibanking                                                                 2,300.00            54,498.00
 
            Fecha
         Transacción                Descripción de Movimientos                         Débito               Crédito              Balance
-         28/08/2026 Lbtr Ana Maria Perez Sot                                                     3,000.00            35,798.00
-         31/08/2026 Intereses                                                                      150.25            35,948.25
-         31/08/2026 Lbtr Luis Gomez Diaz                                                         1,200.00            37,148.25
-         31/08/2026 Retencion De Intereses                                     15.03                                 37,133.22
+         26/08/2026 Pago Renta Apartamento 5                               20,000.00                                 34,498.00
+         28/08/2026 Lbtr Ana Maria Perez Sot                                                     3,000.00            37,498.00
+         31/08/2026 Intereses                                                                      150.25            37,648.25
+         31/08/2026 Lbtr Luis Gomez Diaz                                                         1,200.00            38,848.25
+         31/08/2026 Retencion De Intereses                                     15.03                                 38,833.22
 Página 2 de 2

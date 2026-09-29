@@ -239,8 +239,10 @@ Money you receive lands in **Incoming Transfers**, without a category (highlight
 summaries; *Exclude* for money that pays nothing back. When the transfer names its sender (LAFISE does), a Custom Rule
 on that name categorizes it by itself. Transfers from your own account are recognized and excluded.
 
-Banesco doesn't notify most incoming transfers, but its monthly savings statement (a PDF) lists them — as "Ach Ibanking",
-without the sender. The tracker reads the PDF itself (nothing to turn on). What's read must add up to the statement's own
+Banesco doesn't notify most incoming transfers, but its monthly savings statement (a PDF) lists them. Every credit on it
+is taken, with its description as written ("Ach Ibanking" has no sender; "Lbtr <name>", deposits, interest…):
+categorize each by hand or with a Custom Rule on its description, Exclude what pays nothing back; credits naming the
+account holder are recognized as yours. The tracker reads the PDF itself (nothing to turn on). What's read must add up to the statement's own
 totals, or nothing is taken and it shows in Unrecognized.
 
 A category typed in Incoming Transfers or Bank Transfers applies at once (the Dashboard doesn't wait for the next

@@ -363,4 +363,3 @@ function getCustomCategoryNames(userEmail) {
   return Object.keys(custom).filter(c =>
     !DEFAULT_CATEGORIES[c] && c.toUpperCase() !== EXCLUDE_CATEGORY.toUpperCase());
 }
-

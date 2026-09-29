@@ -101,7 +101,9 @@ el tracker puede **restarla de lo que gastaste** en esa categoría.
   el monto, no se pierde: aparece en Unrecognized con lo que escribiste.
 
 **Banesco** no avisa la mayoría de las transferencias que recibes, pero su **estado de cuenta mensual** (el PDF que llega
-por correo) las lista como "Ach Ibanking", sin el nombre de quien envía: esas se categorizan a mano. El tracker lee el
+por correo) las lista. El tracker toma **todos los créditos** del estado, con su descripción tal cual ("Ach Ibanking",
+"Lbtr <nombre>", depósitos, intereses…): los categorizas a mano o con una Custom Rule sobre su descripción, y *Exclude*
+para lo que no devuelve ningún gasto. Los que nombran al titular de la cuenta se reconocen como tuyos. El tracker lee el
 PDF por sí solo, sin activar nada, y comprueba que lo leído cuadre con los totales del propio estado de cuenta; si no
 cuadra, no toma nada y lo avisa en Unrecognized.
 

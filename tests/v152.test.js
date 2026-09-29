@@ -30,7 +30,7 @@ test('a FOP-style statement PDF becomes lines: whole words, the Type0 title, bot
   assert.ok(lines.includes('Balance mes anterior: 50,000.00 Débitos del mes: 26,017.03'), 'no spaces inside words (TJ spacing, real glyph widths)');
   assert.ok(lines.includes('03/08/2026 Imp. Art. 12 Ley 288-04 2.00 48,998.00'));
   assert.ok(lines.includes('\f'), 'page break');
-  assert.equal(lines.filter(l => /^\d{2}\/\d{2}\/\d{4} /.test(l)).length, 10, 'every row on its own line, both pages');
+  assert.equal(lines.filter(l => /^\d{2}\/\d{2}\/\d{4} /.test(l)).length, 12, 'every row on its own line, both pages');
 });
 
 test('PDF values: literal strings with escapes, hex strings, names with #, references', () => {

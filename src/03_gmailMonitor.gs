@@ -465,7 +465,8 @@ function extractTransactionsFromThreads(threads, rawCustomRules, range, opts) {
         if (d < range.start || d >= range.endExclusive) { stats.outOfRange++; continue; }
       }
       stats.messagesSeen++;
-      if (skipIds.has(message.getId())) { stats.alreadySaved++; continue; }
+      // v1.1.55: statements are read again — each row is recognized by its reference, and a newer version may take more rows
+      if (skipIds.has(message.getId()) && !isStatementEmail(message)) { stats.alreadySaved++; continue; }
       const result = parseEmailMessage(message, rawCustomRules, stats);
       if (result.status === 'failed') failedThreadIds.add(thread.getId());
       transactions.push(...result.items);
@@ -1261,10 +1262,12 @@ const OWN_ACCOUNT_SUFFIX = ' (own account)';
 
 /** Two person names are the same holder when their first two names match (accents, case and signs aside — a
  *  statement writes "Ñ" as a space and cuts long names). Pure. */
+function normalizedWords(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean);
+}
+
 function sameHolder(a, b) {
-  const words = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
-    .replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean);
-  const x = words(a), y = words(b);
+  const x = normalizedWords(a), y = normalizedWords(b);
   return x.length >= 2 && y.length >= 2 && x[0] === y[0] && x[1] === y[1];
 }
 
@@ -1327,11 +1330,16 @@ function parseBanescoSavingsStatement(text) {
   if (Math.abs(sumD - debits) > 0.01) out.problems.push('debits add up to ' + sumD.toFixed(2) + ', the statement says ' + debits.toFixed(2));
   if (out.rows.length && Math.abs(prev - closing) > 0.01) out.problems.push('the last balance is ' + prev.toFixed(2) + ', the statement says ' + closing.toFixed(2));
   if (out.problems.length) return out;
-  // money received by transfer: ACH ("Ach Ibanking" — no sender in the statement) and LBTR ("Lbtr <name>")
-  out.rows.filter(r => r.direction === 'credit' && /^(ACH|LBTR)\b/i.test(r.description)).forEach(r => {
-    const name = /^LBTR\b/i.test(r.description) ? r.description.replace(/^LBTR\s+/i, '').trim() : '';
-    out.incoming.push({ day: r.day, amount: r.amount, balance: r.balance, currency: out.currency,
-      merchant: name || 'ACH transfer (sender not in the statement)', own: !!(name && out.holder && sameHolder(name, out.holder)) });
+  // v1.1.55: EVERY credit is money received — descriptions vary ("Ach Ibanking", "Lbtr <name>", deposits, interest…);
+  // what each one pays back is the user's call (a Custom Rule on its description, or typed in Incoming Transfers).
+  // Yours when it's an LBTR from the holder or its description names the holder.
+  const holderKey = out.holder ? normalizedWords(out.holder).slice(0, 2).join(' ') : '';
+  out.rows.filter(r => r.direction === 'credit').forEach(r => {
+    const lbtr = /^LBTR\b/i.test(r.description), ach = /^ACH\b/i.test(r.description);
+    const name = lbtr ? r.description.replace(/^LBTR\s+/i, '').trim() : '';
+    const own = !!out.holder && ((lbtr && sameHolder(name, out.holder)) || (holderKey.length > 3 && (' ' + normalizedWords(r.description).join(' ') + ' ').indexOf(' ' + holderKey + ' ') !== -1));
+    out.incoming.push({ day: r.day, amount: r.amount, balance: r.balance, currency: out.currency, description: r.description,
+      merchant: name || (ach ? 'ACH transfer (sender not in the statement)' : r.description), own: own });
   });
   return out;
 }
@@ -1355,15 +1363,23 @@ function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
   }
   if (!parsed.incoming.length) return { items: [], status: 'filtered' };   // nothing received by transfer this month
   const baseMessageId = message.getId();
-  const items = parsed.incoming.map((x, i) => {
+  const items = parsed.incoming.map(x => {
     let category = findCustomRuleOverride(x.merchant, rawCustomRules);
     if (x.own) category = EXCLUDE_CATEGORY;
     const p = x.day.split('-').map(Number);
     return { date: new Date(p[0], p[1] - 1, p[2], 12), bank: bank, merchant: x.merchant, amount: -x.amount, currency: x.currency,
       category: category || '', type: 'Incoming', description: x.own ? x.merchant + OWN_ACCOUNT_SUFFIX : x.merchant,
       reversal: false, timeKey: '', txRef: bank + ':STMT:' + x.day + ':' + x.amount.toFixed(2) + ':' + x.balance.toFixed(2),
-      subject: subject, timestamp: new Date().toISOString(), messageId: baseMessageId + '_' + i, isCredit: true, isCashback: false };
+      subject: subject, timestamp: new Date().toISOString(), isCredit: true, isCashback: false,
+      // v1.1.55: the row itself, not its position — positions moved once every credit was taken
+      messageId: baseMessageId + '_' + x.day.replace(/-/g, '') + '-' + Math.round(x.amount * 100) + '-' + Math.round(x.balance * 100) };
   });
   Logger.log('Statement read | ' + bank + ' | ' + parsed.rows.length + ' rows, ' + items.length + ' incoming transfer(s)');
   return { items: items, status: 'ok' };
+}
+
+/** v1.1.55: a bank statement email (one this tracker reads: its bank has a statement reader and the subject matches). */
+function isStatementEmail(message) {
+  const subject = message.getSubject() || '';
+  return Object.keys(BANK_PATTERNS).some(b => BANK_PATTERNS[b].statement && BANK_PATTERNS[b].statement.subject.test(subject));
 }
