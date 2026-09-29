@@ -12,7 +12,7 @@ const START_HERE_STALE_RUN_HOURS = 36;
 // the only functions the sidebar's buttons may call, and the only tabs it may open
 const START_HERE_ACTIONS = ['openSetupWizard', 'openDateRangeDialog', 'openValuationDialog', 'refreshInvestmentsNow', 'openSheetByName',
   'openPortfolioPasteDialog'];
-const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
+const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
 
 function openStartHere() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(startHereHtml()).setTitle('📘 Start here'));
@@ -100,6 +100,24 @@ function startHereStatus(now) {
       open$ ? 'warn' : 'done', open$ ? 'Type a category in Bank Transfers (Exclude for moves between your own accounts), or add a Custom Rule for ones that repeat.'
         : 'Every transfer this month has a category.', open$ ? open('Open Bank Transfers', 'Bank Transfers') : null);
   }
+
+  // v1.1.51: money received — only counted once it has a category
+  if (tx && tx.getLastRow() > 1) {
+    const received = tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues()
+      .filter(r => r[TX_COL.DATE] && r[TX_COL.TYPE] === 'Incoming' && !String(r[TX_COL.CATEGORY] || '').trim()).length;
+    if (received) {
+      add('Your data', 'incoming', received + ' incoming transfer(s) without a category', 'warn',
+        'Give each one the category it pays back (a roommate\'s share of the rent → Rent) and it is taken off what you spent there; ' +
+        'Exclude for money that pays nothing back. A Custom Rule on the sender\'s name does it by itself.',
+        open('Open Incoming Transfers', 'Incoming Transfers'));
+    }
+  }
+  const driveOn = typeof Drive !== 'undefined' && !!Drive.Files;
+  const statementBanks = banks.filter(b => BANK_PATTERNS[b] && BANK_PATTERNS[b].statement);   // only if a tracked bank has one
+  if (statementBanks.length) add('Your data', 'statements', driveOn ? 'Bank statements can be read' : 'Read bank statements (optional)', driveOn ? 'done' : 'optional',
+    driveOn ? 'Monthly statement PDFs (' + statementBanks.join(', ') + ') are read for incoming transfers the bank does not notify.'
+      : statementBanks.join(', ') + ' does not notify most incoming transfers; its monthly statement lists them. To read it, turn on ' +
+        'the Drive API: Extensions › Apps Script › Services › + › Drive API › Add.');
 
   // ---- Investments (optional)
   const ledger = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);

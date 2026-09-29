@@ -115,7 +115,8 @@ function computeDailySummary(values, opts) {
     const type = r[TX_COL.TYPE] || 'Transaction';
     const cat = String(r[TX_COL.CATEGORY] || '');
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
-    const spend = (type === 'Transaction' || type === 'Transfer') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    // v1.1.51: money received with a category reduces that category (its amount is negative)
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;
     const open = type === 'Transfer' && cat === '';
     const month = key.slice(0, 7);
     const item = { merchant: String(r[TX_COL.MERCHANT] || ''), bank: String(r[TX_COL.BANK] || ''), category: cat, amount: amt, type: type };

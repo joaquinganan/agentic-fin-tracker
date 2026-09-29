@@ -35,6 +35,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v148.test.js` | Pasting a broker's portfolio screen: parsing (plain and linked), Total assets check, cash, duplicates, saving and same-day replacement, entry points. |
 | `v149.test.js` | Deleted rows re-imported, Reset System re-importing everything and keeping investments, the Spanish guide in sync with the menu, the monthly note before the investment history. |
 | `v150.test.js` | Every "📊 Tracker › …" the tracker shows names a menu item that exists. |
+| `v151.test.js` | Incoming transfers: LAFISE emails (third party, own account, Custom Rule), Banesco statements in three text layouts and their totals, a run via Drive, netting in the summary, recategorizing, no Drive API. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

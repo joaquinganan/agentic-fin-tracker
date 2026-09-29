@@ -2,6 +2,27 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.51 (Sept 28, 2026) — incoming transfers: money paid back reduces what you spent
+- **Requested:** shared costs (rent, utilities) are paid with the user's cards and a roommate transfers their share —
+  the Dashboard should show what was really spent. Money received is saved as a **negative** row of the new Type
+  **Incoming**, the way reversals are: given a category it reduces that category everywhere (Dashboard formulas already
+  net by category; the daily and monthly summaries now count Incoming rows). Without one it counts nowhere.
+- Nothing is decided for the user (no rules for anyone's own situation): categories come from Custom Rules on the
+  sender's name, or are typed in the new **Incoming Transfers** sheet (same layout as Bank Transfers, edits synced back
+  to Transactions and kept by recategorizing). The one automatic rule is generic: money from your own account (the
+  sender is the account holder — first two names, accents and cut names aside) is Exclude.
+- **LAFISE** "TRANSFERENCIA ENTRANTE" emails come from a third address, now searched. Their body says "TRANSFERENCIA …
+  RECIBIDA" and "PAGOS AL INSTANTE" (Transfer keywords): the subject now types them first, or they'd read as sent.
+- **Banesco** doesn't notify most incoming transfers; its monthly savings statement (PDF) lists them. With the Drive API
+  service on, the PDF is converted to a temporary Google Doc, read and trashed. Rows are read from the text in any layout
+  (columns, one line, one cell per line); credit or debit comes from the running balance; and everything must add up to
+  the statement's own totals (credits, debits, closing balance) or nothing is taken and it goes to Unrecognized. Credits
+  by ACH ("Ach Ibanking", no sender) and LBTR ("Lbtr <name>") are the incoming transfers; interest is not. Checked on a
+  real statement (20 rows, totals matching); the fixtures are synthetic.
+- 📘 Start here: incoming transfers without a category; the Drive API when a tracked bank has a statement to read.
+- Tests: 172, on `src/` and on the single file (mutation-checked: incoming typed as sent, the credit total check, own
+  money after recategorizing, the summary netting).
+
 ### v1.1.50 (Sept 28, 2026) — Holdings named a menu item that no longer existed
 - Holdings' note and its empty "Other accounts" row still sent people to "📊 Tracker › ➕ Add Fund / Pension Balance",
   renamed "➕ Add Balance or Deposit" in v1.1.40. Found reviewing a frame of the new demo video. A test now checks every

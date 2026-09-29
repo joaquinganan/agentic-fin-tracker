@@ -81,6 +81,25 @@ que esas líneas no aparezcan: los correos ya leídos se saltan, así que cada v
 - Las hojas **Raw_** (una por banco) son copias: lo que edites ahí no se guarda.
 - Si borras una fila de **Transactions**, la siguiente corrida que cubra esa fecha la vuelve a traer desde el correo.
 
+## 6b. Transferencias entrantes: lo que te devuelven
+
+Si compartes gastos (la renta o los servicios con un roommate, por ejemplo) y la otra persona te transfiere su parte,
+el tracker puede **restarla de lo que gastaste** en esa categoría.
+
+- Lo recibido aparece en la hoja **Incoming Transfers**, sin categoría y resaltado en naranja.
+- **Dale la categoría que devuelve.** Si pagaste 30,000 de renta y te transfirieron 15,000 con categoría *Rent*, la
+  renta muestra 15,000 en el Dashboard y en los resúmenes. Usa **Exclude** para dinero que no devuelve ningún gasto.
+- Si la transferencia trae el nombre de quien envía (LAFISE lo trae), una regla en **Custom Rules** con ese nombre y la
+  categoría lo hace sola desde entonces.
+- Lo que te transfieres **desde tu propia cuenta** se reconoce y queda en *Exclude*.
+
+**Banesco** no avisa la mayoría de las transferencias que recibes, pero su **estado de cuenta mensual** (el PDF que llega
+por correo) las lista como "Ach Ibanking", sin el nombre de quien envía: esas se categorizan a mano. Para que el tracker
+lea el PDF, activa una vez el servicio **Drive API**: en **Extensions › Apps Script**, a la izquierda, **Services › + ›
+Drive API › Add**. La primera corrida después te pedirá permiso para convertir el PDF (se crea una copia temporal que
+se borra al leerla). El tracker comprueba que lo leído cuadre con los totales del propio estado de cuenta; si no cuadra,
+no toma nada y lo avisa en Unrecognized.
+
 ## 7. Inversiones
 
 ### HAPI: primeros pasos

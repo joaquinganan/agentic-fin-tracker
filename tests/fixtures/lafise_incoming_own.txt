@@ -1,0 +1,18 @@
+TRANSFERENCIA PAGOS AL INSTANTE (LBTR) RECIBIDA
+Santo Domingo,
+Republica Dominicana 15/09/2026 08:04:53 P.M.
+Estimado(a) Cliente(a):
+Le informamos que usted ha recibido una transferencia por Pago al Instante a traves de nuestra institución financiera:
+BANCO LAFISE REPUBLICA DOMINICANA, a continuación el detalle:
+Información de la Transacción
+Nombre del cliente:
+ANA MARIA PEREZ SOTO
+Número de cuenta:
+00000000000
+Ordenante:
+ANA MARIA PEREZ SOTO 00100000002
+Monto total:
+DOP 25000.00
+Fecha/Hora:
+15/09/2026 08:04:53 P.M.
+Gracias por preferir nuestros servicios.

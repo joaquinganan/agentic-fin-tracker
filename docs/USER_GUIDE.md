@@ -232,3 +232,15 @@ If purchases since the start exceed the recorded deposits, Holdings › Performa
 HAPI emails a notice for every completed deposit, without the amount: the tracker keeps them and lists in
 **Unrecognized** each one with no deposit recorded near its date — add that deposit's amount and the row goes away.
 
+## Incoming transfers: money paid back to you
+
+Money you receive lands in **Incoming Transfers**, without a category (highlighted). Give it the category it pays back
+— a roommate's share of the rent → *Rent* — and it is taken off what you spent there, on the Dashboard and in the
+summaries; *Exclude* for money that pays nothing back. When the transfer names its sender (LAFISE does), a Custom Rule
+on that name categorizes it by itself. Transfers from your own account are recognized and excluded.
+
+Banesco doesn't notify most incoming transfers, but its monthly savings statement (a PDF) lists them — as "Ach Ibanking",
+without the sender. To read it, turn on the **Drive API** service once (Extensions › Apps Script › Services › + › Drive
+API › Add): the PDF is converted to a temporary Google Doc, read and trashed. What's read must add up to the statement's
+own totals, or nothing is taken and it shows in Unrecognized.
+

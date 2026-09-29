@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.50 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.51 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.50"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.51"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1884,16 +1884,19 @@ const BANK_PATTERNS = {
     // why LAFISE transfers were invisible before — the old search only ever
     // looked for the consumption-alert sender.
     fromDomain: 'lafise.com',
-    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com',
-    extractors: { consumo: extractLAFISETransactions, transfer: extractLAFISETransferTransactions },
+    // v1.1.51: incoming "Pagos al Instante" transfers come from a third address
+    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com',
+    extractors: { consumo: extractLAFISETransactions, transfer: extractLAFISETransferTransactions, incoming: extractLAFISEIncomingTransactions },
     keywords: ['LAFISE', 'LAFISE BANCO'],
     merchantPattern: /(?:en|en el|en\s+)([^\n]{10,50})/i
   },
   BANESCO: {
     name: 'BANESCO',
     fromDomain: 'banesco.com.do',
-    searchQuery: 'from:notificaciones@banesco.com.do',
+    // v1.1.51: the monthly savings statement (a PDF) — Banesco doesn't notify most incoming transfers
+    searchQuery: 'from:notificaciones@banesco.com.do OR from:estadodecuenta@banesco.com.do',
     extractors: { consumo: extractBANESCOConsumoTransactions, transfer: extractBANESCOTransferTransactions },
+    statement: { subject: /ESTADO DE CUENTA DE AHORROS/i, parse: parseBanescoSavingsStatement },
     keywords: ['BANESCO', 'BANESCO RD'],
     merchantPattern: /realizada en el\s+([^\n]+?)\s+por\s/i
   },
@@ -2022,6 +2025,9 @@ const TYPE_KEYWORDS = {
  * emails being matched.
  */
 const TYPE_SUBJECT_KEYWORDS = {
+  // v1.1.51: money received. First: its body says "TRANSFERENCIA ... RECIBIDA" and "PAGOS AL INSTANTE", which are
+  // Transfer keywords — without this, a received transfer would be read as one sent.
+  'Incoming': ['TRANSFERENCIA ENTRANTE'],
   'Transfer': [
     '¡TRANSFERENCIA EXITOSA!',              // LAFISE
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
@@ -2119,7 +2125,7 @@ function detectTypeFromSubject(subject) {
 
 function detectTransactionType(subject, bodyText) {
   const bySubject = detectTypeFromSubject(subject);
-  if (bySubject === 'Transfer' || bySubject === 'Card Payment') return bySubject;
+  if (bySubject === 'Transfer' || bySubject === 'Card Payment' || bySubject === 'Incoming') return bySubject;
   const upper = (String(subject || '') + ' ' + String(bodyText || '')).toUpperCase();
   if (bySubject === 'Transaction') {
     // Confirmed consumo template: the body may only refine it to Cashback
@@ -2365,6 +2371,11 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       return { items: [], status: 'skipped' };
     }
 
+    // v1.1.51: a bank statement (PDF): the incoming transfers the bank didn't notify
+    if (bankPattern.statement && bankPattern.statement.subject.test(subject)) {
+      return parseStatementEmail(message, bank, bankPattern.statement, rawCustomRules, stats);
+    }
+
     if (isPromotionalEmail(subject, plainText)) {
       stats.promotional++;
       Logger.log("Skipped promotional email: " + subject);
@@ -2422,6 +2433,10 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       if (!category && type === 'Transaction' && !isReversal) {   // a reversal takes its original's category
         category = categorizeTransaction(merchant);
       }
+      // v1.1.51: money received is saved NEGATIVE, like a reversal — given a category (a Custom Rule, or by hand) it
+      // reduces what you spent there; money from your own account is Exclude
+      const isIncoming = type === 'Incoming';
+      if (isIncoming && item.own) category = EXCLUDE_CATEGORY;
       // v1.1.23: paying the card is never spending — explicit "Exclude"
       if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
       if (merchant === GARBLED_PLACEHOLDER) stats.placeholders++;
@@ -2434,18 +2449,18 @@ function parseEmailMessage(message, rawCustomRules, stats) {
         date: date,
         bank: bank,
         merchant: merchant,
-        amount: isReversal ? -item.amount : item.amount,
+        amount: isReversal || isIncoming ? -item.amount : item.amount,
         currency: currency,
         category: category,
         type: type,
-        description: merchant,
+        description: isIncoming && item.own ? merchant + OWN_ACCOUNT_SUFFIX : merchant,
         reversal: isReversal,
         timeKey: item.timeKey || '',
         txRef: item.ref ? bank + ':' + item.ref : '',
         subject: subject,
         timestamp: new Date().toISOString(),
         messageId: baseMessageId + '_' + (itemIndex++),
-        isCredit: isReversal || computeIsCredit(type, item.context),
+        isCredit: isReversal || isIncoming || computeIsCredit(type, item.context),
         isCashback: type === 'Cashback'
       });
     }
@@ -2498,7 +2513,7 @@ function detectCurrencyFromMatch(matchText) {
  */
 function extractTransactionItems(bank, type, text) {
   const extractors = (BANK_PATTERNS[bank] && BANK_PATTERNS[bank].extractors) || {};
-  const fn = type === 'Transfer' ? extractors.transfer : extractors.consumo;
+  const fn = type === 'Transfer' ? extractors.transfer : type === 'Incoming' ? extractors.incoming : extractors.consumo;
   return fn ? fn(text) : [];
 }
 
@@ -3050,6 +3065,134 @@ function searchTransactionEmailsByDateRange(startDate, endDate, banksToTrack) {
   return { threads: result.threads, range: range, capped: result.capped, query: query };   // v1.1.44: query, to mark only what's pending
 }
 
+/* ======================================================================
+ * INCOMING TRANSFERS — v1.1.51
+ * Money received: saved as NEGATIVE rows of Type "Incoming". With a category (a Custom Rule on the sender's name, or
+ * typed in Incoming Transfers) it reduces what you spent in that category — a roommate's share of the rent lowers
+ * Rent. Money from your own account is Exclude. Nothing else is decided for you.
+ * ====================================================================== */
+const OWN_ACCOUNT_SUFFIX = ' (own account)';
+
+/** Two person names are the same holder when their first two names match (accents, case and signs aside — a
+ *  statement writes "Ñ" as a space and cuts long names). Pure. */
+function sameHolder(a, b) {
+  const words = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean);
+  const x = words(a), y = words(b);
+  return x.length >= 2 && y.length >= 2 && x[0] === y[0] && x[1] === y[1];
+}
+
+/**
+ * LAFISE "TRANSFERENCIA ENTRANTE APLICADA EXITOSAMENTE." (Pagos al Instante). Real sample (values changed):
+ *   Nombre del cliente: / <HOLDER> / Número de cuenta: / … / Ordenante: / <SENDER> <cédula> / Monto total: / DOP 4500.00
+ */
+function extractLAFISEIncomingTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/Monto total:\s*(DOP|USD|RD\$|US\$)?\s*([\d,]+\.\d{2})/i);
+  if (!m) return [];
+  const sender = ((flat.match(/Ordenante:\s*(.+?)\s*(?:\d{6,}\s*)?Monto total:/i) || [])[1] || '').replace(/\s+\d+$/, '').trim();
+  const holder = ((flat.match(/Nombre del cliente:\s*(.+?)\s*N[úu]mero de cuenta:/i) || [])[1] || '').trim();
+  const currency = /USD|US\$/i.test(m[1] || '') ? 'USD' : 'DOP';
+  return [{ amount: Number(m[2].replace(/,/g, '')), currency: currency, merchant: sender || 'Incoming transfer',
+    own: !!(sender && holder && sameHolder(sender, holder)), context: 'incoming transfer' }];
+}
+
+/**
+ * A statement PDF as text. Apps Script can't read a PDF itself: Google Drive converts it to a Google Doc (the
+ * advanced "Drive API" service — Apps Script › Services › Drive API), the text is read and the Doc is trashed.
+ */
+function statementPdfText(blob) {
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    throw new Error('Turn on the Drive API service to read statements: Extensions › Apps Script › Services › + › Drive API › Add');
+  }
+  const name = 'tracker-statement-' + new Date().getTime();
+  const file = Drive.Files.create
+    ? Drive.Files.create({ name: name, mimeType: 'application/vnd.google-apps.document' }, blob)            // Drive API v3
+    : Drive.Files.insert({ title: name, mimeType: 'application/vnd.google-apps.document' }, blob, { convert: true });   // v2
+  try {
+    return DocumentApp.openById(file.id).getBody().getText();
+  } finally {
+    try { DriveApp.getFileById(file.id).setTrashed(true); } catch (error) { Logger.log('Could not trash the converted statement: ' + error); }
+  }
+}
+
+/**
+ * Banesco savings statement (text of its PDF) → { holder, currency, rows, incoming, problems }. Each row is
+ * "dd/mm/yyyy <description> <amount> <balance>"; whether it's a debit or a credit is read from the balance (the column
+ * isn't in the text). Everything must add up to the statement's own totals, or nothing is taken from it. Pure.
+ */
+function parseBanescoSavingsStatement(text) {
+  const flat = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
+  const num = s => Number(String(s).replace(/,/g, ''));
+  const total = re => { const m = flat.match(re); return m ? num(m[1]) : null; };
+  const out = { holder: '', currency: /US\$|D[óo]lares|Moneda:\s*USD/i.test(flat) && !/RD\$/.test(flat) ? 'USD' : 'DOP', rows: [], incoming: [], problems: [] };
+  const opening = total(/Balance mes anterior:?\s*(-?[\d,]+\.\d{2})/i), closing = total(/Balance al corte:?\s*(-?[\d,]+\.\d{2})/i);
+  const credits = total(/Cr[ée]ditos del mes:?\s*([\d,]+\.\d{2})/i), debits = total(/D[ée]bitos del mes:?\s*([\d,]+\.\d{2})/i);
+  const holder = flat.match(/(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Cuenta/i)
+    || flat.match(/Detalle de tus transacciones\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Transacciones en/i);
+  out.holder = holder ? holder[1].trim() : '';
+  if (opening === null || closing === null || credits === null || debits === null) {
+    out.problems.push('the statement\'s totals (balances, credits, debits) were not found');
+    return out;
+  }
+  const rowRe = /(\d{2})\/(\d{2})\/(\d{4}) (.+?) (-?[\d,]+\.\d{2}) (-?[\d,]+\.\d{2})(?= \d{2}\/\d{2}\/\d{4}| |$)/g;
+  let prev = opening, sumC = 0, sumD = 0, m;
+  while ((m = rowRe.exec(flat)) !== null) {
+    const amount = num(m[5]), balance = num(m[6]), delta = +(balance - prev).toFixed(2);
+    let direction = null;
+    if (Math.abs(delta - amount) < 0.01) direction = 'credit';
+    else if (Math.abs(delta + amount) < 0.01) direction = 'debit';
+    if (!direction) { out.problems.push('row ' + m[1] + '/' + m[2] + ' "' + m[4] + '" does not follow the balance'); prev = balance; continue; }
+    if (direction === 'credit') sumC += amount; else sumD += amount;
+    out.rows.push({ day: m[3] + '-' + m[2] + '-' + m[1], description: m[4].trim(), amount: amount, balance: balance, direction: direction });
+    prev = balance;
+  }
+  if (!out.rows.length) out.problems.push('no transactions found');
+  if (Math.abs(sumC - credits) > 0.01) out.problems.push('credits add up to ' + sumC.toFixed(2) + ', the statement says ' + credits.toFixed(2));
+  if (Math.abs(sumD - debits) > 0.01) out.problems.push('debits add up to ' + sumD.toFixed(2) + ', the statement says ' + debits.toFixed(2));
+  if (out.rows.length && Math.abs(prev - closing) > 0.01) out.problems.push('the last balance is ' + prev.toFixed(2) + ', the statement says ' + closing.toFixed(2));
+  if (out.problems.length) return out;
+  // money received by transfer: ACH ("Ach Ibanking" — no sender in the statement) and LBTR ("Lbtr <name>")
+  out.rows.filter(r => r.direction === 'credit' && /^(ACH|LBTR)\b/i.test(r.description)).forEach(r => {
+    const name = /^LBTR\b/i.test(r.description) ? r.description.replace(/^LBTR\s+/i, '').trim() : '';
+    out.incoming.push({ day: r.day, amount: r.amount, balance: r.balance, currency: out.currency,
+      merchant: name || 'ACH transfer (sender not in the statement)', own: !!(name && out.holder && sameHolder(name, out.holder)) });
+  });
+  return out;
+}
+
+/** A statement email: its PDF's incoming transfers as Incoming items (one per row, deduplicated per statement row). */
+function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
+  const subject = message.getSubject() || '';
+  const pdf = (message.getAttachments() || []).find(a => /pdf/i.test(a.getContentType() || '') || /\.pdf$/i.test(a.getName() || ''));
+  if (!pdf) return { items: [], status: 'failed', bank: bank, reason: 'Statement without a PDF', snippet: subject };
+  let parsed;
+  try {
+    parsed = statement.parse(statementPdfText(pdf.copyBlob()));
+  } catch (error) {
+    stats.parseErrors++;
+    return { items: [], status: 'failed', bank: bank, reason: 'Statement not read: ' + error, snippet: subject };
+  }
+  if (parsed.problems.length) {
+    stats.parseErrors++;
+    return { items: [], status: 'failed', bank: bank, reason: "Statement doesn't add up — nothing taken from it: " + parsed.problems.slice(0, 2).join('; '),
+      snippet: subject + ' · ' + parsed.rows.length + ' row(s) read' };
+  }
+  if (!parsed.incoming.length) return { items: [], status: 'filtered' };   // nothing received by transfer this month
+  const baseMessageId = message.getId();
+  const items = parsed.incoming.map((x, i) => {
+    let category = findCustomRuleOverride(x.merchant, rawCustomRules);
+    if (x.own) category = EXCLUDE_CATEGORY;
+    const p = x.day.split('-').map(Number);
+    return { date: new Date(p[0], p[1] - 1, p[2], 12), bank: bank, merchant: x.merchant, amount: -x.amount, currency: x.currency,
+      category: category || '', type: 'Incoming', description: x.own ? x.merchant + OWN_ACCOUNT_SUFFIX : x.merchant,
+      reversal: false, timeKey: '', txRef: bank + ':STMT:' + x.day + ':' + x.amount.toFixed(2) + ':' + x.balance.toFixed(2),
+      subject: subject, timestamp: new Date().toISOString(), messageId: baseMessageId + '_' + i, isCredit: true, isCashback: false };
+  });
+  Logger.log('Statement read | ' + bank + ' | ' + parsed.rows.length + ' rows, ' + items.length + ' incoming transfer(s)');
+  return { items: items, status: 'ok' };
+}
+
 // ====================================================================================================
 // 04_sheetsWriter.gs
 // ====================================================================================================
@@ -3090,7 +3233,7 @@ const AUTO_NONE = '(none)';
  */
 // v1.1.37: spending, then everything about investments together, then settings
 const CANONICAL_SHEET_ORDER = [
-  "Dashboard", "Transactions", "Bank Transfers",
+  "Dashboard", "Transactions", "Bank Transfers", "Incoming Transfers",
   "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
   "Holdings", "Investment Ledger", "Portfolio History",
   "Custom Rules", "Investment Accounts", "Configuration", "Categories"
@@ -3124,7 +3267,8 @@ const TAB_COLORS = {
   "Investment Ledger": "#0F766E",
   "Investment Accounts": "#0F766E",
   "Portfolio History": "#0F766E",     // v1.1.32
-  "Unrecognized": "#C00000"          // v1.1.35
+  "Unrecognized": "#C00000",         // v1.1.35
+  "Incoming Transfers": "#38761D"    // v1.1.51
 };
 const RAW_BANK_TAB_COLOR = "#999999";
 
@@ -3203,8 +3347,11 @@ const TRANSFERS_HEADERS = ["Date", "Bank", "Beneficiary / Description", "Categor
  * v1.1.2: dedicated sheet for Type = "Transfer" rows.
  * v1.1.4: renamed "Transferencias" → "Bank Transfers", English headers.
  */
-function getOrCreateTransfersSheet() {
-  const name = "Bank Transfers";
+/** v1.1.51: money received — same layout as Bank Transfers (amounts shown as received, positive). */
+const INCOMING_SHEET = 'Incoming Transfers';
+
+function getOrCreateTransfersSheet(name) {
+  name = name || "Bank Transfers";
   let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(name);
@@ -3215,7 +3362,7 @@ function getOrCreateTransfersSheet() {
     sheet.getRange(2, 1, 1999).setNumberFormat('yyyy-MM-dd');
     sheet.getRange(2, 5, 1999).setNumberFormat('#,##0.00');
     ensureAutoFilter(sheet, TRANSFERS_HEADERS.length, 2000);
-    sheet.setTabColor(TAB_COLORS["Bank Transfers"]);
+    sheet.setTabColor(TAB_COLORS[name] || TAB_COLORS["Bank Transfers"]);
   }
   return sheet;
 }
@@ -3263,7 +3410,7 @@ function dataSheetLayout(name) {
     return { cols: TX_NUM_COLS, merchant: TX_COL.MERCHANT + 1, category: TX_COL.CATEGORY + 1, amount: TX_COL.AMOUNT + 1,
       currency: TX_COL.CURRENCY + 1, type: TX_COL.TYPE + 1, transfersOnlyWhenType: true };
   }
-  if (name === 'Bank Transfers') return { cols: TRANSFERS_HEADERS.length, merchant: 3, category: 4, amount: 5, currency: 6, allTransfers: true };
+  if (name === 'Bank Transfers' || name === INCOMING_SHEET) return { cols: TRANSFERS_HEADERS.length, merchant: 3, category: 4, amount: 5, currency: 6, allTransfers: true };
   if (name.indexOf('Raw_') === 0) return { cols: 8, merchant: 3, category: 4, amount: 5, currency: 6, type: 2 };
   return null;
 }
@@ -3616,7 +3763,12 @@ function isManualCategory(row, computedCategory) {
  * Rows are matched by the hidden Id (Gmail message id), or — on a sheet from before it — by date, beneficiary and amount.
  */
 function syncTransferCategoryEdits(txValues) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Bank Transfers');
+  // v1.1.51: Bank Transfers and Incoming Transfers alike
+  return syncCategoryEditsFrom('Bank Transfers', 'Transfer', txValues).concat(syncCategoryEditsFrom(INCOMING_SHEET, 'Incoming', txValues));
+}
+
+function syncCategoryEditsFrom(sheetName, rowType, txValues) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const width = Math.max(sheet.getLastColumn(), TRANSFERS_HEADERS.length);
   const header = sheet.getRange(1, 1, 1, width).getValues()[0];
@@ -3625,14 +3777,14 @@ function syncTransferCategoryEdits(txValues) {
   const keyOf = (date, merchant, amount) => normalizeDateForCompare(date) + '|' + String(merchant).trim() + '|' + Number(amount);
   const byId = {}, byKey = {};
   txValues.forEach((r, i) => {
-    if (r[TX_COL.TYPE] !== 'Transfer') return;
+    if (r[TX_COL.TYPE] !== rowType) return;
     if (r[TX_COL.MESSAGE_ID]) byId[String(r[TX_COL.MESSAGE_ID])] = i;
-    byKey[keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], r[TX_COL.AMOUNT])] = i;
+    byKey[keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], Math.abs(Number(r[TX_COL.AMOUNT]) || 0))] = i;
   });
   const changed = [];
   sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues().forEach(b => {
     if (!b[0]) return;
-    const i = idCol !== -1 && b[idCol] && byId[String(b[idCol])] !== undefined ? byId[String(b[idCol])] : byKey[keyOf(b[0], b[2], b[4])];
+    const i = idCol !== -1 && b[idCol] && byId[String(b[idCol])] !== undefined ? byId[String(b[idCol])] : byKey[keyOf(b[0], b[2], Math.abs(Number(b[4]) || 0))];
     if (i === undefined) return;
     const edited = String(b[3] || '').trim();
     if (edited && edited !== String(txValues[i][TX_COL.CATEGORY] || '').trim()) {
@@ -3697,18 +3849,20 @@ function computeRecategorization(row, rawCustomRules) {
   const subjectType = detectTypeFromSubject(subject);
   let type = subjectType || oldType;
   if (subjectType === 'Transaction' && oldType === 'Cashback') type = 'Cashback';
+  if (oldType === 'Incoming') type = 'Incoming';   // v1.1.51: set when read (a statement's subject says nothing)
 
   let category = findCustomRuleOverride(description, rawCustomRules);
   if (!category && type === 'Transaction') category = categorizeTransaction(description);
   // v1.1.23: paying the card is never spending — explicit "Exclude"
   if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
+  if (type === 'Incoming' && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;   // v1.1.51: your own money
   // v1.1.23: an unmatched reversal keeps whatever category it has (normally
   // blank) instead of being guessed from the placeholder text
   if (merchant === REVERSAL_UNMATCHED) category = row[TX_COL.CATEGORY] || '';
 
   const oldCurrency = row[TX_COL.CURRENCY];
   const currency = (oldCurrency && !VALID_CURRENCIES.has(oldCurrency)) ? 'DOP' : oldCurrency;
-  const isCredit = (type === 'Card Payment' || type === 'Cashback') ? 'YES' : row[TX_COL.IS_CREDIT];
+  const isCredit = (type === 'Card Payment' || type === 'Cashback' || type === 'Incoming') ? 'YES' : row[TX_COL.IS_CREDIT];
   const isCashback = type === 'Cashback' ? 'YES' : 'NO';
   return { type: type, category: category || '', currency: currency, isCredit: isCredit, isCashback: isCashback };
 }
@@ -3852,6 +4006,7 @@ function rebuildDerivedSheets() {
   const data = txSheet.getDataRange().getValues();
   const byBank = {};    // bank -> Raw_<BANK> rows (A..H)
   const transfers = []; // Bank Transfers rows (A..F)
+  const incoming = [];  // v1.1.51: Incoming Transfers rows, same layout
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -3866,6 +4021,11 @@ function rebuildDerivedSheets() {
     } else if (type === 'Transfer') {
       transfers.push([
         row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], row[TX_COL.AMOUNT],
+        row[TX_COL.CURRENCY], row[TX_COL.SUBJECT], row[TX_COL.MESSAGE_ID] || ''
+      ]);
+    } else if (type === 'Incoming') {
+      incoming.push([
+        row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], Math.abs(Number(row[TX_COL.AMOUNT]) || 0),
         row[TX_COL.CURRENCY], row[TX_COL.SUBJECT], row[TX_COL.MESSAGE_ID] || ''
       ]);
     }
@@ -3914,7 +4074,22 @@ function rebuildDerivedSheets() {
     transfersSheet.getRange(2, 5, transfers.length, 1).setNumberFormat('#,##0.00');
   }
 
-  return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length;
+  // v1.1.51: Incoming Transfers — created the first time there's money received
+  let inSheet = ss.getSheetByName(INCOMING_SHEET);
+  if (incoming.length && !inSheet) inSheet = getOrCreateTransfersSheet(INCOMING_SHEET);
+  if (inSheet) {
+    const inLast = inSheet.getLastRow();
+    if (inLast > 1) inSheet.getRange(2, 1, inLast - 1, TRANSFERS_HEADERS.length).clearContent();
+    if (incoming.length) {
+      ensureRowCapacity(inSheet, incoming.length + 1);
+      inSheet.getRange(2, 1, incoming.length, TRANSFERS_HEADERS.length).setValues(incoming);
+      inSheet.getRange(2, 1, incoming.length, 1).setNumberFormat('yyyy-MM-dd');
+      inSheet.getRange(2, 5, incoming.length, 1).setNumberFormat('#,##0.00');
+    }
+    inSheet.getRange(1, 3).setValue('From');
+  }
+
+  return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length + " | Incoming=" + incoming.length;
 }
 const FIXED_CATEGORY_NAMES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions'];
 
@@ -4913,7 +5088,8 @@ function computeDailySummary(values, opts) {
     const type = r[TX_COL.TYPE] || 'Transaction';
     const cat = String(r[TX_COL.CATEGORY] || '');
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
-    const spend = (type === 'Transaction' || type === 'Transfer') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    // v1.1.51: money received with a category reduces that category (its amount is negative)
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;
     const open = type === 'Transfer' && cat === '';
     const month = key.slice(0, 7);
     const item = { merchant: String(r[TX_COL.MERCHANT] || ''), bank: String(r[TX_COL.BANK] || ''), category: cat, amount: amt, type: type };
@@ -5535,7 +5711,7 @@ function computeMonthlySummary(values, opts) {
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     const merchant = String(r[TX_COL.MERCHANT] || '');
     const bank = String(r[TX_COL.BANK] || '');
-    const spend = (type === 'Transaction' || type === 'Transfer') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;   // v1.1.51
     if (spend) m.monthTotals[mk] = (m.monthTotals[mk] || 0) + amt;
 
     if (mk === monthKey) {
@@ -7463,7 +7639,7 @@ const START_HERE_STALE_RUN_HOURS = 36;
 // the only functions the sidebar's buttons may call, and the only tabs it may open
 const START_HERE_ACTIONS = ['openSetupWizard', 'openDateRangeDialog', 'openValuationDialog', 'refreshInvestmentsNow', 'openSheetByName',
   'openPortfolioPasteDialog'];
-const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
+const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
 
 function openStartHere() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(startHereHtml()).setTitle('📘 Start here'));
@@ -7551,6 +7727,24 @@ function startHereStatus(now) {
       open$ ? 'warn' : 'done', open$ ? 'Type a category in Bank Transfers (Exclude for moves between your own accounts), or add a Custom Rule for ones that repeat.'
         : 'Every transfer this month has a category.', open$ ? open('Open Bank Transfers', 'Bank Transfers') : null);
   }
+
+  // v1.1.51: money received — only counted once it has a category
+  if (tx && tx.getLastRow() > 1) {
+    const received = tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues()
+      .filter(r => r[TX_COL.DATE] && r[TX_COL.TYPE] === 'Incoming' && !String(r[TX_COL.CATEGORY] || '').trim()).length;
+    if (received) {
+      add('Your data', 'incoming', received + ' incoming transfer(s) without a category', 'warn',
+        'Give each one the category it pays back (a roommate\'s share of the rent → Rent) and it is taken off what you spent there; ' +
+        'Exclude for money that pays nothing back. A Custom Rule on the sender\'s name does it by itself.',
+        open('Open Incoming Transfers', 'Incoming Transfers'));
+    }
+  }
+  const driveOn = typeof Drive !== 'undefined' && !!Drive.Files;
+  const statementBanks = banks.filter(b => BANK_PATTERNS[b] && BANK_PATTERNS[b].statement);   // only if a tracked bank has one
+  if (statementBanks.length) add('Your data', 'statements', driveOn ? 'Bank statements can be read' : 'Read bank statements (optional)', driveOn ? 'done' : 'optional',
+    driveOn ? 'Monthly statement PDFs (' + statementBanks.join(', ') + ') are read for incoming transfers the bank does not notify.'
+      : statementBanks.join(', ') + ' does not notify most incoming transfers; its monthly statement lists them. To read it, turn on ' +
+        'the Drive API: Extensions › Apps Script › Services › + › Drive API › Add.');
 
   // ---- Investments (optional)
   const ledger = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);

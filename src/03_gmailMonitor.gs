@@ -68,16 +68,19 @@ const BANK_PATTERNS = {
     // why LAFISE transfers were invisible before — the old search only ever
     // looked for the consumption-alert sender.
     fromDomain: 'lafise.com',
-    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com',
-    extractors: { consumo: extractLAFISETransactions, transfer: extractLAFISETransferTransactions },
+    // v1.1.51: incoming "Pagos al Instante" transfers come from a third address
+    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com',
+    extractors: { consumo: extractLAFISETransactions, transfer: extractLAFISETransferTransactions, incoming: extractLAFISEIncomingTransactions },
     keywords: ['LAFISE', 'LAFISE BANCO'],
     merchantPattern: /(?:en|en el|en\s+)([^\n]{10,50})/i
   },
   BANESCO: {
     name: 'BANESCO',
     fromDomain: 'banesco.com.do',
-    searchQuery: 'from:notificaciones@banesco.com.do',
+    // v1.1.51: the monthly savings statement (a PDF) — Banesco doesn't notify most incoming transfers
+    searchQuery: 'from:notificaciones@banesco.com.do OR from:estadodecuenta@banesco.com.do',
     extractors: { consumo: extractBANESCOConsumoTransactions, transfer: extractBANESCOTransferTransactions },
+    statement: { subject: /ESTADO DE CUENTA DE AHORROS/i, parse: parseBanescoSavingsStatement },
     keywords: ['BANESCO', 'BANESCO RD'],
     merchantPattern: /realizada en el\s+([^\n]+?)\s+por\s/i
   },
@@ -206,6 +209,9 @@ const TYPE_KEYWORDS = {
  * emails being matched.
  */
 const TYPE_SUBJECT_KEYWORDS = {
+  // v1.1.51: money received. First: its body says "TRANSFERENCIA ... RECIBIDA" and "PAGOS AL INSTANTE", which are
+  // Transfer keywords — without this, a received transfer would be read as one sent.
+  'Incoming': ['TRANSFERENCIA ENTRANTE'],
   'Transfer': [
     '¡TRANSFERENCIA EXITOSA!',              // LAFISE
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
@@ -303,7 +309,7 @@ function detectTypeFromSubject(subject) {
 
 function detectTransactionType(subject, bodyText) {
   const bySubject = detectTypeFromSubject(subject);
-  if (bySubject === 'Transfer' || bySubject === 'Card Payment') return bySubject;
+  if (bySubject === 'Transfer' || bySubject === 'Card Payment' || bySubject === 'Incoming') return bySubject;
   const upper = (String(subject || '') + ' ' + String(bodyText || '')).toUpperCase();
   if (bySubject === 'Transaction') {
     // Confirmed consumo template: the body may only refine it to Cashback
@@ -549,6 +555,11 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       return { items: [], status: 'skipped' };
     }
 
+    // v1.1.51: a bank statement (PDF): the incoming transfers the bank didn't notify
+    if (bankPattern.statement && bankPattern.statement.subject.test(subject)) {
+      return parseStatementEmail(message, bank, bankPattern.statement, rawCustomRules, stats);
+    }
+
     if (isPromotionalEmail(subject, plainText)) {
       stats.promotional++;
       Logger.log("Skipped promotional email: " + subject);
@@ -606,6 +617,10 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       if (!category && type === 'Transaction' && !isReversal) {   // a reversal takes its original's category
         category = categorizeTransaction(merchant);
       }
+      // v1.1.51: money received is saved NEGATIVE, like a reversal — given a category (a Custom Rule, or by hand) it
+      // reduces what you spent there; money from your own account is Exclude
+      const isIncoming = type === 'Incoming';
+      if (isIncoming && item.own) category = EXCLUDE_CATEGORY;
       // v1.1.23: paying the card is never spending — explicit "Exclude"
       if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
       if (merchant === GARBLED_PLACEHOLDER) stats.placeholders++;
@@ -618,18 +633,18 @@ function parseEmailMessage(message, rawCustomRules, stats) {
         date: date,
         bank: bank,
         merchant: merchant,
-        amount: isReversal ? -item.amount : item.amount,
+        amount: isReversal || isIncoming ? -item.amount : item.amount,
         currency: currency,
         category: category,
         type: type,
-        description: merchant,
+        description: isIncoming && item.own ? merchant + OWN_ACCOUNT_SUFFIX : merchant,
         reversal: isReversal,
         timeKey: item.timeKey || '',
         txRef: item.ref ? bank + ':' + item.ref : '',
         subject: subject,
         timestamp: new Date().toISOString(),
         messageId: baseMessageId + '_' + (itemIndex++),
-        isCredit: isReversal || computeIsCredit(type, item.context),
+        isCredit: isReversal || isIncoming || computeIsCredit(type, item.context),
         isCashback: type === 'Cashback'
       });
     }
@@ -682,7 +697,7 @@ function detectCurrencyFromMatch(matchText) {
  */
 function extractTransactionItems(bank, type, text) {
   const extractors = (BANK_PATTERNS[bank] && BANK_PATTERNS[bank].extractors) || {};
-  const fn = type === 'Transfer' ? extractors.transfer : extractors.consumo;
+  const fn = type === 'Transfer' ? extractors.transfer : type === 'Incoming' ? extractors.incoming : extractors.consumo;
   return fn ? fn(text) : [];
 }
 
@@ -1232,4 +1247,132 @@ function searchTransactionEmailsByDateRange(startDate, endDate, banksToTrack) {
   Logger.log("Found " + result.threads.length + " thread(s)" +
              (result.capped ? " — hit the " + MAX_THREADS_PER_RUN + "-thread cap, split the range" : ""));
   return { threads: result.threads, range: range, capped: result.capped, query: query };   // v1.1.44: query, to mark only what's pending
+}
+
+/* ======================================================================
+ * INCOMING TRANSFERS — v1.1.51
+ * Money received: saved as NEGATIVE rows of Type "Incoming". With a category (a Custom Rule on the sender's name, or
+ * typed in Incoming Transfers) it reduces what you spent in that category — a roommate's share of the rent lowers
+ * Rent. Money from your own account is Exclude. Nothing else is decided for you.
+ * ====================================================================== */
+const OWN_ACCOUNT_SUFFIX = ' (own account)';
+
+/** Two person names are the same holder when their first two names match (accents, case and signs aside — a
+ *  statement writes "Ñ" as a space and cuts long names). Pure. */
+function sameHolder(a, b) {
+  const words = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean);
+  const x = words(a), y = words(b);
+  return x.length >= 2 && y.length >= 2 && x[0] === y[0] && x[1] === y[1];
+}
+
+/**
+ * LAFISE "TRANSFERENCIA ENTRANTE APLICADA EXITOSAMENTE." (Pagos al Instante). Real sample (values changed):
+ *   Nombre del cliente: / <HOLDER> / Número de cuenta: / … / Ordenante: / <SENDER> <cédula> / Monto total: / DOP 4500.00
+ */
+function extractLAFISEIncomingTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/Monto total:\s*(DOP|USD|RD\$|US\$)?\s*([\d,]+\.\d{2})/i);
+  if (!m) return [];
+  const sender = ((flat.match(/Ordenante:\s*(.+?)\s*(?:\d{6,}\s*)?Monto total:/i) || [])[1] || '').replace(/\s+\d+$/, '').trim();
+  const holder = ((flat.match(/Nombre del cliente:\s*(.+?)\s*N[úu]mero de cuenta:/i) || [])[1] || '').trim();
+  const currency = /USD|US\$/i.test(m[1] || '') ? 'USD' : 'DOP';
+  return [{ amount: Number(m[2].replace(/,/g, '')), currency: currency, merchant: sender || 'Incoming transfer',
+    own: !!(sender && holder && sameHolder(sender, holder)), context: 'incoming transfer' }];
+}
+
+/**
+ * A statement PDF as text. Apps Script can't read a PDF itself: Google Drive converts it to a Google Doc (the
+ * advanced "Drive API" service — Apps Script › Services › Drive API), the text is read and the Doc is trashed.
+ */
+function statementPdfText(blob) {
+  if (typeof Drive === 'undefined' || !Drive.Files) {
+    throw new Error('Turn on the Drive API service to read statements: Extensions › Apps Script › Services › + › Drive API › Add');
+  }
+  const name = 'tracker-statement-' + new Date().getTime();
+  const file = Drive.Files.create
+    ? Drive.Files.create({ name: name, mimeType: 'application/vnd.google-apps.document' }, blob)            // Drive API v3
+    : Drive.Files.insert({ title: name, mimeType: 'application/vnd.google-apps.document' }, blob, { convert: true });   // v2
+  try {
+    return DocumentApp.openById(file.id).getBody().getText();
+  } finally {
+    try { DriveApp.getFileById(file.id).setTrashed(true); } catch (error) { Logger.log('Could not trash the converted statement: ' + error); }
+  }
+}
+
+/**
+ * Banesco savings statement (text of its PDF) → { holder, currency, rows, incoming, problems }. Each row is
+ * "dd/mm/yyyy <description> <amount> <balance>"; whether it's a debit or a credit is read from the balance (the column
+ * isn't in the text). Everything must add up to the statement's own totals, or nothing is taken from it. Pure.
+ */
+function parseBanescoSavingsStatement(text) {
+  const flat = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
+  const num = s => Number(String(s).replace(/,/g, ''));
+  const total = re => { const m = flat.match(re); return m ? num(m[1]) : null; };
+  const out = { holder: '', currency: /US\$|D[óo]lares|Moneda:\s*USD/i.test(flat) && !/RD\$/.test(flat) ? 'USD' : 'DOP', rows: [], incoming: [], problems: [] };
+  const opening = total(/Balance mes anterior:?\s*(-?[\d,]+\.\d{2})/i), closing = total(/Balance al corte:?\s*(-?[\d,]+\.\d{2})/i);
+  const credits = total(/Cr[ée]ditos del mes:?\s*([\d,]+\.\d{2})/i), debits = total(/D[ée]bitos del mes:?\s*([\d,]+\.\d{2})/i);
+  const holder = flat.match(/(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Cuenta/i)
+    || flat.match(/Detalle de tus transacciones\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Transacciones en/i);
+  out.holder = holder ? holder[1].trim() : '';
+  if (opening === null || closing === null || credits === null || debits === null) {
+    out.problems.push('the statement\'s totals (balances, credits, debits) were not found');
+    return out;
+  }
+  const rowRe = /(\d{2})\/(\d{2})\/(\d{4}) (.+?) (-?[\d,]+\.\d{2}) (-?[\d,]+\.\d{2})(?= \d{2}\/\d{2}\/\d{4}| |$)/g;
+  let prev = opening, sumC = 0, sumD = 0, m;
+  while ((m = rowRe.exec(flat)) !== null) {
+    const amount = num(m[5]), balance = num(m[6]), delta = +(balance - prev).toFixed(2);
+    let direction = null;
+    if (Math.abs(delta - amount) < 0.01) direction = 'credit';
+    else if (Math.abs(delta + amount) < 0.01) direction = 'debit';
+    if (!direction) { out.problems.push('row ' + m[1] + '/' + m[2] + ' "' + m[4] + '" does not follow the balance'); prev = balance; continue; }
+    if (direction === 'credit') sumC += amount; else sumD += amount;
+    out.rows.push({ day: m[3] + '-' + m[2] + '-' + m[1], description: m[4].trim(), amount: amount, balance: balance, direction: direction });
+    prev = balance;
+  }
+  if (!out.rows.length) out.problems.push('no transactions found');
+  if (Math.abs(sumC - credits) > 0.01) out.problems.push('credits add up to ' + sumC.toFixed(2) + ', the statement says ' + credits.toFixed(2));
+  if (Math.abs(sumD - debits) > 0.01) out.problems.push('debits add up to ' + sumD.toFixed(2) + ', the statement says ' + debits.toFixed(2));
+  if (out.rows.length && Math.abs(prev - closing) > 0.01) out.problems.push('the last balance is ' + prev.toFixed(2) + ', the statement says ' + closing.toFixed(2));
+  if (out.problems.length) return out;
+  // money received by transfer: ACH ("Ach Ibanking" — no sender in the statement) and LBTR ("Lbtr <name>")
+  out.rows.filter(r => r.direction === 'credit' && /^(ACH|LBTR)\b/i.test(r.description)).forEach(r => {
+    const name = /^LBTR\b/i.test(r.description) ? r.description.replace(/^LBTR\s+/i, '').trim() : '';
+    out.incoming.push({ day: r.day, amount: r.amount, balance: r.balance, currency: out.currency,
+      merchant: name || 'ACH transfer (sender not in the statement)', own: !!(name && out.holder && sameHolder(name, out.holder)) });
+  });
+  return out;
+}
+
+/** A statement email: its PDF's incoming transfers as Incoming items (one per row, deduplicated per statement row). */
+function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
+  const subject = message.getSubject() || '';
+  const pdf = (message.getAttachments() || []).find(a => /pdf/i.test(a.getContentType() || '') || /\.pdf$/i.test(a.getName() || ''));
+  if (!pdf) return { items: [], status: 'failed', bank: bank, reason: 'Statement without a PDF', snippet: subject };
+  let parsed;
+  try {
+    parsed = statement.parse(statementPdfText(pdf.copyBlob()));
+  } catch (error) {
+    stats.parseErrors++;
+    return { items: [], status: 'failed', bank: bank, reason: 'Statement not read: ' + error, snippet: subject };
+  }
+  if (parsed.problems.length) {
+    stats.parseErrors++;
+    return { items: [], status: 'failed', bank: bank, reason: "Statement doesn't add up — nothing taken from it: " + parsed.problems.slice(0, 2).join('; '),
+      snippet: subject + ' · ' + parsed.rows.length + ' row(s) read' };
+  }
+  if (!parsed.incoming.length) return { items: [], status: 'filtered' };   // nothing received by transfer this month
+  const baseMessageId = message.getId();
+  const items = parsed.incoming.map((x, i) => {
+    let category = findCustomRuleOverride(x.merchant, rawCustomRules);
+    if (x.own) category = EXCLUDE_CATEGORY;
+    const p = x.day.split('-').map(Number);
+    return { date: new Date(p[0], p[1] - 1, p[2], 12), bank: bank, merchant: x.merchant, amount: -x.amount, currency: x.currency,
+      category: category || '', type: 'Incoming', description: x.own ? x.merchant + OWN_ACCOUNT_SUFFIX : x.merchant,
+      reversal: false, timeKey: '', txRef: bank + ':STMT:' + x.day + ':' + x.amount.toFixed(2) + ':' + x.balance.toFixed(2),
+      subject: subject, timestamp: new Date().toISOString(), messageId: baseMessageId + '_' + i, isCredit: true, isCashback: false };
+  });
+  Logger.log('Statement read | ' + bank + ' | ' + parsed.rows.length + ' rows, ' + items.length + ' incoming transfer(s)');
+  return { items: items, status: 'ok' };
 }

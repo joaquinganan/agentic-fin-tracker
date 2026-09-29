@@ -53,7 +53,7 @@ function computeMonthlySummary(values, opts) {
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     const merchant = String(r[TX_COL.MERCHANT] || '');
     const bank = String(r[TX_COL.BANK] || '');
-    const spend = (type === 'Transaction' || type === 'Transfer') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;   // v1.1.51
     if (spend) m.monthTotals[mk] = (m.monthTotals[mk] || 0) + amt;
 
     if (mk === monthKey) {

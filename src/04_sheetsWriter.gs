@@ -34,7 +34,7 @@ const AUTO_NONE = '(none)';
  */
 // v1.1.37: spending, then everything about investments together, then settings
 const CANONICAL_SHEET_ORDER = [
-  "Dashboard", "Transactions", "Bank Transfers",
+  "Dashboard", "Transactions", "Bank Transfers", "Incoming Transfers",
   "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
   "Holdings", "Investment Ledger", "Portfolio History",
   "Custom Rules", "Investment Accounts", "Configuration", "Categories"
@@ -68,7 +68,8 @@ const TAB_COLORS = {
   "Investment Ledger": "#0F766E",
   "Investment Accounts": "#0F766E",
   "Portfolio History": "#0F766E",     // v1.1.32
-  "Unrecognized": "#C00000"          // v1.1.35
+  "Unrecognized": "#C00000",         // v1.1.35
+  "Incoming Transfers": "#38761D"    // v1.1.51
 };
 const RAW_BANK_TAB_COLOR = "#999999";
 
@@ -147,8 +148,11 @@ const TRANSFERS_HEADERS = ["Date", "Bank", "Beneficiary / Description", "Categor
  * v1.1.2: dedicated sheet for Type = "Transfer" rows.
  * v1.1.4: renamed "Transferencias" → "Bank Transfers", English headers.
  */
-function getOrCreateTransfersSheet() {
-  const name = "Bank Transfers";
+/** v1.1.51: money received — same layout as Bank Transfers (amounts shown as received, positive). */
+const INCOMING_SHEET = 'Incoming Transfers';
+
+function getOrCreateTransfersSheet(name) {
+  name = name || "Bank Transfers";
   let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   if (!sheet) {
     sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(name);
@@ -159,7 +163,7 @@ function getOrCreateTransfersSheet() {
     sheet.getRange(2, 1, 1999).setNumberFormat('yyyy-MM-dd');
     sheet.getRange(2, 5, 1999).setNumberFormat('#,##0.00');
     ensureAutoFilter(sheet, TRANSFERS_HEADERS.length, 2000);
-    sheet.setTabColor(TAB_COLORS["Bank Transfers"]);
+    sheet.setTabColor(TAB_COLORS[name] || TAB_COLORS["Bank Transfers"]);
   }
   return sheet;
 }
@@ -207,7 +211,7 @@ function dataSheetLayout(name) {
     return { cols: TX_NUM_COLS, merchant: TX_COL.MERCHANT + 1, category: TX_COL.CATEGORY + 1, amount: TX_COL.AMOUNT + 1,
       currency: TX_COL.CURRENCY + 1, type: TX_COL.TYPE + 1, transfersOnlyWhenType: true };
   }
-  if (name === 'Bank Transfers') return { cols: TRANSFERS_HEADERS.length, merchant: 3, category: 4, amount: 5, currency: 6, allTransfers: true };
+  if (name === 'Bank Transfers' || name === INCOMING_SHEET) return { cols: TRANSFERS_HEADERS.length, merchant: 3, category: 4, amount: 5, currency: 6, allTransfers: true };
   if (name.indexOf('Raw_') === 0) return { cols: 8, merchant: 3, category: 4, amount: 5, currency: 6, type: 2 };
   return null;
 }
@@ -560,7 +564,12 @@ function isManualCategory(row, computedCategory) {
  * Rows are matched by the hidden Id (Gmail message id), or — on a sheet from before it — by date, beneficiary and amount.
  */
 function syncTransferCategoryEdits(txValues) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Bank Transfers');
+  // v1.1.51: Bank Transfers and Incoming Transfers alike
+  return syncCategoryEditsFrom('Bank Transfers', 'Transfer', txValues).concat(syncCategoryEditsFrom(INCOMING_SHEET, 'Incoming', txValues));
+}
+
+function syncCategoryEditsFrom(sheetName, rowType, txValues) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const width = Math.max(sheet.getLastColumn(), TRANSFERS_HEADERS.length);
   const header = sheet.getRange(1, 1, 1, width).getValues()[0];
@@ -569,14 +578,14 @@ function syncTransferCategoryEdits(txValues) {
   const keyOf = (date, merchant, amount) => normalizeDateForCompare(date) + '|' + String(merchant).trim() + '|' + Number(amount);
   const byId = {}, byKey = {};
   txValues.forEach((r, i) => {
-    if (r[TX_COL.TYPE] !== 'Transfer') return;
+    if (r[TX_COL.TYPE] !== rowType) return;
     if (r[TX_COL.MESSAGE_ID]) byId[String(r[TX_COL.MESSAGE_ID])] = i;
-    byKey[keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], r[TX_COL.AMOUNT])] = i;
+    byKey[keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], Math.abs(Number(r[TX_COL.AMOUNT]) || 0))] = i;
   });
   const changed = [];
   sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues().forEach(b => {
     if (!b[0]) return;
-    const i = idCol !== -1 && b[idCol] && byId[String(b[idCol])] !== undefined ? byId[String(b[idCol])] : byKey[keyOf(b[0], b[2], b[4])];
+    const i = idCol !== -1 && b[idCol] && byId[String(b[idCol])] !== undefined ? byId[String(b[idCol])] : byKey[keyOf(b[0], b[2], Math.abs(Number(b[4]) || 0))];
     if (i === undefined) return;
     const edited = String(b[3] || '').trim();
     if (edited && edited !== String(txValues[i][TX_COL.CATEGORY] || '').trim()) {
@@ -641,18 +650,20 @@ function computeRecategorization(row, rawCustomRules) {
   const subjectType = detectTypeFromSubject(subject);
   let type = subjectType || oldType;
   if (subjectType === 'Transaction' && oldType === 'Cashback') type = 'Cashback';
+  if (oldType === 'Incoming') type = 'Incoming';   // v1.1.51: set when read (a statement's subject says nothing)
 
   let category = findCustomRuleOverride(description, rawCustomRules);
   if (!category && type === 'Transaction') category = categorizeTransaction(description);
   // v1.1.23: paying the card is never spending — explicit "Exclude"
   if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
+  if (type === 'Incoming' && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;   // v1.1.51: your own money
   // v1.1.23: an unmatched reversal keeps whatever category it has (normally
   // blank) instead of being guessed from the placeholder text
   if (merchant === REVERSAL_UNMATCHED) category = row[TX_COL.CATEGORY] || '';
 
   const oldCurrency = row[TX_COL.CURRENCY];
   const currency = (oldCurrency && !VALID_CURRENCIES.has(oldCurrency)) ? 'DOP' : oldCurrency;
-  const isCredit = (type === 'Card Payment' || type === 'Cashback') ? 'YES' : row[TX_COL.IS_CREDIT];
+  const isCredit = (type === 'Card Payment' || type === 'Cashback' || type === 'Incoming') ? 'YES' : row[TX_COL.IS_CREDIT];
   const isCashback = type === 'Cashback' ? 'YES' : 'NO';
   return { type: type, category: category || '', currency: currency, isCredit: isCredit, isCashback: isCashback };
 }
@@ -796,6 +807,7 @@ function rebuildDerivedSheets() {
   const data = txSheet.getDataRange().getValues();
   const byBank = {};    // bank -> Raw_<BANK> rows (A..H)
   const transfers = []; // Bank Transfers rows (A..F)
+  const incoming = [];  // v1.1.51: Incoming Transfers rows, same layout
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -810,6 +822,11 @@ function rebuildDerivedSheets() {
     } else if (type === 'Transfer') {
       transfers.push([
         row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], row[TX_COL.AMOUNT],
+        row[TX_COL.CURRENCY], row[TX_COL.SUBJECT], row[TX_COL.MESSAGE_ID] || ''
+      ]);
+    } else if (type === 'Incoming') {
+      incoming.push([
+        row[TX_COL.DATE], bank, row[TX_COL.MERCHANT], row[TX_COL.CATEGORY], Math.abs(Number(row[TX_COL.AMOUNT]) || 0),
         row[TX_COL.CURRENCY], row[TX_COL.SUBJECT], row[TX_COL.MESSAGE_ID] || ''
       ]);
     }
@@ -858,7 +875,22 @@ function rebuildDerivedSheets() {
     transfersSheet.getRange(2, 5, transfers.length, 1).setNumberFormat('#,##0.00');
   }
 
-  return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length;
+  // v1.1.51: Incoming Transfers — created the first time there's money received
+  let inSheet = ss.getSheetByName(INCOMING_SHEET);
+  if (incoming.length && !inSheet) inSheet = getOrCreateTransfersSheet(INCOMING_SHEET);
+  if (inSheet) {
+    const inLast = inSheet.getLastRow();
+    if (inLast > 1) inSheet.getRange(2, 1, inLast - 1, TRANSFERS_HEADERS.length).clearContent();
+    if (incoming.length) {
+      ensureRowCapacity(inSheet, incoming.length + 1);
+      inSheet.getRange(2, 1, incoming.length, TRANSFERS_HEADERS.length).setValues(incoming);
+      inSheet.getRange(2, 1, incoming.length, 1).setNumberFormat('yyyy-MM-dd');
+      inSheet.getRange(2, 5, incoming.length, 1).setNumberFormat('#,##0.00');
+    }
+    inSheet.getRange(1, 3).setValue('From');
+  }
+
+  return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length + " | Incoming=" + incoming.length;
 }
 const FIXED_CATEGORY_NAMES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions'];
 
