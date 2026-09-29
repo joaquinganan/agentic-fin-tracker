@@ -92,6 +92,13 @@ el tracker puede **restarla de lo que gastaste** en esa categoría.
 - Si la transferencia trae el nombre de quien envía (LAFISE lo trae), una regla en **Custom Rules** con ese nombre y la
   categoría lo hace sola desde entonces.
 - Lo que te transfieres **desde tu propia cuenta** se reconoce y queda en *Exclude*.
+- La categoría que escribes en Incoming Transfers (o en Bank Transfers) se aplica **al instante**: el Dashboard cambia
+  sin esperar a la siguiente actualización. Recuerda que cada transferencia cuenta en el mes de su fecha: lo que llegó
+  en agosto se resta de agosto.
+- **¿Una transferencia que el tracker no vio?** Escríbela tú en una fila vacía de **Incoming Transfers**: fecha
+  (yyyy-mm-dd), banco (opcional), de quién, categoría y monto (positivo; moneda DOP si la dejas vacía). En la siguiente
+  actualización, o con **🔁 Recategorize Saved Transactions**, se guarda y queda como las demás. Si le falta la fecha o
+  el monto, no se pierde: aparece en Unrecognized con lo que escribiste.
 
 **Banesco** no avisa la mayoría de las transferencias que recibes, pero su **estado de cuenta mensual** (el PDF que llega
 por correo) las lista como "Ach Ibanking", sin el nombre de quien envía: esas se categorizan a mano. El tracker lee el

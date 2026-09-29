@@ -243,3 +243,7 @@ Banesco doesn't notify most incoming transfers, but its monthly savings statemen
 without the sender. The tracker reads the PDF itself (nothing to turn on). What's read must add up to the statement's own
 totals, or nothing is taken and it shows in Unrecognized.
 
+A category typed in Incoming Transfers or Bank Transfers applies at once (the Dashboard doesn't wait for the next
+update); each transfer counts in the month of its date. A transfer the tracker didn't see can be typed in an empty row
+of Incoming Transfers — date (yyyy-mm-dd), bank (optional), from, category, amount (positive; DOP if no currency) — and
+is saved at the next update or 🔁 Recategorize; missing a date or an amount, it's listed in Unrecognized instead.

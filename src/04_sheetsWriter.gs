@@ -482,7 +482,8 @@ function transactionToRow(t) {
   return [
     t.date, t.bank, t.merchant, t.amount, t.currency || 'DOP', t.category || '',
     t.description, t.subject, t.timestamp, t.isCredit ? 'YES' : 'NO',
-    t.isCashback ? 'YES' : 'NO', t.type || 'Transaction', t.messageId || '', t.txRef || '', t.category || AUTO_NONE
+    t.isCashback ? 'YES' : 'NO', t.type || 'Transaction', t.messageId || '', t.txRef || '',
+    t.autoCategory !== undefined ? t.autoCategory : (t.category || AUTO_NONE)   // v1.1.54: rows typed by hand: none
   ];
 }
 
@@ -693,6 +694,8 @@ function recategorizeAllTransactions(userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const rawCustomRules = getUserCustomRules(userEmail);
   let totalChanged = 0;
+  // v1.1.54: rows typed by hand in Incoming Transfers are saved before that sheet is rebuilt below
+  try { importTypedIncomingRows(); } catch (error) { Logger.log('Could not save the rows typed in Incoming Transfers: ' + error); }
 
   const txSheet = ss.getSheetByName(TRANSACTIONS_SHEET);
   if (txSheet && txSheet.getLastRow() > 1) {
@@ -1667,7 +1670,7 @@ function recordUnrecognized(entries, readIds, now) {
   const byId = {};
   rows.forEach(r => { byId[String(r[idCol])] = r; });
   (entries || []).forEach(e => {
-    const link = '=HYPERLINK("https://mail.google.com/mail/u/0/#all/' + e.id + '","Open")';
+    const link = !/^(typed|notice):/.test(String(e.id)) ? '=HYPERLINK("https://mail.google.com/mail/u/0/#all/' + e.id + '","Open")' : '';   // v1.1.54: not an email → no link
     const snippet = String(e.snippet || '').replace(/<https?:[^>]*>/g, ' ').replace(/https?:\/\/\S+/g, ' ')   // v1.1.37: no link noise
       .replace(/\s+/g, ' ').trim().substring(0, 300);
     const known = byId[e.id];
@@ -1768,4 +1771,68 @@ function logReadEmails(ids) {
   const rows = Object.keys(byId).map(id => [id, byId[id]]);
   ensureRowCapacity(sheet, rows.length + 1);
   sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+}
+
+/* ======================================================================
+ * TYPED BY HAND IN THE TRANSFER SHEETS — v1.1.54
+ * Bank Transfers and Incoming Transfers are rebuilt from Transactions on every update, so:
+ *  - a category typed in either is copied to its Transactions row the moment it's typed (onEdit) — the Dashboard reads
+ *    Transactions, and used to show the change only after the next update (reported: "incoming transfers don't change
+ *    the Dashboard");
+ *  - a row typed by hand in Incoming Transfers (no Id) is saved into Transactions before the rebuild, as money received
+ *    — or, missing a date or an amount, listed in Unrecognized with what was typed, never silently dropped.
+ * ====================================================================== */
+function onEditTransferCategory(e) {
+  const range = e && e.range;
+  if (!range) return;
+  const sheet = range.getSheet(), name = sheet.getName();
+  if (name !== 'Bank Transfers' && name !== INCOMING_SHEET) return;
+  const CAT = 4, ID = TRANSFERS_HEADERS.length;
+  if (range.getColumn() > CAT || range.getLastColumn() < CAT || range.getLastRow() < 2) return;
+  const first = Math.max(2, range.getRow()), n = range.getLastRow() - first + 1;
+  const rows = sheet.getRange(first, 1, n, ID).getValues();
+  const tx = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+  if (!tx || tx.getLastRow() < 2) return;
+  const ids = tx.getRange(2, TX_COL.MESSAGE_ID + 1, tx.getLastRow() - 1, 1).getValues().map(r => String(r[0]));
+  rows.forEach(r => {
+    const id = String(r[ID - 1] || '').trim();
+    if (!id) return;                                   // typed by hand: saved at the next update
+    const at = ids.indexOf(id);
+    if (at !== -1) tx.getRange(at + 2, TX_COL.CATEGORY + 1).setValue(String(r[CAT - 1] || '').trim());
+  });
+}
+
+/** Rows typed by hand in Incoming Transfers → Transactions (Type Incoming, negative, your category kept). */
+function importTypedIncomingRows(now) {
+  now = now || new Date();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INCOMING_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return { added: 0, rejected: 0 };
+  const W = TRANSFERS_HEADERS.length;
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, W).getValues();
+  const add = [], bad = [];
+  values.forEach((r, i) => {
+    if (String(r[W - 1] || '').trim()) return;                                    // has an Id: it comes from Transactions
+    if (r.slice(0, W - 1).every(x => x === '' || x === null)) return;             // empty row
+    const d = r[0] instanceof Date ? r[0] : (/^\d{4}-\d{2}-\d{2}$/.test(String(r[0]).trim()) ? new Date(String(r[0]).trim() + 'T12:00:00') : null);
+    const amount = Math.abs(Number(String(r[4]).replace(/[^\d.\-]/g, '')));
+    if (!d || isNaN(d.getTime()) || !(amount > 0)) { bad.push(r); return; }
+    const cur = String(r[5] || '').trim().toUpperCase();
+    const merchant = String(r[2] || '').trim() || 'Added by hand';
+    const id = 'manual:' + now.getTime() + ':' + (i + 2);
+    add.push({ date: formatDate(d), bank: String(r[1] || '').trim().toUpperCase() || 'MANUAL', merchant: merchant, amount: -amount,
+      currency: VALID_CURRENCIES.has(cur) ? cur : 'DOP', category: String(r[3] || '').trim(), autoCategory: AUTO_NONE, type: 'Incoming',
+      description: merchant, reversal: false, timeKey: '', txRef: '', subject: 'Added by hand in Incoming Transfers',
+      timestamp: now.toISOString(), messageId: id, isCredit: true, isCashback: false });
+    sheet.getRange(i + 2, W).setValue(id);             // never imported twice, even if the rebuild doesn't follow
+  });
+  if (add.length) saveTransactions(add);
+  if (bad.length) {
+    recordUnrecognized(bad.map(r => {
+      const typed = r.slice(0, 6).map(x => x instanceof Date ? normalizeDateForCompare(x) : String(x)).join(' · ');
+      return { id: 'typed:' + typed.replace(/\s+/g, ''), date: now, bank: 'Incoming Transfers', subject: 'Typed by hand',
+        reason: 'Not saved: an incoming transfer needs a date (yyyy-mm-dd) and an amount — type it again in Incoming Transfers', snippet: typed };
+    }), [], now);
+  }
+  if (add.length || bad.length) Logger.log('Incoming Transfers typed by hand: ' + add.length + ' saved, ' + bad.length + ' without a date or amount');
+  return { added: add.length, rejected: bad.length };
 }

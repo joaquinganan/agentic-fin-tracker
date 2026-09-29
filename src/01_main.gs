@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.53"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.54"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -60,6 +60,8 @@ function onOpen() {
  * it. Simple triggers run on their own; nothing to install.
  */
 function onEdit(e) {
+  // v1.1.54: a category typed in Bank Transfers or Incoming Transfers reaches Transactions (and so the Dashboard) at once
+  try { onEditTransferCategory(e); } catch (err) { /* never surface an error from a convenience trigger */ }
   try {
     const range = e && e.range;
     if (!range || range.getSheet().getName() !== "Dashboard") return;

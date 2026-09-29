@@ -2,6 +2,19 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.54 (Sept 29, 2026) — categories apply as you type them; incoming transfers typed by hand
+- **Reported:** incoming transfers didn't change the Dashboard. Its formulas do net them (by category and month), but
+  they read Transactions, and a category typed in Incoming Transfers (or Bank Transfers) only reached Transactions at
+  the next update. The simple onEdit trigger now copies it to its Transactions row as it's typed (found by the row's
+  Id), so the Dashboard changes at once. (Each transfer counts in the month of its date.)
+- **Requested:** incoming transfers typed by hand. A row typed in Incoming Transfers (no Id) is saved into Transactions
+  as money received before that sheet is rebuilt — at the next update or 🔁 Recategorize — with the category as yours
+  (never replaced by recategorizing), and marked with its Id at once, so an interrupted update can't import it twice. A
+  row without a date or an amount is listed in Unrecognized with what was typed, not silently dropped; Unrecognized
+  gives a Gmail link only to rows that came from an email.
+- Tests: 183, on `src/` and on the single file (mutation-checked: the instant copy, saving typed rows, typed categories
+  kept, importing once).
+
 ### v1.1.53 (Sept 29, 2026) — Incoming Transfers treated like Bank Transfers everywhere
 - **Reported:** Incoming Transfers wasn't formatted with the rest after recategorizing. Its styling was applied (it uses
   the sheet layouts), but three places list sheets by name and v1.1.51 added it to none: fitting the columns (so it
