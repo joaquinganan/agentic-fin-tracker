@@ -47,12 +47,6 @@ test('a Banesco savings statement is read the same whatever the text layout; its
 function book(opts) {
   opts = opts || {};
   const mock = makeServices({ ui: true });
-  const trashed = [];
-  if (opts.drive !== false) {
-    mock.services.Drive = { Files: { create: (meta, blob) => { assert.equal(meta.mimeType, 'application/vnd.google-apps.document'); return { id: 'doc-1' }; } } };
-    mock.services.DocumentApp = { openById: id => ({ getBody: () => ({ getText: () => fixture('statements/banesco_savings_flat') }) }) };
-    mock.services.DriveApp = { getFileById: id => ({ setTrashed: v => trashed.push(id) }) };
-  }
   const h = load({ services: mock.services });
   const cfg = mock.ss.insertSheet('Configuration');
   [['Key', 'Value'], ['email', 'user@example.com'], ['monthlyIncome', 95000], ['incomeCurrency', 'DOP'], ['deductionMode', 'manual'],
@@ -62,14 +56,17 @@ function book(opts) {
   (opts.rules || []).forEach(r => cr.appendRow(['user@example.com', r[0], r[1], '']));
   const statement = h.fakeMessage({ subject: 'Estado de Cuenta de Ahorros Banesco', from: 'Banesco <estadodecuenta@banesco.com.do>',
     body: 'Adjunto su estado de cuenta.', date: h.date(2026, 9, 2, 10), id: 'stmt-aug' });
-  statement.getAttachments = () => [{ getContentType: () => 'application/pdf', getName: () => 'Agosto_2026.pdf', copyBlob: () => ({ pdf: true }) }];
+  // the synthetic statement PDF (tests/fixtures/statements/make_synthetic_pdf.py), bytes signed as Apps Script gives them
+  const pdf = opts.pdf || require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'statements', 'banesco_savings_synthetic.pdf'));
+  statement.getAttachments = () => [{ getContentType: () => 'application/pdf', getName: () => 'Agosto_2026.pdf',
+    copyBlob: () => ({ getBytes: () => Array.from(pdf, b => (b > 127 ? b - 256 : b)) }) }];
   mock.gmail.threads.push(fakeThread('t-stmt', [statement]),
     fakeThread('t-in', [h.fakeMessage({ subject: SUBJECT_IN, from: LAFISE_IN, body: fixture('lafise_incoming_third_party'), date: h.date(2026, 9, 12, 9), id: 'in-1' })]));
-  return { h, mock, trashed, tx: () => h.plain(mock.ss.getSheetByName('Transactions')._rows(15)) };
+  return { h, mock, tx: () => h.plain(mock.ss.getSheetByName('Transactions')._rows(15)) };
 }
 
-test('a run reads the statement PDF (via Drive) and the LAFISE email; Incoming Transfers lists them; nothing twice', () => {
-  const { h, mock, trashed, tx } = book({ rules: [['Rent', 'LUIS ALBERTO']] });
+test('a run reads the statement PDF (by itself, no Drive) and the LAFISE email; Incoming Transfers lists them; nothing twice', () => {
+  const { h, mock, tx } = book({ rules: [['Rent', 'LUIS ALBERTO']] });
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   const incoming = tx().filter(r => r[11] === 'Incoming');
   assert.deepEqual(incoming.map(r => [r[1], r[2], r[3], r[5]]).sort(), [
@@ -77,7 +74,6 @@ test('a run reads the statement PDF (via Drive) and the LAFISE email; Incoming T
     ['BANESCO', 'Ana Maria Perez Sot', -3000, 'Exclude'], ['BANESCO', 'Luis Gomez Diaz', -1200, ''],
     ['LAFISE', 'LUIS ALBERTO GOMEZ DIAZ', -4500, 'Rent']].sort(), 'the Custom Rule categorized the LAFISE one');
   assert.equal(h.ctx.normalizeDateForCompare(incoming.find(r => r[3] === -6500)[0]), '2026-08-17', 'the statement row\'s own date');
-  assert.deepEqual(trashed, ['doc-1'], 'the converted copy is trashed');
   const sheet = mock.ss.getSheetByName('Incoming Transfers');
   assert.ok(sheet, 'Incoming Transfers created');
   assert.deepEqual(h.plain(sheet.getRange(1, 1, 1, 8).getValues()[0]).slice(0, 4), ['Date', 'Bank', 'From', 'Category']);
@@ -112,14 +108,13 @@ test('recategorizing keeps a row Incoming, your own money Exclude, and a categor
   assert.equal(incoming.find(r => r[3] === -3000)[5], 'Exclude', 'own money stays Exclude');
 });
 
-test('without the Drive API the statement goes to Unrecognized with how to turn it on; Start here says so too', () => {
-  const { h, mock, tx } = book({ drive: false });
+test('a statement PDF that cannot be read goes to Unrecognized with the reason; nothing is saved from it', () => {
+  const { h, mock, tx } = book({ pdf: Buffer.from('%PDF-1.4\nnot really a pdf\n%%EOF\n') });
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   assert.equal(tx().filter(r => r[1] === 'BANESCO').length, 0);
   const row = mock.ss.getSheetByName('Unrecognized')._rows(10).find(r => r[9] === 'stmt-aug');
-  assert.match(row[3], /Statement not read: .*Turn on the Drive API service.*Services › \+ › Drive API/);
+  assert.match(row[3], /^Statement not read: .*PDF/);
   const steps = Object.fromEntries(h.plain(h.ctx.startHereStatus(h.date(2026, 9, 28, 9))).steps.map(s => [s.id, s]));
-  assert.equal(steps.statements.status, 'optional');
-  assert.match(steps.statements.detail, /Drive API/);
+  assert.equal(steps.statements, undefined, 'nothing to turn on any more');
   assert.equal(steps.incoming.status, 'warn', 'the LAFISE one still needs a category');
 });

@@ -152,6 +152,8 @@ const NON_TRANSACTIONAL_KEYWORDS = [
   'CAMBIO DE CONTRASEÑA', 'CAMBIO DE CLAVE', 'RESTABLECER CONTRASEÑA', 'ACTUALIZACIÓN DE DATOS',
   'ACTUALIZACION DE DATOS', 'VERIFICACIÓN DE IDENTIDAD', 'VERIFICACION DE IDENTIDAD',
   'SOLICITUD OPCIONES DE MENÚ', 'SOLICITUD OPCIONES DE MENU',
+  // v1.1.52: bank announcements (LAFISE's Pagos al Instante schedule comes from the incoming-transfers sender)
+  'HORARIO TRANSFERENCIAS', 'HORARIOS TRANSFERENCIAS', 'HORARIO DE TRANSFERENCIAS', 'NOTA INFORMATIVA',
   // v1.1.23: incoming payroll deposit notices (POPULAR "Notificación Depósito de
   // Nómina") are income, not spending — they were reported as "Could not parse".
   'DEPÓSITO DE NÓMINA', 'DEPOSITO DE NOMINA',
@@ -1281,23 +1283,12 @@ function extractLAFISEIncomingTransactions(text) {
     own: !!(sender && holder && sameHolder(sender, holder)), context: 'incoming transfer' }];
 }
 
-/**
- * A statement PDF as text. Apps Script can't read a PDF itself: Google Drive converts it to a Google Doc (the
- * advanced "Drive API" service — Apps Script › Services › Drive API), the text is read and the Doc is trashed.
- */
+/** A statement PDF (an attachment's blob) as text — read by the tracker itself (09_pdfText.gs), no Drive API.
+ *  Apps Script gives the bytes signed (-128…127). */
 function statementPdfText(blob) {
-  if (typeof Drive === 'undefined' || !Drive.Files) {
-    throw new Error('Turn on the Drive API service to read statements: Extensions › Apps Script › Services › + › Drive API › Add');
-  }
-  const name = 'tracker-statement-' + new Date().getTime();
-  const file = Drive.Files.create
-    ? Drive.Files.create({ name: name, mimeType: 'application/vnd.google-apps.document' }, blob)            // Drive API v3
-    : Drive.Files.insert({ title: name, mimeType: 'application/vnd.google-apps.document' }, blob, { convert: true });   // v2
-  try {
-    return DocumentApp.openById(file.id).getBody().getText();
-  } finally {
-    try { DriveApp.getFileById(file.id).setTrashed(true); } catch (error) { Logger.log('Could not trash the converted statement: ' + error); }
-  }
+  const raw = blob.getBytes(), bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw[i] & 255;
+  return pdfToText(bytes);
 }
 
 /**

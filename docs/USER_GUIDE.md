@@ -240,7 +240,6 @@ summaries; *Exclude* for money that pays nothing back. When the transfer names i
 on that name categorizes it by itself. Transfers from your own account are recognized and excluded.
 
 Banesco doesn't notify most incoming transfers, but its monthly savings statement (a PDF) lists them — as "Ach Ibanking",
-without the sender. To read it, turn on the **Drive API** service once (Extensions › Apps Script › Services › + › Drive
-API › Add): the PDF is converted to a temporary Google Doc, read and trashed. What's read must add up to the statement's
-own totals, or nothing is taken and it shows in Unrecognized.
+without the sender. The tracker reads the PDF itself (nothing to turn on). What's read must add up to the statement's own
+totals, or nothing is taken and it shows in Unrecognized.
 

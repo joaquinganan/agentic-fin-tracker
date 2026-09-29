@@ -112,12 +112,6 @@ function startHereStatus(now) {
         open('Open Incoming Transfers', 'Incoming Transfers'));
     }
   }
-  const driveOn = typeof Drive !== 'undefined' && !!Drive.Files;
-  const statementBanks = banks.filter(b => BANK_PATTERNS[b] && BANK_PATTERNS[b].statement);   // only if a tracked bank has one
-  if (statementBanks.length) add('Your data', 'statements', driveOn ? 'Bank statements can be read' : 'Read bank statements (optional)', driveOn ? 'done' : 'optional',
-    driveOn ? 'Monthly statement PDFs (' + statementBanks.join(', ') + ') are read for incoming transfers the bank does not notify.'
-      : statementBanks.join(', ') + ' does not notify most incoming transfers; its monthly statement lists them. To read it, turn on ' +
-        'the Drive API: Extensions › Apps Script › Services › + › Drive API › Add.');
 
   // ---- Investments (optional)
   const ledger = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);

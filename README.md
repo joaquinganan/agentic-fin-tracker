@@ -125,6 +125,7 @@ src/                  Apps Script sources (bound to the spreadsheet) + appsscrip
   06_monthlySummary.gs monthly summary
   07_investments.gs   investment ledger, broker emails, holdings
   08_startHere.gs     📘 Start here: the checklist / health check sidebar
+  09_pdfText.gs       reads bank statement PDFs (inflate, fonts, text positions) — no Drive API
 dist/FinancialTracker.gs   the seven files as ONE file — what you paste (generated: npm run bundle)
 tools/bundle.js       builds and checks dist/
 tests/                automated test framework (see below)

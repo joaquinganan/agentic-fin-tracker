@@ -2,6 +2,23 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.52 (Sept 29, 2026) — statements read by the tracker itself; LAFISE announcements filtered
+- **Reported:** every Banesco statement ended in Unrecognized ("totals were not found · 0 row(s) read"). v1.1.51 had
+  Google Drive convert the PDF to a Doc — the one step that couldn't be tested outside Apps Script — and on the real
+  statements the text it returned had neither totals nor rows. The PDF is now read by the tracker (new `09_pdfText.gs`):
+  it inflates the page content (a pure-JS FlateDecode), follows the text operators with their positions (cm, Tm, Td,
+  TJ spacing, Tc/Tw/Tz), decodes WinAnsi, /Differences glyph names and Type0 ToUnicode maps, and rebuilds the lines
+  with each glyph's real width. On the real statement: 20 rows, totals matching, the four incoming transfers — through a
+  whole run, in memory. No Drive API service, no extra permissions.
+- A first version joined pieces by an estimated width and split words ("B alance", "C réd itos"); real glyph widths
+  fixed it. The synthetic PDF fixture (`tests/fixtures/statements/make_synthetic_pdf.py`, invented data) is written the
+  way the real file is — pieces placed at real widths, words spaced by TJ numbers with no space character, a Type0
+  title — so a reader ignoring either fails (mutation-checked). Inflate is checked against Node's zlib (stored, fixed
+  and dynamic blocks; wrapped and raw; up to 1 MB).
+- **Reported:** LAFISE's "HORARIO TRANSFERENCIAS PAGOS AL INSTANTE" announcement (from the incoming-transfers sender)
+  landed in Unrecognized as "Amount not found"; announcements are now filtered. Tests: 177, on `src/` and on the single
+  file.
+
 ### v1.1.51 (Sept 28, 2026) — incoming transfers: money paid back reduces what you spent
 - **Requested:** shared costs (rent, utilities) are paid with the user's cards and a roommate transfers their share —
   the Dashboard should show what was really spent. Money received is saved as a **negative** row of the new Type
