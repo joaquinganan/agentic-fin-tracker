@@ -2,6 +2,11 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.50 (Sept 28, 2026) — Holdings named a menu item that no longer existed
+- Holdings' note and its empty "Other accounts" row still sent people to "📊 Tracker › ➕ Add Fund / Pension Balance",
+  renamed "➕ Add Balance or Deposit" in v1.1.40. Found reviewing a frame of the new demo video. A test now checks every
+  "📊 Tracker › …" the tracker shows against the real menu (it fails with the old name back). Tests: 166.
+
 ### v1.1.49 (Sept 28, 2026) — a Spanish guide; deleted rows come back; Reset System starts over for real
 - **docs/GUIA.md**, the user guide in Spanish (install, setup, 📘 Start here, daily use, categories, investments with
   HAPI, updating, common problems, adding a bank, privacy), linked from the README and from 📘 Start here. A test checks

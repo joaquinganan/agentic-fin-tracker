@@ -541,7 +541,7 @@ function buildHoldingsSheet(h, prices) {
       v.units && v.unitPrice ? (+Number(v.units).toFixed(4)).toLocaleString('en-US') + ' × ' +
         Number(v.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
       '=IF(D' + r + '="DOP",IFERROR(C' + r + '/RATE_USD,""),C' + r + ')'];
-  }) : [['Add a balance: 📊 Tracker › ➕ Add Fund / Pension Balance', '', '', '', '', '']];
+  }) : [['Add a balance: 📊 Tracker › ➕ Add Balance or Deposit', '', '', '', '', '']];
   sheet.getRange(R.valFirst, 2, valRows.length, 6).setValues(valRows);
   stripe(R.valFirst, 2, nVal, 6);
   sheet.getRange(R.valFirst, 3, nVal, 1).setNumberFormat('#,##0.00');
@@ -561,7 +561,7 @@ function buildHoldingsSheet(h, prices) {
 
   // ---- notes and warnings
   const notes = ['Positions start from each account\'s latest Snapshot and add the movements after that day. ' +
-    'Funds and pensions: 📊 Tracker › ➕ Add Fund / Pension Balance. This sheet is rebuilt on every refresh — edit the ledger, not this.']
+    'Funds and pensions: 📊 Tracker › ➕ Add Balance or Deposit. This sheet is rebuilt on every refresh — edit the ledger, not this.']
     .concat(h.warnings.map(w => '⚠️ ' + w));
   sheet.getRange(R.notes, 2, notes.length, 1).setValues(notes.map(n => [n])).setFontSize(8).setFontColor(T.muted);
   R.notesEnd = R.notes + notes.length - 1;
