@@ -320,7 +320,7 @@ function autoFitDataSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(sheet => {
     const name = sheet.getName();
-    const isData = name === TRANSACTIONS_SHEET || name === 'Bank Transfers' || name.indexOf('Raw_') === 0 ||
+    const isData = name === TRANSACTIONS_SHEET || name === 'Bank Transfers' || name === INCOMING_SHEET || name.indexOf('Raw_') === 0 ||   // v1.1.53: Incoming
       name === CUSTOM_RULES_SHEET || name === CONFIG_SHEET || name === INVESTMENT_LEDGER_SHEET || name === INVESTMENT_ACCOUNTS_SHEET ||
       name === HISTORY_SHEET;
     if (!isData) return;
@@ -397,6 +397,8 @@ function sortAllDataSheets() {
   if (tx) sortSheetByDateDesc(tx, TX_COL.DATE + 1);
   const bt = ss.getSheetByName("Bank Transfers");
   if (bt) sortSheetByDateDesc(bt, 1);
+  const inc = ss.getSheetByName(INCOMING_SHEET);   // v1.1.53
+  if (inc) sortSheetByDateDesc(inc, 1);
   ss.getSheets().forEach(sheet => {
     if (sheet.getName().startsWith("Raw_")) sortSheetByDateDesc(sheet, 1);
   });

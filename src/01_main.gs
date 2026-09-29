@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.52"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.53"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1269,7 +1269,7 @@ function resetSystem() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.alert(
     '⚠️ This will delete everything the system created: Configuration, Transactions, every ' +
-    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
+    'Raw_<BANK> sheet, Bank Transfers, Incoming Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
     'record of emails already read, and the daily triggers (update and summary email). It cannot be undone.\n\n' +
     'Kept: the investment tabs (Investment Ledger, Holdings, Portfolio History, Investment Accounts) — ' +
     'they hold what you typed, which no email can bring back. Continue?',
@@ -1279,7 +1279,7 @@ function resetSystem() {
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const fixedNames = new Set([
-        CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", "Dashboard",
+        CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", INCOMING_SHEET, "Dashboard",   // v1.1.53: Incoming
         "Pivot - Category x Bank", CUSTOM_RULES_SHEET,
         UNRECOGNIZED_SHEET, READ_LOG_SHEET   // v1.1.49: without these, re-reading after a reset skipped every email
       ]);

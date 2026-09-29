@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.52 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.53 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.52"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.53"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1282,7 +1282,7 @@ function resetSystem() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.alert(
     '⚠️ This will delete everything the system created: Configuration, Transactions, every ' +
-    'Raw_<BANK> sheet, Bank Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
+    'Raw_<BANK> sheet, Bank Transfers, Incoming Transfers, Dashboard, Pivot, monthly summaries, Custom Rules, Unrecognized, the ' +
     'record of emails already read, and the daily triggers (update and summary email). It cannot be undone.\n\n' +
     'Kept: the investment tabs (Investment Ledger, Holdings, Portfolio History, Investment Accounts) — ' +
     'they hold what you typed, which no email can bring back. Continue?',
@@ -1292,7 +1292,7 @@ function resetSystem() {
     try {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const fixedNames = new Set([
-        CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", "Dashboard",
+        CONFIG_SHEET, TRANSACTIONS_SHEET, "Bank Transfers", INCOMING_SHEET, "Dashboard",   // v1.1.53: Incoming
         "Pivot - Category x Bank", CUSTOM_RULES_SHEET,
         UNRECOGNIZED_SHEET, READ_LOG_SHEET   // v1.1.49: without these, re-reading after a reset skipped every email
       ]);
@@ -3510,7 +3510,7 @@ function autoFitDataSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(sheet => {
     const name = sheet.getName();
-    const isData = name === TRANSACTIONS_SHEET || name === 'Bank Transfers' || name.indexOf('Raw_') === 0 ||
+    const isData = name === TRANSACTIONS_SHEET || name === 'Bank Transfers' || name === INCOMING_SHEET || name.indexOf('Raw_') === 0 ||   // v1.1.53: Incoming
       name === CUSTOM_RULES_SHEET || name === CONFIG_SHEET || name === INVESTMENT_LEDGER_SHEET || name === INVESTMENT_ACCOUNTS_SHEET ||
       name === HISTORY_SHEET;
     if (!isData) return;
@@ -3587,6 +3587,8 @@ function sortAllDataSheets() {
   if (tx) sortSheetByDateDesc(tx, TX_COL.DATE + 1);
   const bt = ss.getSheetByName("Bank Transfers");
   if (bt) sortSheetByDateDesc(bt, 1);
+  const inc = ss.getSheetByName(INCOMING_SHEET);   // v1.1.53
+  if (inc) sortSheetByDateDesc(inc, 1);
   ss.getSheets().forEach(sheet => {
     if (sheet.getName().startsWith("Raw_")) sortSheetByDateDesc(sheet, 1);
   });

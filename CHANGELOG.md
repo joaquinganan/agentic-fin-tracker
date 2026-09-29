@@ -2,6 +2,13 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.53 (Sept 29, 2026) — Incoming Transfers treated like Bank Transfers everywhere
+- **Reported:** Incoming Transfers wasn't formatted with the rest after recategorizing. Its styling was applied (it uses
+  the sheet layouts), but three places list sheets by name and v1.1.51 added it to none: fitting the columns (so it
+  looked unformatted — narrow, cut-off columns), sorting by date, and 🗑️ Reset System (a derived sheet left behind with
+  old data). A test now requires it to get what Bank Transfers gets — same conditional formats, same widths for the same
+  content, the same order — and to be deleted by the reset. Tests: 179, on `src/` and on the single file.
+
 ### v1.1.52 (Sept 29, 2026) — statements read by the tracker itself; LAFISE announcements filtered
 - **Reported:** every Banesco statement ended in Unrecognized ("totals were not found · 0 row(s) read"). v1.1.51 had
   Google Drive convert the PDF to a Doc — the one step that couldn't be tested outside Apps Script — and on the real
