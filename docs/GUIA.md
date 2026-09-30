@@ -95,7 +95,8 @@ el tracker puede **restarla de lo que gastaste** en esa categoría.
 - La categoría que escribes en Incoming Transfers (o en Bank Transfers) se aplica **al instante**: el Dashboard cambia
   sin esperar a la siguiente actualización. Recuerda que cada transferencia cuenta en el mes de su fecha: lo que llegó
   en agosto se resta de agosto.
-- **¿Una transferencia que el tracker no vio?** Escríbela tú en una fila vacía de **Incoming Transfers**: fecha
+- **¿Una transferencia que el tracker no vio?** Escríbela tú en una fila vacía de **Incoming Transfers** (si la
+  recibiste) o de **Bank Transfers** (si la enviaste): fecha
   (yyyy-mm-dd), banco (opcional), de quién, categoría y monto (positivo; moneda DOP si la dejas vacía). En la siguiente
   actualización, o con **🔁 Recategorize Saved Transactions**, se guarda y queda como las demás. Si le falta la fecha o
   el monto, no se pierde: aparece en Unrecognized con lo que escribiste.

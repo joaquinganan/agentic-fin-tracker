@@ -2,6 +2,14 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.57 (Sept 30, 2026) — transfers sent can be typed by hand too
+- **Requested:** add the outgoing transfers of a bank that doesn't notify them. Bank Transfers takes rows typed by hand
+  the way Incoming Transfers does (v1.1.54): saved into Transactions as a Transfer (positive) before the sheet is
+  rebuilt, the category kept as yours — or, left empty, set by Custom Rules like any transfer — and imported once.
+- Found by an existing test: Bank Transfers sheets from before v1.1.39 have no Ids, so their rows looked typed by hand
+  and would all have been saved again. A row without an Id that matches a saved transfer (date, name, amount — the key
+  the category sync already uses for those sheets) isn't imported (mutation-checked). Tests: 194.
+
 ### v1.1.56 (Sept 29, 2026) — the daily investments figures use prices that actually loaded
 - **Reported:** the daily report's investments looked wrong and its "biggest moves" didn't really show. Each refresh
   rewrites Holdings' GOOGLEFINANCE formulas and read their values right after `flush()` — while they were still loading,
