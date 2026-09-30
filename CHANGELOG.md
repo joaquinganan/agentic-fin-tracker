@@ -2,6 +2,19 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.58 (Sept 30, 2026) — typed transfers keep their date; typed again, they're repaired
+- **Reported:** transfers sent, pasted from Excel into Bank Transfers, were saved with no date — while rows pasted as
+  text into Incoming Transfers kept theirs; deleted and pasted again, they were saved twice. The difference: v1.1.57
+  passed a pasted real date (a Sheets Date) straight on, and those came out empty in Apps Script, which the test mock
+  couldn't reproduce. The day now always goes through its yyyy-mm-dd text into a new date, whatever was pasted.
+- After saving, the rows are read back: one without its date is dated again, and the log says so — if anything still
+  loses a date, it's corrected and the reason shows in View › Executions.
+- A row typed again that matches one saved without a date (same name and amount, "Added by hand") gives it its date
+  instead of being saved a second time — pasting the same file again repairs the rows already saved.
+- Found by the tests: `normalizeDateForCompare('2026-08-28')` returned the 27th — a yyyy-mm-dd text parsed as midnight
+  UTC is the day before in Santo Domingo. A yyyy-mm-dd text is now taken as its day, everywhere.
+- Tests: 198, on `src/` and on the single file (mutation-checked: the day shift, repairing, the check after saving).
+
 ### v1.1.57 (Sept 30, 2026) — transfers sent can be typed by hand too
 - **Requested:** add the outgoing transfers of a bank that doesn't notify them. Bank Transfers takes rows typed by hand
   the way Incoming Transfers does (v1.1.54): saved into Transactions as a Transfer (positive) before the sheet is

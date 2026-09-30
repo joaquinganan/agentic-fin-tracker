@@ -65,8 +65,8 @@ test('a typed row is imported once even if the sheet is not rebuilt right after 
   const { h, tx, sheet } = book();
   const inc = sheet('Incoming Transfers'), next = inc.getLastRow() + 1;
   inc.getRange(next, 1, 1, 6).setValues([['2026-08-29', 'LAFISE', 'Roommate', 'Electricity', '2500', 'DOP']]);
-  assert.deepEqual(h.plain(h.ctx.importTypedIncomingRows()), { added: 1, rejected: 0 });
-  assert.deepEqual(h.plain(h.ctx.importTypedIncomingRows()), { added: 0, rejected: 0 }, 'the row now carries its Id');
+  assert.deepEqual(h.plain(h.ctx.importTypedIncomingRows()), { added: 1, rejected: 0, repaired: 0 });
+  assert.deepEqual(h.plain(h.ctx.importTypedIncomingRows()), { added: 0, rejected: 0, repaired: 0 }, 'the row now carries its Id');
   assert.equal(tx().filter(r => r[2] === 'Roommate').length, 1);
 });
 

@@ -99,7 +99,8 @@ el tracker puede **restarla de lo que gastaste** en esa categoría.
   recibiste) o de **Bank Transfers** (si la enviaste): fecha
   (yyyy-mm-dd), banco (opcional), de quién, categoría y monto (positivo; moneda DOP si la dejas vacía). En la siguiente
   actualización, o con **🔁 Recategorize Saved Transactions**, se guarda y queda como las demás. Si le falta la fecha o
-  el monto, no se pierde: aparece en Unrecognized con lo que escribiste.
+  el monto, no se pierde: aparece en Unrecognized con lo que escribiste. Si pegas otra vez una fila que ya se había
+  guardado sin fecha, se le pone la fecha en lugar de duplicarla.
 
 **Banesco** no avisa la mayoría de las transferencias que recibes, pero su **estado de cuenta mensual** (el PDF que llega
 por correo) las lista. El tracker toma **todos los créditos** del estado, con su descripción tal cual ("Ach Ibanking",

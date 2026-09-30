@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.57 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.58 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.57"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.58"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -3620,6 +3620,10 @@ function normalizeDateForCompare(value) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
   const str = String(value);
+  // v1.1.58: a yyyy-mm-dd text IS the day. new Date('2026-08-28') is midnight UTC — the 27th in Santo Domingo (UTC−4) —
+  // so a date typed as text came out a day early
+  const iso = str.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
   const legacy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (legacy) {
     const day = legacy[1].padStart(2, '0');
@@ -5031,30 +5035,66 @@ function importTypedTransferRows(sheetName, type, now) {
   // before v1.1.39, which had no Ids) is one of those, not typed by hand: importing it would duplicate every transfer
   const keyOf = (date, merchant, amount) => normalizeDateForCompare(date) + '|' + String(merchant).trim() + '|' + Number(amount);
   const saved = new Set();
+  // v1.1.58: rows typed by hand that were saved WITHOUT a date (reported, v1.1.57) — typed again, they get their date
+  // back instead of being saved a second time
+  const undated = {};
+  const subject = 'Added by hand in ' + sheetName;
   const tx = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
   if (tx && tx.getLastRow() > 1) {
-    tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues().forEach(r => {
-      if (r[TX_COL.TYPE] === type && r[TX_COL.DATE]) saved.add(keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], Math.abs(Number(r[TX_COL.AMOUNT]) || 0)));
+    tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues().forEach((r, i) => {
+      if (r[TX_COL.TYPE] !== type) return;
+      if (r[TX_COL.DATE]) saved.add(keyOf(r[TX_COL.DATE], r[TX_COL.MERCHANT], Math.abs(Number(r[TX_COL.AMOUNT]) || 0)));
+      else if (r[TX_COL.SUBJECT] === subject) {
+        const k = String(r[TX_COL.MERCHANT]).trim() + '|' + Math.abs(Number(r[TX_COL.AMOUNT]) || 0).toFixed(2);
+        (undated[k] = undated[k] || []).push({ row: i + 2, id: String(r[TX_COL.MESSAGE_ID] || '') });
+      }
     });
   }
   const add = [], bad = [];
+  let repaired = 0;
   values.forEach((r, i) => {
     if (String(r[W - 1] || '').trim()) return;                                    // has an Id: it comes from Transactions
     if (r.slice(0, W - 1).every(x => x === '' || x === null)) return;             // empty row
     if (r[0] && saved.has(keyOf(r[0], r[2], Math.abs(Number(String(r[4]).replace(/[^\d.\-]/g, '')) || 0)))) return;   // an older sheet's row
-    const d = r[0] instanceof Date ? r[0] : (/^\d{4}-\d{2}-\d{2}$/.test(String(r[0]).trim()) ? new Date(String(r[0]).trim() + 'T12:00:00') : null);
+    // v1.1.58: the day as yyyy-mm-dd text first, then a NEW date at noon. v1.1.57 passed the cell's own Date on, and
+    // rows pasted from Excel (real dates) were saved with none, while rows pasted as text kept theirs (reported)
+    const dayKey = r[0] === '' || r[0] === null ? '' : String(normalizeDateForCompare(r[0]) || '').trim();
+    const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+    const d = dm ? new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]), 12, 0, 0) : null;
     const amount = Math.abs(Number(String(r[4]).replace(/[^\d.\-]/g, '')));
     if (!d || isNaN(d.getTime()) || !(amount > 0)) { bad.push(r); return; }
+    const uk = (String(r[2] || '').trim() || 'Added by hand') + '|' + amount.toFixed(2);
+    if (undated[uk] && undated[uk].length) {        // the same row, saved without its date: date it, don't add it again
+      const found = undated[uk].shift();
+      tx.getRange(found.row, TX_COL.DATE + 1).setValue(d).setNumberFormat('yyyy-MM-dd');
+      sheet.getRange(i + 2, W).setValue(found.id);
+      repaired++;
+      return;
+    }
     const cur = String(r[5] || '').trim().toUpperCase();
     const merchant = String(r[2] || '').trim() || 'Added by hand';
     const id = 'manual:' + now.getTime() + ':' + (incoming ? 'in' : 'out') + ':' + (i + 2);
-    add.push({ date: formatDate(d), bank: String(r[1] || '').trim().toUpperCase() || 'MANUAL', merchant: merchant,
+    add.push({ date: d, bank: String(r[1] || '').trim().toUpperCase() || 'MANUAL', merchant: merchant,
       amount: incoming ? -amount : amount, currency: VALID_CURRENCIES.has(cur) ? cur : 'DOP', category: String(r[3] || '').trim(),
       autoCategory: AUTO_NONE, type: type, description: merchant, reversal: false, timeKey: '', txRef: '',
       subject: 'Added by hand in ' + sheetName, timestamp: now.toISOString(), messageId: id, isCredit: incoming, isCashback: false });
     sheet.getRange(i + 2, W).setValue(id);             // never imported twice, even if the rebuild doesn't follow
   });
-  if (add.length) saveTransactions(add);
+  if (add.length) {
+    saveTransactions(add);
+    // v1.1.58: read back what was saved — a row without its date is dated now, and the log says so
+    const want = {};
+    add.forEach(t => { want[t.messageId] = t.date; });
+    const txNow = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+    txNow.getRange(2, 1, txNow.getLastRow() - 1, TX_NUM_COLS).getValues().forEach((r, i) => {
+      const id = String(r[TX_COL.MESSAGE_ID] || '');
+      if (want[id] === undefined || r[TX_COL.DATE]) return;
+      txNow.getRange(i + 2, TX_COL.DATE + 1).setValue(want[id]).setNumberFormat('yyyy-MM-dd');
+      Logger.log('⚠️ ' + sheetName + ': a typed row was saved without its date and was dated again (' + id + ', ' +
+        normalizeDateForCompare(want[id]) + ') — please report this line');
+    });
+  }
+  if (repaired) Logger.log(sheetName + ': ' + repaired + ' row(s) typed again gave their date back to rows saved without one');
   if (bad.length) {
     recordUnrecognized(bad.map(r => {
       const typed = r.slice(0, 6).map(x => x instanceof Date ? normalizeDateForCompare(x) : String(x)).join(' · ');
@@ -5063,7 +5103,7 @@ function importTypedTransferRows(sheetName, type, now) {
     }), [], now);
   }
   if (add.length || bad.length) Logger.log(sheetName + ' typed by hand: ' + add.length + ' saved, ' + bad.length + ' without a date or amount');
-  return { added: add.length, rejected: bad.length };
+  return { added: add.length, rejected: bad.length, repaired: repaired };
 }
 
 // ====================================================================================================
