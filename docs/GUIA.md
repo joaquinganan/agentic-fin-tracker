@@ -148,6 +148,9 @@ rendimiento del año, registra también el saldo al inicio del año.
 - Si lo que compraste supera lo que depositaste, Performance lo advierte: probablemente falta registrar algún depósito, y
   ese dinero se estaría contando como ganancia.
 - **📊 Tracker › 📈 Refresh Investments** actualiza todo al momento.
+- En el **resumen diario**, los *biggest moves* son el cambio de la **última sesión** de cada acción o ETF (un lunes
+  muestran los del viernes); las criptomonedas, el cambio desde la actualización anterior. Si alguna posición no tuvo
+  precio en vivo en la actualización, el correo lo dice y la valora a su último precio conocido.
 
 ## 8. Actualizar a una versión nueva
 

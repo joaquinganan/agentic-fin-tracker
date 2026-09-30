@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.55 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.56 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.55"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.56"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -5595,8 +5595,12 @@ function buildDailySummaryEmail(s, opts) {
     ]);
     if (iv.movers.length) {
       inner += '<div style="height:10px;font-size:0">&nbsp;</div>' + ekList(iv.movers.map(m => ({
-        title: m.ticker, meta: m.account + ' · biggest move' + (since ? ' since ' + since : ''), right: summarySignedPctFine(m.change),
-        rightTone: m.change >= 0 ? 'good' : 'bad' })));
+        title: m.ticker, meta: m.account + (m.session ? ' · last session' : ' · since ' + (since || 'the last update')),   // v1.1.56
+        right: summarySignedPctFine(m.change), rightTone: m.change >= 0 ? 'good' : 'bad' })));
+    }
+    if (iv.stale) {   // v1.1.56
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
+        ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));
@@ -6658,6 +6662,14 @@ function buildHoldingsSheet(h, prices) {
       '=IF(F' + r + '>0,I' + r + '/F' + r + ',"")', '=IF($H$' + R.posTotal + '>0,H' + r + '/$H$' + R.posTotal + ',"")', p.dividends, f.source];
   }) : [['No positions yet — add a Snapshot to the Investment Ledger', '', '', '', '', '', '', '', '', '', '', '']];
   sheet.getRange(R.posFirst, 2, posRows.length, heads.length).setValues(posRows);
+  // v1.1.56: each stock's change in the last session, in a hidden helper column — the "biggest moves" of the daily report
+  sheet.getRange(1, DAY_CHANGE_COL, sheet.getMaxRows(), 1).clearContent();
+  if (h.positions.length) {
+    h.positions.forEach((p, i) => {   // crypto has no session: left empty (its move comes from the history's prices)
+      if (!isCryptoPair(p.ticker)) sheet.getRange(R.posFirst + i, DAY_CHANGE_COL).setFormula('=IFERROR(GOOGLEFINANCE("' + priceSymbol(p.ticker) + '","changepct")/100,"")');
+    });
+    sheet.hideColumns(DAY_CHANGE_COL);
+  }
   if (nCash) {
     sheet.getRange(R.cashFirst, 2, nCash, heads.length).setValues(h.cash.map(c =>
       [c.account, 'Cash' + (c.estimated ? ' (≈)' : ''), '', '', c.amount, '', c.amount, '', '', '=IF($H$' + R.posTotal + '>0,H' +
@@ -6829,12 +6841,17 @@ function refreshHoldings() {
   const built = buildHoldingsSheet(h, { today: todayKey, fetched: fetched,
     fetchedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') });
   // v1.1.32: read what GOOGLEFINANCE computed, record today's values, then the Performance block
-  let marketValues = null;
+  let marketValues = null, live = null, dayChange = null;
   if (h.positions.length) {
     SpreadsheetApp.flush();
+    // v1.1.56: GOOGLEFINANCE loads after the formulas are written; read too soon, every stock fell back to its last known
+    // (ledger) price — so the history kept the same prices day after day: no "biggest moves", stale daily changes
+    live = waitForLivePrices(built.sheet, built.rows.posFirst, h.positions.length);
     marketValues = built.sheet.getRange(built.rows.posFirst, 8, h.positions.length, 1).getValues().map(r => r[0]);
+    dayChange = built.sheet.getRange(built.rows.posFirst, DAY_CHANGE_COL, h.positions.length, 1).getValues().map(r => r[0]);
   }
-  const valueRows = holdingsValueRows(h, marketValues, { fetched: fetched, usdRate: usdRate });
+  const valueRows = holdingsValueRows(h, marketValues, { fetched: fetched, usdRate: usdRate, live: live, dayChange: dayChange,
+    prevPrices: latestHistoryPrices(readHistory(), todayKey) });
   recordPortfolioHistory(valueRows, todayKey);
   const current = {};
   valueRows.forEach(r => { current[r.account] = (current[r.account] || 0) + (Number(r.value) || 0); });
@@ -6918,7 +6935,11 @@ function refreshInvestmentsNow() {
  * PORTFOLIO HISTORY, RETURNS AND REPORT DATA — v1.1.32
  * ====================================================================== */
 const HISTORY_SHEET = 'Portfolio History';
-const HISTORY_HEADERS = ['Date', 'Account', 'Ticker', 'Quantity', 'Price (US$)', 'Value (US$)'];
+// v1.1.56: Day change — the market's own change of the last session (GOOGLEFINANCE "changepct"), for stocks and ETFs
+const HISTORY_HEADERS = ['Date', 'Account', 'Ticker', 'Quantity', 'Price (US$)', 'Value (US$)', 'Day change'];
+const DAY_CHANGE_COL = 20;          // Holdings: a hidden helper column (T) with each position's changepct
+const LIVE_PRICE_WAIT_MS = 15000;   // how long a refresh waits for GOOGLEFINANCE to load
+const LIVE_PRICE_CALM_POLLS = 4;    // …and stops earlier after this many checks without progress (a symbol it doesn't know)
 const HISTORY_TOTAL = 'TOTAL';
 const HISTORY_DAY_BAND = '#E8EEF8';   // v1.1.39: every other day, so one day's rows read as a block
 const ANNUALIZE_MIN_DAYS = 180;   // annualizing a few weeks of returns gives absurd numbers
@@ -6934,7 +6955,16 @@ function holdingsValueRows(h, marketValues, opts) {
   const rows = h.positions.map((p, i) => {
     const mv = marketValues ? Number(marketValues[i]) : NaN;
     const price = isFinite(mv) && mv > 0 ? mv / p.qty : (fetched[p.ticker] > 0 ? fetched[p.ticker] : p.lastPrice);
-    return { account: p.account, ticker: p.ticker, qty: p.qty, price: price, value: isFinite(mv) && mv > 0 ? mv : p.qty * price };
+    const dc = opts.dayChange ? opts.dayChange[i] : '';
+    const dayChange = typeof dc === 'number' && isFinite(dc) ? dc : '';
+    if (opts.live && !opts.live[i]) {
+      // v1.1.56: no live price this time — valued at the latest price the history has (not the snapshot's), and no
+      // price recorded for today, so it can't make a move that didn't happen
+      const prev = (opts.prevPrices || {})[p.account + '|' + p.ticker];
+      const at = prev > 0 ? prev : price;
+      return { account: p.account, ticker: p.ticker, qty: p.qty, price: '', value: p.qty * at, dayChange: dayChange, stale: true };
+    }
+    return { account: p.account, ticker: p.ticker, qty: p.qty, price: price, value: isFinite(mv) && mv > 0 ? mv : p.qty * price, dayChange: dayChange };
   });
   h.cash.forEach(c => rows.push({ account: c.account, ticker: 'CASH', qty: '', price: '', value: c.amount }));
   h.valuations.forEach(v => rows.push({ account: v.account, ticker: '', qty: v.units || '', price: '',
@@ -6951,13 +6981,15 @@ function recordPortfolioHistory(valueRows, todayKey) {
     sheet.getRange(1, 1, 1, HISTORY_HEADERS.length).setValues([HISTORY_HEADERS]);
   }
   const last = sheet.getLastRow();
+  sheet.getRange(1, 1, 1, HISTORY_HEADERS.length).setValues([HISTORY_HEADERS]);   // v1.1.56: a history from before has 6 columns
   const kept = last > 1 ? sheet.getRange(2, 1, last - 1, HISTORY_HEADERS.length).getValues()
     .filter(r => r[0] && normalizeDateForCompare(r[0]) !== todayKey) : [];
   const parts = todayKey.split('-').map(Number);
   const day = new Date(parts[0], parts[1] - 1, parts[2], 12);
   const total = valueRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
-  const today = valueRows.map(r => [day, r.account, r.ticker, r.qty, r.price === '' ? '' : +Number(r.price).toPrecision(10), +Number(r.value).toFixed(2)])
-    .concat([[day, HISTORY_TOTAL, '', '', '', +total.toFixed(2)]]);
+  const today = valueRows.map(r => [day, r.account, r.ticker, r.qty, r.price === '' ? '' : +Number(r.price).toPrecision(10), +Number(r.value).toFixed(2),
+    r.dayChange === '' || r.dayChange === undefined ? '' : +Number(r.dayChange).toPrecision(6)])
+    .concat([[day, HISTORY_TOTAL, '', '', '', +total.toFixed(2), '']]);
   const all = today.concat(kept);
   if (last > 1) sheet.getRange(2, 1, last - 1, HISTORY_HEADERS.length).clearContent();
   ensureRowCapacity(sheet, all.length + 1);
@@ -7115,13 +7147,19 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
   opts = opts || {};
   const usdRate = Number(opts.usdRate) || 0;
   const rows = historyValues.slice(1).filter(r => r[0]).map(r => ({ day: normalizeDateForCompare(r[0]), account: r[1],
-    ticker: String(r[2] || ''), price: invNumber(r[4]), value: invNumber(r[5]) }));
+    ticker: String(r[2] || ''), price: invNumber(r[4]), value: invNumber(r[5]),
+    dayChange: r[6] === '' || r[6] === null || r[6] === undefined ? null : Number(r[6]) }));
   const days = rows.filter(r => r.account === HISTORY_TOTAL).map(r => r.day).sort();
   if (!days.length) return null;
   const today = days[days.length - 1], prev = days.length > 1 ? days[days.length - 2] : null;
   const totalOn = d => rows.filter(r => r.day === d && r.account === HISTORY_TOTAL).reduce((s, r) => s + r.value, 0);
   const brief = { day: today, total: totalOn(today), totalDop: usdRate > 0 ? totalOn(today) * usdRate : null, prevDay: prev,
-    change: null, changePct: null, deposits: 0, movers: [], added: [], returns: opts.returns || null };
+    change: null, changePct: null, deposits: 0, movers: [], added: [], returns: opts.returns || null,
+    // v1.1.56: positions that had no live price at the update (recorded without a price)
+    stale: rows.filter(r => r.day === today && r.account !== HISTORY_TOTAL && r.ticker && r.ticker !== 'CASH' && !(r.price > 0) && r.value > 0).length };
+  // v1.1.56: the market's own change of the last session — so a Monday shows Friday's moves instead of nothing
+  const session = rows.filter(r => r.day === today && r.dayChange !== null && isFinite(r.dayChange))
+    .map(r => ({ ticker: r.ticker, account: r.account, change: r.dayChange, session: true }));
   if (prev) {
     // v1.1.37: compared account by account. An account added to the tracker since the previous day (a fund's first
     // balance, say) isn't gain — comparing totals counted it as one (+US$17,104 on the day two accounts were added).
@@ -7147,10 +7185,14 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
     brief.changePct = before > 0 ? brief.change / before : null;
     const prevPrice = {};
     rows.filter(r => r.day === prev && r.price > 0).forEach(r => { prevPrice[r.account + '|' + r.ticker] = r.price; });
-    brief.movers = rows.filter(r => r.day === today && r.price > 0 && prevPrice[r.account + '|' + r.ticker] > 0)
-      .map(r => ({ ticker: r.ticker, account: r.account, change: r.price / prevPrice[r.account + '|' + r.ticker] - 1 }))
-      .filter(m => Math.abs(m.change) >= 0.0005)
+    const bySession = {};
+    session.forEach(m => { bySession[m.account + '|' + m.ticker] = true; });
+    const byPrice = rows.filter(r => r.day === today && r.price > 0 && prevPrice[r.account + '|' + r.ticker] > 0 && !bySession[r.account + '|' + r.ticker])
+      .map(r => ({ ticker: r.ticker, account: r.account, change: r.price / prevPrice[r.account + '|' + r.ticker] - 1 }));
+    brief.movers = session.concat(byPrice).filter(m => Math.abs(m.change) >= 0.0005)
       .sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);
+  } else {
+    brief.movers = session.filter(m => Math.abs(m.change) >= 0.0005).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);
   }
   return brief;
 }
@@ -7697,6 +7739,45 @@ function openPortfolioPasteDialog() {
   el('text').addEventListener('input', function () { el('save').disabled = true; });
 </script></body></html>`).setWidth(520).setHeight(640);
   SpreadsheetApp.getUi().showModalDialog(html, '📋 Paste broker positions');
+}
+
+/**
+ * v1.1.56: waits for GOOGLEFINANCE after Holdings is written — checks each position's Price source until every one is
+ * live (stocks "live", crypto "Coinbase · …"), stopping early after LIVE_PRICE_CALM_POLLS checks without progress (a
+ * symbol Google Finance doesn't know never loads) and at LIVE_PRICE_WAIT_MS. Returns which positions are live.
+ */
+function waitForLivePrices(sheet, firstRow, count, opts) {
+  opts = opts || {};
+  const clock = opts.clock || (() => Date.now());
+  const sleep = opts.sleep || (ms => Utilities.sleep(ms));
+  const maxMs = opts.maxMs || LIVE_PRICE_WAIT_MS, started = clock();
+  const isLive = s => s === 'live' || /^Coinbase/.test(s);
+  const read = () => sheet.getRange(firstRow, 13, count, 1).getValues().map(r => String(r[0]));
+  let sources = read(), pending = sources.filter(s => !isLive(s)).length, calm = 0;
+  while (pending && calm < LIVE_PRICE_CALM_POLLS && clock() - started < maxMs) {
+    sleep(1500);
+    SpreadsheetApp.flush();
+    sources = read();
+    const now = sources.filter(s => !isLive(s)).length;
+    calm = now < pending ? 0 : calm + 1;
+    pending = now;
+  }
+  if (pending) Logger.log('Holdings: ' + pending + ' position(s) without a live price after ' + Math.round((clock() - started) / 1000) + ' s');
+  return sources.map(isLive);
+}
+
+/** The latest price the history has for each account|ticker, from days before `beforeKey`. */
+function latestHistoryPrices(historyValues, beforeKey) {
+  const best = {};
+  historyValues.slice(1).forEach(r => {
+    if (!r[0] || !(invNumber(r[4]) > 0)) return;
+    const day = normalizeDateForCompare(r[0]), key = r[1] + '|' + r[2];
+    if (day >= beforeKey) return;
+    if (!best[key] || best[key].day < day) best[key] = { day: day, price: invNumber(r[4]) };
+  });
+  const out = {};
+  Object.keys(best).forEach(k => { out[k] = best[k].price; });
+  return out;
 }
 
 // ====================================================================================================

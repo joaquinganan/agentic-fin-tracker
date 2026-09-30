@@ -40,6 +40,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v153.test.js` | Incoming Transfers gets what Bank Transfers gets (styles, fitted columns, date order) and is deleted by Reset System. |
 | `v154.test.js` | Categories typed in the transfer sheets reach Transactions at once; rows typed in Incoming Transfers are saved (once, category kept) or listed in Unrecognized. |
 | `v151.test.js` (v1.1.55) | Every statement credit; a statement imported by an earlier version read again without duplicates. Fixtures: `fixtures/statements/make_statement_text.py` → text, `make_synthetic_pdf.py` → PDF. |
+| `v156.test.js` | Waiting for live prices (loads, never loads, time limit), unpriced positions, the Day change column, session moves, the email note, and a refresh recording the loaded price. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

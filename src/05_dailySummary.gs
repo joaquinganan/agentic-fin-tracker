@@ -544,8 +544,12 @@ function buildDailySummaryEmail(s, opts) {
     ]);
     if (iv.movers.length) {
       inner += '<div style="height:10px;font-size:0">&nbsp;</div>' + ekList(iv.movers.map(m => ({
-        title: m.ticker, meta: m.account + ' · biggest move' + (since ? ' since ' + since : ''), right: summarySignedPctFine(m.change),
-        rightTone: m.change >= 0 ? 'good' : 'bad' })));
+        title: m.ticker, meta: m.account + (m.session ? ' · last session' : ' · since ' + (since || 'the last update')),   // v1.1.56
+        right: summarySignedPctFine(m.change), rightTone: m.change >= 0 ? 'good' : 'bad' })));
+    }
+    if (iv.stale) {   // v1.1.56
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
+        ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));

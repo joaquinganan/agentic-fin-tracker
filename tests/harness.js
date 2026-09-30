@@ -43,6 +43,7 @@ function load(options) {
     Logger: { log: m => logs.push(String(m)) },
     Session: { getScriptTimeZone: () => 'America/Santo_Domingo', getActiveUser: () => ({ getEmail: () => 'new.user@example.com' }) },
     Utilities: {
+      sleep: ms => { sandbox.__slept = (sandbox.__slept || 0) + ms; },   // v1.1.56: no real waiting; the total is kept
       formatDate(d, tz, fmt) {
         return fmt.replace('yyyy', d.getFullYear()).replace('MM', pad(d.getMonth() + 1)).replace('dd', pad(d.getDate()));
       },

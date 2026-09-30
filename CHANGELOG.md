@@ -2,6 +2,22 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.56 (Sept 29, 2026) — the daily investments figures use prices that actually loaded
+- **Reported:** the daily report's investments looked wrong and its "biggest moves" didn't really show. Each refresh
+  rewrites Holdings' GOOGLEFINANCE formulas and read their values right after `flush()` — while they were still loading,
+  so every stock fell back to its last known price (the ledger's, usually the snapshot's) and that went into the history
+  as the day's price. Day after day the same prices: no moves, stale daily changes, and a false jump on a day they did
+  load. A refresh now waits for the prices (checking each position's Price source every 1.5 s until all are live;
+  stopping after 4 checks without progress — a symbol Google Finance doesn't know never loads — or at 15 s). A position
+  still without a live price is valued at the history's latest price and recorded with no price, so it can't make a
+  move that didn't happen; the daily email says how many.
+- "Biggest moves" now come from the market's own change of the last session (GOOGLEFINANCE "changepct", kept in a
+  hidden Holdings column and in the history's new Day change column) — a Monday shows Friday's moves instead of none,
+  since the prices at 6 AM on Sunday and Monday are both Friday's close. Crypto, with no session, still compares with
+  the previous update's price.
+- Tests: 190, on `src/` and on the single file (mutation-checked: the wait, session moves, valuing at the history's
+  price, giving up on a symbol that never loads).
+
 ### v1.1.55 (Sept 29, 2026) — every credit on a statement; statements read again
 - **Requested:** credits with other descriptions were left out of Banesco statements (only "Ach Ibanking" and "Lbtr …"
   were taken). Every credit is now taken, its description kept as the name so a Custom Rule can match it; what it pays
