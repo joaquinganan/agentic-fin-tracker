@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.60"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.61"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1051,6 +1051,15 @@ function buildRunSummary(r) {
   }
   if (r.search && r.search.capped) {
     lines.push("⚠️ Hit the " + MAX_THREADS_PER_RUN + "-thread cap — split this date range into smaller pieces.");
+  }
+  if (r.search && r.search.untracked && r.search.untracked.length) {   // v1.1.61
+    lines.push("⚠️ Emails found from banks NOT ticked in the Setup Wizard: " + r.search.untracked.join(", ") +
+      ". They were not read: tick them in 🔧 Setup Wizard and run this range again.");
+  }
+  const byBank = {};   // v1.1.61: what each bank gave, so a bank that gives nothing is easy to spot
+  (r.transactions || []).forEach(t => { byBank[t.bank] = (byBank[t.bank] || 0) + 1; });
+  if (Object.keys(byBank).length) {
+    lines.push("🏦 Parsed by bank: " + BANK_ORDER.filter(b => byBank[b]).map(b => b + " " + byBank[b]).join(" · "));
   }
   if (r.threads.length === 0) {
     lines.push("", "⚠️ 0 emails found — check that the selected banks match your real emails. " +

@@ -3,7 +3,7 @@
 [![tests](https://github.com/joaquinganan/agentic-fin-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/joaquinganan/agentic-fin-tracker/actions/workflows/tests.yml)
 
 A personal-finance tracker that reads the transaction alerts Dominican banks send by email (LAFISE, BANESCO,
-BHD, POPULAR, BDI), turns them into categorized transactions in Google Sheets, keeps a live Dashboard, and sends
+BHD, BDI, POPULAR, Scotiabank, QIK, Banreservas), turns them into categorized transactions in Google Sheets, keeps a live Dashboard, and sends
 a daily and a monthly summary email. It runs on Google Apps Script, bound to the spreadsheet, with no servers or
 paid services.
 

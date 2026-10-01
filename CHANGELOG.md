@@ -2,6 +2,39 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.61 (Oct 1, 2026): more formats from real samples; Banreservas; unknown emails never guessed for the newer banks
+- **Reported:** BDI emails that aren't purchases were saved as spending, among them a welcome email that lists the first
+  deposit and the account's limits. Found on a real sample: a BDI interbank transfer **received** has the same subject as
+  one sent ("… transacción Interbancaria"), so it was typed Transfer; its extractor (sent only) returned nothing and the
+  generic amount guesser saved RD$ received as a transfer sent, with a garbled name. v1.1.60's note said such an email
+  was "left for Unrecognized", but the guesser ran anyway. Now:
+  - a bank can read the type from the body (`detectType`). BDI's "Interbancaria Recibida" is Incoming (negative; yours,
+    Exclude, when the payer and the beneficiary are the same person), and Recategorize keeps it, since an Incoming row
+    keeps its type (v1.1.51);
+  - **strict banks** (BDI, Scotiabank, QIK, Banreservas): an email none of their extractors recognizes goes to
+    Unrecognized ("Format not known yet: nothing guessed"), never to Transactions;
+  - welcome and account-opening emails ("bienvenido/a", "primer depósito", "apertura de cuenta") are non-transactional.
+    A real transaction that says so is still read, as with the security footer in v1.1.60.
+  Rows already saved from those emails stay until deleted; once deleted, a date-range run reads the emails again.
+- **Reported:** Scotiabank purchases never showed up. The real email reads correctly through the full parser (in memory)
+  and did in v1.1.60, so the cause is outside the parser; the likeliest is the bank being unticked (a bank added in a
+  new version starts unticked in a setup saved before). A run now checks the banks that are NOT ticked (one search each,
+  at most one result) and names those with emails in the range in the summary. The summary also counts what each bank
+  gave ("🏦 Parsed by bank"), so a bank that gives nothing is easy to spot.
+- From real samples (another user; fixtures keep the structure with invented data):
+  - **LAFISE** card payments (bancanet@notificaciones.lafise.com) and a second card-purchase template ("Detalle de
+    Transaccion Tarjeta de Crédito", notificacioneslafisedo@lafise.com.do). Neither sender was in the search, so neither
+    ever arrived. Payments are Card Payment (Exclude), only when "Exitoso", with the card's masked number in the name;
+    the purchase's currency comes as a cut-off word ("PESOS DOMI"), and a word that isn't known is not guessed.
+  - **QIK** Código CASH withdrawals (they were filtered: their footer mentions a security code and no extractor knew them).
+  - **Scotiabank** "Pago al Instante recibido": Incoming, named after the sending bank (the email names no person).
+  - **Banreservas**, a new bank: transfers sent from the app (the beneficiary; the tax and commission as their own row
+    when not zero), TuEfectivo withdrawals (the phone number is not kept) and transfers received (Incoming; the email
+    doesn't name the account holder, so whether it's your own money is left to a Custom Rule).
+- Tests: 219, on `src/` and on the single file (mutation-checked, 15 mutations: strict banks, the type read from the
+  body, both new LAFISE senders, the card-payment template, only Exitoso, the currency word, QIK cash, the holder check,
+  the welcome keywords, the zero fee row, the unticked-bank check and its summary line).
+
 ### v1.1.60 (Sept 30, 2026) — BDI read for real; Scotiabank and QIK added
 - From real samples (shared by another user; the fixtures keep their structure with invented data): **BDI** card
   purchases (a table of rows — approved ones only) and interbank transfers sent ("[Salida]": the amount to the

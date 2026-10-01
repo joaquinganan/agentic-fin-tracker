@@ -1,0 +1,21 @@
+Transferencia Recibida
+Te notificamos que la siguiente transferencia fue recibida:
+Monto:
+RD$ 2,500.00
+Transacción:
+Pago al instante BCRD
+Origen:
+JUAN PEREZ
+Banco Origen:
+BANCO EJEMPLO, S.A.
+Destino:
+Cuenta de Ahorros •••• 0000
+Fecha:
+01/09/2026 07:32 AM
+Recibido por los valores indicados en este comprobante.
+Banreservas envía este correo electrónico porque tu perfil
+nos indica que esta información es relevante para ti.
+No respondas a este mensaje, has sido notificado de forma
+automática.
+De no reconocer esta transacción
+, favor contactarnos al (809) 960-4400.

@@ -48,7 +48,8 @@ full, deductions taken off your net income.
 6. Fill in your information:
    - Email, income currency, monthly gross salary and any other monthly income (no deductions)
    - Deductions: automatic (DOP salary, DR payroll rules) or entered manually
-   - Banks to track (LAFISE, BANESCO, BHD, POPULAR, BDI) and, for each, your credit card with its statement and payment days
+   - Banks to track (LAFISE, BANESCO, BHD, BDI, POPULAR, Scotiabank, QIK, Banreservas; a bank added in a newer version
+     starts unticked in a saved setup, and a run that finds its emails says so) and, for each, your credit card with its statement and payment days
    - Optionally, summary emails: daily and/or monthly (on the 1st), recipient, hour, and what the daily one includes
 7. Click **✅ Save Configuration**
 
@@ -63,13 +64,14 @@ full, deductions taken off your net income.
 
 ## 📋 WHAT IT DOES
 
-Reads your banks' notification emails (LAFISE, BANESCO, BHD, POPULAR; BDI via a generic
-fallback until a real sample exists), extracts each transaction, categorizes it, and keeps
+Reads your banks' notification emails (LAFISE, BANESCO, BHD, BDI, POPULAR, Scotiabank, QIK, Banreservas),
+extracts each transaction, categorizes it, and keeps
 a Google Sheet with a live Dashboard. Runs every day at 6:00 AM and on demand.
 
 ```
 Gmail (by sender) → parse each message → filters (promotional / non-transactional / declined)
-  → Type (subject first, then body) → bank+type extractor (generic fallback if none)
+  → Type (the bank's own reading, then subject, then body) → bank+type extractor
+    (generic fallback if none, except strict banks: BDI, Scotiabank, QIK, Banreservas → Unrecognized)
   → Custom Rules, then default categories → batch save (dedup by Gmail message id)
   → sort → recategorize + rebuild Raw_<BANK> / Bank Transfers → Dashboard
 ```
@@ -179,7 +181,6 @@ suite against another copy of the code.
 
 - A real **bundled multi-transaction BHD transfer** .eml (the "no Beneficiario" fallback is still inferred).
 - A real **LAFISE transfer** .eml (current extractor is a stopgap).
-- A real **BDI** consumo sample (BDI uses the generic fallback).
 - A real **cashback** email (IsCashback has never been YES on real data).
 - A real **multi-row BHD email with a declined row** (M1 is covered by a synthetic fixture only).
 - Exchange rates are manual; EUR/COP defaults are approximations.

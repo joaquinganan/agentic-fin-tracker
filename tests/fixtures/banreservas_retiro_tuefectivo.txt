@@ -1,0 +1,18 @@
+Estimado Cliente
+Le notificamos que se realizó la siguiente transacción en TuB@nco Banreservas:
+Transacción:
+Retiro TuEfectivo
+Origen:
+Cuenta de ahorro *0000
+Destino:
+Tel. móvil: 8090000000
+Monto:
+DOP 1,000.00
+Comisión:
+Impuestos:
+Fecha/Hora:
+20 de Septiembre 2026 - 10:28 AM
+Numero de referencia:
+100000000002
+Para más información puede comunicarse con nuestro Centro de Cont@cto al (809) 960-2121 y (809) 200-2131 desde el interior sin cargos.
+Este correo se genera de forma automática. Favor no responder.

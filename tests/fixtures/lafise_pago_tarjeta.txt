@@ -1,0 +1,38 @@
+Notificación de pago de tarjeta de crédito
+Cuenta de origen
+Titular:
+MARIA ELENA GOMEZ
+Número de cuenta:
+DO00XXXX00000000000000000000
+Moneda:
+DOP
+Tipo:
+Cuenta de Ahorro
+Tarjeta de crédito
+Titular:
+MARIA ELENA GOMEZ
+Número de tarjeta de crédito:
+XXXX-1111
+Moneda:
+DOP
+Moneda internacional:
+USD
+Datos de la operación
+Operador:
+MARIA ELENA GOMEZ
+Concepto:
+Pago de Tarjeta de Crédito
+Monto:
+DOP 2,345.67
+Fecha:
+15/SEP/2026 20:00:12 PM
+Resultado
+Estado:
+Exitoso
+Referencia:
+100000001
+Puede escribirnos o llamarnos en:
+Rep. Dominicana: (809) 541 4100  Correo: servicioalclienterd@lafise.com
+Como protección a su privacidad le recordamos que Banco LAFISE nunca le solicitará información confidencial por correo electrónico o por teléfono.  Para su seguridad inicie siempre usted la llamada a su institución bancaria.
+Muchas gracias
+**Este es un mensaje generado de forma automática, favor no responder.**

@@ -54,7 +54,7 @@ test('Setup Wizard contains no personal values; a first run suggests the current
   const code = require('fs').readdirSync(root).filter(f => f.endsWith('.gs'))
     .map(f => require('fs').readFileSync(require('path').join(root, f), 'utf8')).join('\n').toLowerCase();
   // bank and broker senders (v1.1.29: HAPI), and example.com — nobody's personal address
-  const bankSenders = /@(bancolafise\.com|notificaciones\.lafise\.com|lafise\.com|scotiabank\.com|scotiabank\.com\.do|qik\.do|qik\.com\.do|bhd\.com\.do|banesco\.com\.do|popularenlinea\.com|bdi\.com\.do|hapi\.trade|example\.com)$/i;
+  const bankSenders = /@(bancolafise\.com|notificaciones\.lafise\.com|lafise\.com|lafise\.com\.do|banreservas\.com|scotiabank\.com|scotiabank\.com\.do|qik\.do|qik\.com\.do|bhd\.com\.do|banesco\.com\.do|popularenlinea\.com|bdi\.com\.do|hapi\.trade|example\.com)$/i;
   const emails = code.match(/[a-z0-9._+-]+@[a-z0-9-]+\.[a-z0-9.]+/g) || [];
   assert.deepEqual(emails.filter(e => !bankSenders.test(e)), [], 'only bank senders and example.com in the code');
   assert.ok(!/'day \d+'/.test(code), 'no statement or payment dates baked into the code');

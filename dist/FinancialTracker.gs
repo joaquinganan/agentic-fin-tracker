@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.60 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.61 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.60"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.61"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1065,6 +1065,15 @@ function buildRunSummary(r) {
   if (r.search && r.search.capped) {
     lines.push("⚠️ Hit the " + MAX_THREADS_PER_RUN + "-thread cap — split this date range into smaller pieces.");
   }
+  if (r.search && r.search.untracked && r.search.untracked.length) {   // v1.1.61
+    lines.push("⚠️ Emails found from banks NOT ticked in the Setup Wizard: " + r.search.untracked.join(", ") +
+      ". They were not read: tick them in 🔧 Setup Wizard and run this range again.");
+  }
+  const byBank = {};   // v1.1.61: what each bank gave, so a bank that gives nothing is easy to spot
+  (r.transactions || []).forEach(t => { byBank[t.bank] = (byBank[t.bank] || 0) + 1; });
+  if (Object.keys(byBank).length) {
+    lines.push("🏦 Parsed by bank: " + BANK_ORDER.filter(b => byBank[b]).map(b => b + " " + byBank[b]).join(" · "));
+  }
   if (r.threads.length === 0) {
     lines.push("", "⚠️ 0 emails found — check that the selected banks match your real emails. " +
       "Run debugBankEmailSample() from the Apps Script editor (View > Logs) to see them.");
@@ -1978,8 +1987,12 @@ const BANK_PATTERNS = {
     // looked for the consumption-alert sender.
     fromDomain: 'lafise.com',
     // v1.1.51: incoming "Pagos al Instante" transfers come from a third address
-    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com',
-    extractors: { consumo: extractLAFISETransactions, transfer: extractLAFISETransferTransactions, incoming: extractLAFISEIncomingTransactions },
+    // v1.1.61: two more, from real samples: card payments (bancanet@notificaciones.lafise.com) and a second card-alert
+    // template (notificacioneslafisedo@lafise.com.do). Neither was searched, so neither ever reached the sheet.
+    searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com' +
+      ' OR from:bancanet@notificaciones.lafise.com OR from:notificacioneslafisedo@lafise.com.do',
+    extractors: { consumo: extractLAFISEAnyConsumo, transfer: extractLAFISETransferTransactions, incoming: extractLAFISEIncomingTransactions,
+      cardPayment: extractLAFISECardPaymentTransactions },
     keywords: ['LAFISE', 'LAFISE BANCO'],
     merchantPattern: /(?:en|en el|en\s+)([^\n]{10,50})/i
   },
@@ -2014,7 +2027,11 @@ const BANK_PATTERNS = {
     fromDomain: 'bdi.com.do',
     searchQuery: 'from:bdi.com.do',
     // v1.1.60: real samples — card purchases ("Notificacion de Consumos") and interbank transfers sent
-    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions },
+    // v1.1.61: interbank transfers RECEIVED (same subject as the ones sent; the body says "Recibida"), and strict: an
+    // email none of these recognizes goes to Unrecognized instead of being guessed (see STRICT_BANK_NOTE)
+    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions, incoming: extractBDIIncomingTransactions },
+    detectType: (subject, text) => /Interbancaria\s+Recibida/i.test(text) ? 'Incoming' : null,
+    strict: true,
     keywords: ['BDI', 'BDI DIGITAL', 'BANCO BDI'],
     merchantPattern: /(?:en|en el|hacia|a)([^\n]{10,50})/i
   },
@@ -2023,7 +2040,9 @@ const BANK_PATTERNS = {
     name: 'SCOTIABANK',
     fromDomain: 'scotiabank.com',                        // alertas@scotiabank.com, and *.scotiabank.com.do
     searchQuery: 'from:alertas@scotiabank.com OR from:scotiabank.com.do',
-    extractors: { consumo: extractSCOTIABANKConsumoTransactions },
+    extractors: { consumo: extractSCOTIABANKConsumoTransactions, incoming: extractSCOTIABANKIncomingTransactions },   // v1.1.61: incoming
+    detectType: (subject, text) => /recibido un cr[ée]dito a su cuenta/i.test(text) ? 'Incoming' : null,
+    strict: true,                                        // v1.1.61
     keywords: ['SCOTIABANK', 'SCOTIA'],
     merchantPattern: /\ben\s+(.{3,50}?)\s+con su/i
   },
@@ -2031,15 +2050,38 @@ const BANK_PATTERNS = {
     name: 'QIK',
     fromDomain: '@qik.',                                 // notificaciones@qik.do, …@qik.com.do
     searchQuery: 'from:qik.do OR from:qik.com.do',
-    extractors: { consumo: extractQIKConsumoTransactions },
+    extractors: { consumo: extractQIKConsumoTransactions },   // v1.1.61: also Código CASH withdrawals
+    strict: true,                                        // v1.1.61
     keywords: ['QIK'],
     merchantPattern: /\ben\s+(.{3,50}?)\s+con tu tarjeta/i
+  },
+  // v1.1.61: from real samples. Two senders: the app's receipts ("Recibo de la transacción": transfers sent and
+  // TuEfectivo withdrawals) and notificaciones@ ("Notificaciones Banreservas": transfers received). Neither subject says
+  // what happened, so the type is read from the body (detectType).
+  BANRESERVAS: {
+    name: 'BANRESERVAS',
+    fromDomain: 'banreservas.com',
+    searchQuery: 'from:notificaciones@banreservas.com OR from:NotificacionesTuBancoApp@banreservas.com',
+    extractors: { consumo: extractBANRESERVASWithdrawalTransactions, transfer: extractBANRESERVASTransferTransactions,
+      incoming: extractBANRESERVASIncomingTransactions },
+    detectType: detectBANRESERVASType,
+    strict: true,
+    keywords: ['BANRESERVAS'],
+    merchantPattern: /Destino:\s*([^,\n]{3,50})/i
   }
 };
 
 // v1.1.60: THE list of banks, in tab order (Raw_BDI before Raw_POPULAR, as asked in v1.1.5) — the Setup Wizard, View
 // Config and the sheet order all come from it, so a bank is added in one place
-const BANK_ORDER = ['LAFISE', 'BANESCO', 'BHD', 'BDI', 'POPULAR', 'SCOTIABANK', 'QIK'];
+const BANK_ORDER = ['LAFISE', 'BANESCO', 'BHD', 'BDI', 'POPULAR', 'SCOTIABANK', 'QIK', 'BANRESERVAS'];
+
+/**
+ * v1.1.61: a bank marked `strict` never goes to the generic amount guesser (extractAllAmounts). An email of its own that
+ * none of its extractors recognizes (a welcome email, an account-opening notice, a template never seen) goes to
+ * Unrecognized, where it can be looked at, instead of being saved as a purchase. Reported on BDI: transfers received
+ * and a welcome email listing deposit limits were saved as spending.
+ */
+const STRICT_BANK_NOTE = 'Format not known yet: nothing guessed. Share its original email (.eml) to add it';
 
 /**
  * v1.0.3: Emails to reject outright — marketing/promo sends from the bank,
@@ -2093,6 +2135,9 @@ const NON_TRANSACTIONAL_KEYWORDS = [
   // Surveys / service announcements / events
   'QUEREMOS CONOCER TU OPINIÓN', 'QUEREMOS CONOCER TU OPINION', 'ENCUESTA',
   'ACOMPÁÑANOS', 'ACOMPAÑANOS', 'FORMA MÁS CONVENIENTE', 'FORMA MAS CONVENIENTE',
+  // v1.1.61: welcome / account-opening emails (BDI's lists the first deposit and the account's limits as amounts). A real
+  // transaction that happens to say "bienvenido" is still read: its bank's extractor finds it (see parseEmailMessage)
+  'BIENVENIDO', 'BIENVENIDA', 'PRIMER DEPÓSITO', 'PRIMER DEPOSITO', 'APERTURA DE CUENTA', 'APERTURA DE TU CUENTA',
   // Credit limit change notices — mention a dollar figure, but it's a limit, not a purchase
   'ACTUALIZACIÓN DE LÍMITE', 'ACTUALIZACION DE LIMITE', 'AUMENTO DE LÍMITE', 'AUMENTO DE LIMITE',
   'INCREMENTO DE LÍMITE', 'INCREMENTO DE LIMITE', 'NUEVO LÍMITE', 'NUEVO LIMITE',
@@ -2144,7 +2189,7 @@ const TYPE_KEYWORDS = {
 const TYPE_SUBJECT_KEYWORDS = {
   // v1.1.51: money received. First: its body says "TRANSFERENCIA ... RECIBIDA" and "PAGOS AL INSTANTE", which are
   // Transfer keywords — without this, a received transfer would be read as one sent.
-  'Incoming': ['TRANSFERENCIA ENTRANTE'],
+  'Incoming': ['TRANSFERENCIA ENTRANTE', 'PAGO AL INSTANTE RECIBIDO'],   // v1.1.61: Scotiabank
   'Transfer': [
     '¡TRANSFERENCIA EXITOSA!',              // LAFISE
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
@@ -2161,6 +2206,7 @@ const TYPE_SUBJECT_KEYWORDS = {
   // original purchases that made up the balance.
   'Card Payment': [
     '¡REALIZASTE UN PAGO A TU TARJETA',     // LAFISE
+    'NOTIFICACIÓN DE PAGO DE TARJETA', 'NOTIFICACION DE PAGO DE TARJETA',   // LAFISE, from bancanet@ (v1.1.61)
   ],
   // v1.1.19 (C3): confirmed CONSUMO subjects. Matching one of these pins the
   // email to Transaction (only a Cashback refinement from the body is still
@@ -2173,6 +2219,8 @@ const TYPE_SUBJECT_KEYWORDS = {
     'ALERTA DE CONSUMO BANESCO',                                            // BANESCO
     'BHD NOTIFICACIÓN DE TRANSACCIONES', 'BHD NOTIFICACION DE TRANSACCIONES', // BHD
     'NOTIFICACIÓN DE CONSUMO', 'NOTIFICACION DE CONSUMO',                   // POPULAR
+    'DETALLE DE TRANSACCION TARJETA', 'DETALLE DE TRANSACCIÓN TARJETA',     // LAFISE, second card template (v1.1.61)
+    'RETIRO CON CÓDIGO CASH', 'RETIRO CON CODIGO CASH',                     // QIK (v1.1.61)
   ]
 };
 
@@ -2503,7 +2551,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
     if (isNonTransactionalEmail(subject, plainText)) {
       // v1.1.60: a footer like "we'll never ask for your card's security code" isn't a security-code email. When the
       // bank's own extractor finds a real transaction (an amount), the email is read; otherwise it's filtered.
-      const bankType = detectTransactionType(subject, plainText);
+      const bankType = bankTransactionType(bankPattern, subject, plainText);   // v1.1.61: the bank's own reading first
       const real = bankPattern.extractors && Object.keys(bankPattern.extractors).length &&
         extractTransactionItems(bank, bankType, plainText).some(x => x && x.amount > 0);
       if (!real) {
@@ -2520,7 +2568,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
     }
 
     const date = formatDate(message.getDate());
-    const type = detectTransactionType(subject, plainText);
+    const type = bankTransactionType(bankPattern, subject, plainText);   // v1.1.61
 
     let items = extractTransactionItems(bank, type, plainText);
     items.forEach(it => { it.merchant = fixStatusAsMerchant(it.merchant, subject, plainText); });   // v1.1.34
@@ -2531,14 +2579,14 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       Logger.log("Skipped declined transaction (row-level status): " + subject);
       return { items: [], status: 'filtered' };
     }
-    if (items.length === 0) {
+    if (items.length === 0 && !bankPattern.strict) {   // v1.1.61: a strict bank's unknown email is never guessed
       items = extractAllAmounts(plainText, bankPattern);
     }
     if (items.length === 0) {
       stats.amountNotFound++;
       const snippet = plainText.substring(0, 700).replace(/\s+/g, ' ').trim();
       Logger.log("Amount not found | " + bank + " | " + subject + " | Body: \"" + snippet + "\"");
-      return { items: [], status: 'failed', bank: bank, reason: 'Amount not found', snippet: snippet };
+      return { items: [], status: 'failed', bank: bank, reason: bankPattern.strict ? STRICT_BANK_NOTE : 'Amount not found', snippet: snippet };
     }
 
     const results = [];
@@ -2640,8 +2688,19 @@ function detectCurrencyFromMatch(matchText) {
  */
 function extractTransactionItems(bank, type, text) {
   const extractors = (BANK_PATTERNS[bank] && BANK_PATTERNS[bank].extractors) || {};
-  const fn = type === 'Transfer' ? extractors.transfer : type === 'Incoming' ? extractors.incoming : extractors.consumo;
+  const fn = type === 'Transfer' ? extractors.transfer : type === 'Incoming' ? extractors.incoming :
+    (type === 'Card Payment' && extractors.cardPayment) || extractors.consumo;   // v1.1.61: a card payment's own template
   return fn ? fn(text) : [];
+}
+
+/**
+ * v1.1.61: the type of an email, read by its bank first. Some banks use one subject for different things (Banreservas'
+ * "Recibo de la transacción" is a transfer or a withdrawal; BDI's "Comprobante transacción Interbancaria" is sent or
+ * received), so a bank can declare detectType(subject, text); when it returns nothing, the shared rules decide.
+ */
+function bankTransactionType(bankPattern, subject, text) {
+  const own = bankPattern && bankPattern.detectType ? bankPattern.detectType(subject, String(text || '').replace(/\s+/g, ' ')) : null;
+  return own || detectTransactionType(subject, text);
 }
 
 /**
@@ -3189,7 +3248,28 @@ function searchTransactionEmailsByDateRange(startDate, endDate, banksToTrack) {
   const result = gmailSearchAll(query, MAX_THREADS_PER_RUN);
   Logger.log("Found " + result.threads.length + " thread(s)" +
              (result.capped ? " — hit the " + MAX_THREADS_PER_RUN + "-thread cap, split the range" : ""));
-  return { threads: result.threads, range: range, capped: result.capped, query: query };   // v1.1.44: query, to mark only what's pending
+  return { threads: result.threads, range: range, capped: result.capped, query: query,   // v1.1.44: query, to mark only what's pending
+           untracked: findUntrackedBanks(selectedBanks, range) };                        // v1.1.61
+}
+
+/**
+ * v1.1.61: banks NOT ticked in the Setup Wizard that do have emails in this range (one quick search each, one result
+ * at most). Reported: Scotiabank purchases never showed up while the same email was read correctly in memory. A bank
+ * added in a new version starts unticked in a setup saved before (v1.1.60), so its emails are never searched; the run
+ * summary now says so instead of staying silent. Never stops the run.
+ */
+function findUntrackedBanks(selectedBanks, range) {
+  const out = [];
+  BANK_ORDER.filter(b => selectedBanks.indexOf(b) === -1 && BANK_PATTERNS[b] && BANK_PATTERNS[b].searchQuery).forEach(b => {
+    try {
+      const q = '(' + BANK_PATTERNS[b].searchQuery + ') after:' + toEpochSeconds(range.start) + ' before:' + toEpochSeconds(range.endExclusive);
+      if (GmailApp.search(q, 0, 1).length) out.push(b);
+    } catch (error) {
+      Logger.log('Could not check ' + b + ' (not ticked): ' + error);
+    }
+  });
+  if (out.length) Logger.log('⚠️ Emails found from banks not ticked in the Setup Wizard: ' + out.join(', '));
+  return out;
 }
 
 /* ======================================================================
@@ -3381,17 +3461,173 @@ function extractSCOTIABANKConsumoTransactions(text) {
   return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: currency, merchant: m[4].trim().substring(0, 50), context: m[0] }];
 }
 
+
+/* ======================================================================
+ * v1.1.61: more formats, from real samples shared by another user (the fixtures keep their structure with invented
+ * data). Same approach as above: each reads the text flattened to single spaces.
+ * ====================================================================== */
+const flatText = text => String(text || '').replace(/\s+/g, ' ');
+const moneyNumber = s => parseFloat(String(s).replace(/,/g, ''));
+
+/** LAFISE card purchases: the original template ("Comercio/Ciudad/País:"), or the second one below. */
+function extractLAFISEAnyConsumo(text) {
+  const first = extractLAFISETransactions(text);
+  return first.length ? first : extractLAFISECardDetailTransactions(text);
+}
+
 /**
- * QIK "Usaste tu tarjeta de crédito Qik": "Se hizo una transacción de RD$ 640.00 en <merchant> con tu tarjeta …".
- * The email also shows the card's available balance — never taken for the amount.
+ * LAFISE "Detalle de Transaccion Tarjeta de Crédito" (notificacioneslafisedo@lafise.com.do):
+ *   COMERCIO: <merchant> MONTO: 1,234.56 PESOS DOMI FECHA: dd/mm/yyyy
+ * The currency comes as a word after the amount, cut short ("PESOS DOMI"). A currency word that isn't recognized is not
+ * guessed: nothing is returned and the email goes to Unrecognized.
+ */
+function extractLAFISECardDetailTransactions(text) {
+  const flat = flatText(text);
+  const m = flat.match(/COMERCIO:\s*(.+?)\s*MONTO:\s*(RD\$|US\$|DOP|USD|EUR)?\s*([\d,]+\.\d{2})\s*(.*?)\s*FECHA:/i);
+  if (!m) return [];
+  let currency = m[2] ? moneyCurrency(m[2]) : null;
+  if (!currency) {
+    const word = m[4].toUpperCase();
+    if (/^PESOS?\s*DOM|^RD|^DOP/.test(word)) currency = 'DOP';
+    else if (/^D[OÓ]LAR|^US/.test(word)) currency = 'USD';
+    else if (/^EURO/.test(word)) currency = 'EUR';
+    else return [];
+  }
+  return [{ amount: moneyNumber(m[3]), currency: currency, merchant: m[1].trim().substring(0, 50), context: m[0] }];
+}
+
+/**
+ * LAFISE "Notificación de pago de tarjeta de crédito" (bancanet@notificaciones.lafise.com): Concepto, Monto, Estado and
+ * the card's last digits. Only a payment marked Exitoso counts; any other state is treated as declined.
+ */
+function extractLAFISECardPaymentTransactions(text) {
+  const flat = flatText(text);
+  const m = flat.match(/Concepto:\s*(.+?)\s*Monto:\s*(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})/i);
+  if (!m) return [];
+  const card = (flat.match(/N[úu]mero de tarjeta de cr[ée]dito:\s*(\S+)/i) || [])[1] || '';
+  const state = (flat.match(/Estado:\s*(\S+)/i) || [])[1] || '';
+  const ref = (flat.match(/Referencia:\s*(\d{4,})/i) || [])[1] || '';
+  return [{ amount: moneyNumber(m[3]), currency: moneyCurrency(m[2]), merchant: (m[1].trim() + (card ? ' ' + card : '')).substring(0, 50),
+    declined: !!state && !/^EXITOS[AO]$/i.test(state), ref: ref ? 'PAY:' + ref : '', context: 'card payment' }];
+}
+
+/**
+ * BDI "Comprobante Transacción Interbancaria Recibida": who paid (Pagado Por), the amount. Yours when the payer and the
+ * beneficiary are the same person.
+ */
+function extractBDIIncomingTransactions(text) {
+  const flat = flatText(text);
+  if (!/Interbancaria\s+Recibida/i.test(flat)) return [];
+  const amt = flat.match(/Monto\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
+  if (!amt) return [];
+  const payer = ((flat.match(/Pagado Por\s+(.+?)\s+Fecha Transacci[óo]n/i) || [])[1] || '').trim();
+  const beneficiary = ((flat.match(/Nombre Beneficiario\s+(.+?)\s+No\. Autorizaci[óo]n/i) || [])[1] || '').replace(/[\s.]+$/, '').trim();
+  const ref = (flat.match(/No\. Referencia\s+(\d+)/i) || [])[1] || '';
+  return [{ amount: moneyNumber(amt[2]), currency: moneyCurrency(amt[1]), merchant: (payer || 'Interbank transfer received').substring(0, 50),
+    own: !!(payer && beneficiary && sameHolder(payer, beneficiary)), ref: ref ? 'IN:' + ref : '', context: 'incoming transfer' }];
+}
+
+/**
+ * Scotiabank "Pago al Instante recibido": "Ha recibido un crédito a su cuenta ***1234 por un Pago al Instante realizado
+ * desde Banco X por valor de $1,250.00 DOP." The email names the sending bank, not the person.
+ */
+function extractSCOTIABANKIncomingTransactions(text) {
+  const flat = flatText(text);
+  const m = flat.match(/recibido un cr[ée]dito a su cuenta.*?(?:desde\s+(.+?)\s+)?por valor de\s+(RD\$|US\$|\$)?\s*([\d,]+\.\d{2})\s*(USD|DOP|EUR)?/i);
+  if (!m) return [];
+  const currency = m[4] ? moneyCurrency(m[4]) : (m[2] === 'US$' ? 'USD' : 'DOP');
+  const how = /Pago al Instante/i.test(m[0]) ? 'Pago al Instante' : 'Crédito recibido';
+  return [{ amount: moneyNumber(m[3]), currency: currency, merchant: (how + (m[1] ? ' desde ' + m[1].trim() : '')).substring(0, 50),
+    own: false, context: 'incoming transfer' }];
+}
+
+/**
+ * QIK. A card purchase ("Se hizo una transacción de RD$ 640.00 en <merchant> con tu tarjeta"), or a Código CASH
+ * withdrawal ("El Código CASH … ha sido utilizado con éxito. Monto RD$ 2,000.00 Estatus Exitoso"). The email also shows
+ * the card's available balance, never taken for the amount.
  */
 function extractQIKConsumoTransactions(text) {
-  const flat = String(text || '').replace(/\s+/g, ' ');
+  const flat = flatText(text);
   const m = flat.match(/transacci[óo]n de\s+(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})\s+en\s+(.+?)\s+con tu tarjeta/i);
-  if (!m) return [];
-  const when = (flat.match(/Fecha y hora\s+(\d{2}-\d{2}-\d{4}\s+\d{1,2}:\d{2}\s*[AP]M)/i) || [])[1] || '';
-  return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: moneyCurrency(m[1]), merchant: m[3].trim().substring(0, 50),
-    timeKey: when, context: m[0] }];
+  if (m) {
+    const when = (flat.match(/Fecha y hora\s+(\d{2}-\d{2}-\d{4}\s+\d{1,2}:\d{2}\s*[AP]M)/i) || [])[1] || '';
+    return [{ amount: moneyNumber(m[2]), currency: moneyCurrency(m[1]), merchant: m[3].trim().substring(0, 50), timeKey: when, context: m[0] }];
+  }
+  if (/C[óo]digo CASH\b.*?utilizado/i.test(flat)) {   // v1.1.61
+    const cash = flat.match(/Monto\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
+    if (!cash) return [];
+    const state = (flat.match(/Estatus\s+(\S+)/i) || [])[1] || '';
+    return [{ amount: moneyNumber(cash[2]), currency: moneyCurrency(cash[1]), merchant: CODIGO_CASH_MERCHANT,
+      declined: !!state && !/^EXITOS[AO]$/i.test(state), context: 'cash withdrawal' }];
+  }
+  return [];
+}
+
+/* ---------- Banreservas (v1.1.61) ---------- */
+/** The type from the body: "Transferencia Recibida" is money received; "Transacción: Transferencia …" one sent;
+ *  "Transacción: Retiro …" a cash withdrawal. Anything else: not decided here (and, strict, not guessed). */
+function detectBANRESERVASType(subject, flat) {
+  if (/Transferencia Recibida/i.test(flat)) return 'Incoming';
+  if (/Transacci[óo]n:\s*Transferencia/i.test(flat)) return 'Transfer';
+  if (/Transacci[óo]n:\s*Retiro/i.test(flat)) return 'Transaction';
+  return null;
+}
+
+function banreservasAmount(flat) {
+  const m = flat.match(/Monto:\s*(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
+  return m ? { amount: moneyNumber(m[2]), currency: moneyCurrency(m[1]) } : null;
+}
+
+/** Tax and commission, when the receipt has them (an empty "Comisión:" is nothing). */
+function banreservasFees(flat) {
+  const fee = re => { const f = flat.match(re); return f ? moneyNumber(f[1]) : 0; };
+  return +(fee(/Comisi[óo]n:\s*(?:RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i) + fee(/Impuestos?:\s*(?:RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i)).toFixed(2);
+}
+
+function banreservasRef(flat) {
+  return (flat.match(/N[úu]mero de (?:transacci[óo]n|referencia):\s*(\d{6,})/i) || [])[1] || '';
+}
+
+/** "Recibo de la transacción" with "Transacción: Transferencia a Tercero": the beneficiary (Destino, before the comma,
+ *  without the "SR"/"SRA" the bank adds), and the tax and commission as their own row when not zero. */
+function extractBANRESERVASTransferTransactions(text) {
+  const flat = flatText(text);
+  if (!/Transacci[óo]n:\s*Transferencia/i.test(flat)) return [];
+  const amt = banreservasAmount(flat);
+  if (!amt) return [];
+  const who = ((flat.match(/Destino:\s*([^,]+?)\s*,/i) || [])[1] || '').replace(/^(SR|SRA|SRTA)\.?\s+/i, '').trim();
+  const kind = ((flat.match(/Transacci[óo]n:\s*(.+?)\s+Origen:/i) || [])[1] || 'Transferencia').trim();
+  const ref = banreservasRef(flat);
+  const out = [{ amount: amt.amount, currency: amt.currency, merchant: (who || kind).substring(0, 50), ref: ref, context: kind }];
+  const fees = banreservasFees(flat);
+  if (fees > 0) out.push({ amount: fees, currency: amt.currency, merchant: 'Banreservas: impuesto y comisión de transferencia', context: 'transfer fees' });
+  return out;
+}
+
+/** "Recibo de la transacción" with "Transacción: Retiro TuEfectivo" (cash sent to a phone): a cash withdrawal. The
+ *  phone number is not kept. */
+function extractBANRESERVASWithdrawalTransactions(text) {
+  const flat = flatText(text);
+  const kind = ((flat.match(/Transacci[óo]n:\s*(Retiro.*?)\s+Origen:/i) || [])[1] || '').trim();
+  if (!kind) return [];
+  const amt = banreservasAmount(flat);
+  if (!amt) return [];
+  const out = [{ amount: amt.amount, currency: amt.currency, merchant: (kind + ' (cash withdrawal)').substring(0, 50), ref: banreservasRef(flat), context: kind }];
+  const fees = banreservasFees(flat);
+  if (fees > 0) out.push({ amount: fees, currency: amt.currency, merchant: 'Banreservas: impuesto y comisión de retiro', context: 'withdrawal fees' });
+  return out;
+}
+
+/** "Notificaciones Banreservas" / "Transferencia Recibida": who sent it (Origen). The email doesn't name the account
+ *  holder, so whether it's your own money is left to you (a Custom Rule with your name → Exclude). */
+function extractBANRESERVASIncomingTransactions(text) {
+  const flat = flatText(text);
+  if (!/Transferencia Recibida/i.test(flat)) return [];
+  const amt = banreservasAmount(flat);
+  if (!amt) return [];
+  const sender = ((flat.match(/Origen:\s*(.+?)\s+Banco Origen:/i) || [])[1] || '').trim();
+  return [{ amount: amt.amount, currency: amt.currency, merchant: (sender || 'Transferencia recibida').substring(0, 50), own: false,
+    context: 'incoming transfer' }];
 }
 
 // ====================================================================================================

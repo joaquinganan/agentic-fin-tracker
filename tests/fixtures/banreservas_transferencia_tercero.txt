@@ -1,0 +1,21 @@
+¡Transacción realizada!
+Te notificamos que la siguiente transacción fue realizada desde tu App Banreservas:
+Monto:
+DOP 750.00
+Alquiler
+Transacción:
+Transferencia a Tercero
+Origen:
+MARIA ELENA GOMEZ , Cuenta de ahorro DOP ** - 0000
+Destino:
+SR JUAN PEREZ, Cuenta de ahorro DOP ** - 1111
+Fecha de transacción:
+10 de Septiembre 2026 - 08:07 PM
+Impuestos:
+DOP 1.13
+Número de transacción:
+100000000001
+Banreservas envía este correo electrónico porque tu perfil nos indica que esta información es relevante para ti.
+No respondas a este mensaje, has sido notificado de forma automática.
+De no reconocer esta transacción
+, favor contactarnos al (809) 960-4400

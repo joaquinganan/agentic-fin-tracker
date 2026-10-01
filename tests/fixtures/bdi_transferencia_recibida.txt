@@ -1,0 +1,28 @@
+Comprobante Transacción Interbancaria Recibida
+Pagado Por
+MARIA ELENA GOMEZ
+Fecha Transacción
+21/09/2026 18:16:37
+Tipo de Transacción
+Transferencia Interbancaria Recibidas
+No. Referencia
+4100002
+No. Contrato
+******0000
+Nombre Beneficiario
+MARIA ELENA GOMEZ .
+No. Autorización
+4100002
+Monto
+RD$3,500.00
+Comisión
+RD$0.00
+Comentario
+ahorro
+Notas de seguridad
+Asegúrate de que la dirección que aparece en tu explorador sea igual a la siguiente y que sobre todo contiene https al inicio y que aparece un candado a la izquierda
+https://www.bdi.com.do
+.
+Recuerda que el Banco BDI nunca te pedirá tus datos de acceso.
+Recibido por los valores indicados en este comprobante.
+Banco Múltiple BDI, S.A.  | Todos los derechos reservados

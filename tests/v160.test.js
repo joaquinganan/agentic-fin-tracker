@@ -66,7 +66,8 @@ test('a run with the new banks: every email saved, each bank its Raw_ sheet, in 
   assert.deepEqual(tx.map(r => r[1] + ' ' + r[3]).sort(), ['BDI 1850', 'BDI 2500', 'BDI 5', 'QIK 640', 'SCOTIABANK 25.5']);
   for (const s of ['Raw_BDI', 'Raw_SCOTIABANK', 'Raw_QIK']) assert.ok(mock.ss.getSheetByName(s), s);
   const order = h.plain(h.get('CANONICAL_SHEET_ORDER'));
-  assert.deepEqual(order.filter(n => n.indexOf('Raw_') === 0), ['Raw_LAFISE', 'Raw_BANESCO', 'Raw_BHD', 'Raw_BDI', 'Raw_POPULAR', 'Raw_SCOTIABANK', 'Raw_QIK']);
+  // v1.1.61: Raw_BANRESERVAS added at the end (BANK_ORDER)
+  assert.deepEqual(order.filter(n => n.indexOf('Raw_') === 0), ['Raw_LAFISE', 'Raw_BANESCO', 'Raw_BHD', 'Raw_BDI', 'Raw_POPULAR', 'Raw_SCOTIABANK', 'Raw_QIK', 'Raw_BANRESERVAS']);
 });
 
 test('one list of banks: the wizard, View Config and the tab order all come from it; a new bank starts unticked in a saved setup', () => {
