@@ -55,21 +55,20 @@ test('saving: stored, Dashboard rebuilt with the cards and other income, progres
   const { h, mock } = configured();
   assert.equal(h.ctx.saveSetupConfig(input()), true);
   const c = h.plain(h.ctx.getConfig());
-  assert.equal(c.otherIncome, 25000);
-  assert.equal(c.otherIncomeCurrency, 'DOP');
+  assert.deepEqual(h.plain(c.otherIncomes), [{ label: '', amount: 25000, currency: 'DOP' }], 'v1.1.59: the single field became a line');
   assert.equal(c.cards.length, 4, '"none" is not stored');
   assert.deepEqual(h.plain(mock.ss.getRangeByName('DASH_CARDS').getValues()).map(r => r.slice(0, 4)), [
     ['LAFISE · Clásica Mastercard', 0.1, 'Day 10', 'Day 5'], ['BANESCO · Super Cashback', 0.07, 'Day 20', 'Day 12'],
     ['BHD · Mi País', 0.05, 'Day 1', 'Day 22'], ['POPULAR · Visa Oro', 0.02, 'Day 28', 'Day 18']]);
   const dash = mock.ss.getSheetByName('Dashboard');
   const formulas = [...dash.cells.values()].filter(v => typeof v === 'string');
-  assert.ok(formulas.some(f => f.includes('CFG_OTHER_CURRENCY="DOP"') && f.includes('+IF(')), 'net income adds other income');
-  assert.ok(formulas.some(f => f.includes('"Other income (" & CFG_OTHER_CURRENCY')));
-  assert.equal(mock.ss.getRangeByName('CFG_OTHER_INCOME').getValue(), 25000);
+  assert.ok(formulas.some(f => f.includes('CFG_OTHER_INCOME_DOP+CFG_OTHER_INCOME_USD*')), 'other income, every currency at its rate (v1.1.59)');
+  assert.ok(formulas.some(f => /\+N\d+-N\d+$/.test(f)), 'net income adds other income and takes other deductions off');
+  assert.equal(mock.ss.getRangeByName('CFG_OTHER_INCOME_DOP').getValue(), 25000);
   assert.deepEqual(mock.ss.toasts.slice(0, 3), ['Saving your configuration...', 'Preparing sheets and daily triggers...', 'Rebuilding the Dashboard...']);
   const alert = mock.ui.alerts[mock.ui.alerts.length - 1];
   assert.match(alert, /Configuration saved and Dashboard updated/);
-  assert.match(alert, /Net income: RD\$185,650 \/ month \(DOP-equivalent\), including other income/);   // 3000×0.9×59.5 = 160,650 + 25,000
+  assert.match(alert, /Net income: RD\$185,650 \/ month \(DOP-equivalent\), with 1 other income\(s\)/);   // 3000×0.9×59.5 = 160,650 + 25,000
   assert.match(alert, /Credit cards: LAFISE Clásica Mastercard, BANESCO Super Cashback, BHD Mi País, POPULAR Visa Oro/);
   assert.equal(mock.lock.held, false);
 });
@@ -104,7 +103,7 @@ test('Setup Wizard: card section from the catalogue, other income field, closes 
   const h = load({ services: mock.services });
   h.ctx.openSetupWizard();
   const html = mock.ui.dialogs[0].html;
-  for (const piece of ['id="otherIncome"', 'id="otherIncomeCurrency"', 'id="cardsBox"', 'id="saveBtn"', '"name":"Mi País"',
+  for (const piece of ['id="incomeLines"', 'id="deductionLines"', 'id="cardsBox"', 'id="saveBtn"', '"name":"Mi País"',
                        '"name":"Clásica Mastercard"', '"name":"Super Cashback"', 'This window will close', 'google.script.host.close()']) {
     assert.ok(html.includes(piece), piece);
   }

@@ -36,6 +36,10 @@ for what to do. Open it after the Setup Wizard, and whenever something looks off
 
 ### Step 3: Run Setup Wizard
 
+Other incomes (freelance, rent received…) and other deductions (a loan installment, a cooperative, insurance…) can be
+added as many times as needed, each in DOP, USD or EUR: they're converted at the Dashboard's rates, incomes added in
+full, deductions taken off your net income.
+
 1. In Apps Script, go to `01_main.gs`
 2. Find `function onOpen()` and click the play button (▶)
 3. **Authorize** when prompted (grant permissions)

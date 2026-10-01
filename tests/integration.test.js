@@ -180,7 +180,8 @@ test('Dashboard: every formula passes the lint; KPIs and tables point at the rig
 
   // named ranges for every input, the helpers and Configuration
   assert.deepEqual(Object.keys(mock.ss.namedRanges).sort(), ['CFG_AFP', 'CFG_ARS', 'CFG_DEDUCTION_MODE', 'CFG_INCOME_CURRENCY',
-    'CFG_ISR', 'CFG_MONTHLY_INCOME', 'CFG_OTHER_CURRENCY', 'CFG_OTHER_INCOME', 'CFG_TAX_RATE', 'DASH_CARDS', 'DASH_MONTH', 'DASH_MONTH_NUM', 'DASH_PERIOD_START',
+    'CFG_ISR', 'CFG_MONTHLY_INCOME', 'CFG_OTHER_DED_DOP', 'CFG_OTHER_DED_EUR', 'CFG_OTHER_DED_USD', 'CFG_OTHER_INCOME_DOP',
+    'CFG_OTHER_INCOME_EUR', 'CFG_OTHER_INCOME_USD', 'CFG_TAX_RATE', 'DASH_CARDS', 'DASH_MONTH', 'DASH_MONTH_NUM', 'DASH_PERIOD_START',
     'DASH_YEAR', 'RATE_COP', 'RATE_EUR', 'RATE_UPDATED', 'RATE_USD']);
   assert.equal(cell('C4'), 'Current month');
   assert.equal(cell('F4'), new Date().getFullYear());

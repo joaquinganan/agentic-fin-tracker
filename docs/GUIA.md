@@ -26,9 +26,11 @@ paneles) está en inglés; esta guía usa los nombres tal como aparecen en panta
 Abre **📊 Tracker › 🔧 Setup Wizard**. Te pide:
 
 - **Tu correo** y los **bancos** cuyas alertas llegan a tu Gmail.
-- **Tus ingresos** (sueldo y otros ingresos, en pesos o dólares) y cómo calcular los descuentos (ARS, AFP e ISR, de
-  forma automática con las reglas de nómina dominicanas o con tus montos). Con eso el tracker compara tu gasto contra lo
-  que realmente te queda.
+- **Tus ingresos:** el sueldo, y los **otros ingresos** que quieras (freelance, alquileres…), cada uno con su moneda
+  (DOP, USD o EUR), con **+ Add another income**.
+- **Tus descuentos:** ARS, AFP e ISR (automáticos con las reglas de nómina dominicanas, o con tus montos), y **otros
+  descuentos** (un préstamo, una cooperativa, un seguro…), cada uno con su moneda, con **+ Add a deduction**. Con todo
+  eso, el tracker compara tu gasto contra lo que realmente te queda.
 - Tus **tarjetas de crédito**, con su día de corte y de pago.
 - Los **correos de resumen** que quieres recibir: diario, mensual o ambos, y a qué hora.
 

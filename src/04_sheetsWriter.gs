@@ -920,8 +920,13 @@ const CONFIG_NAMED_RANGES = {
   incomeCurrency: { name: 'CFG_INCOME_CURRENCY', fallback: 'USD' },
   ISR:            { name: 'CFG_ISR',             fallback: 0 },         // v1.1.24
   deductionMode:  { name: 'CFG_DEDUCTION_MODE',  fallback: 'manual' },  // v1.1.24
-  otherIncome:         { name: 'CFG_OTHER_INCOME',   fallback: 0 },      // v1.1.27
-  otherIncomeCurrency: { name: 'CFG_OTHER_CURRENCY', fallback: 'DOP' }   // v1.1.27
+  // v1.1.59: other incomes and deductions — totals per currency; a sheet from before gets them from its setup
+  otherIncomeDOP:    { name: 'CFG_OTHER_INCOME_DOP', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).DOP },
+  otherIncomeUSD:    { name: 'CFG_OTHER_INCOME_USD', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).USD },
+  otherIncomeEUR:    { name: 'CFG_OTHER_INCOME_EUR', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).EUR },
+  otherDeductionDOP: { name: 'CFG_OTHER_DED_DOP',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).DOP },
+  otherDeductionUSD: { name: 'CFG_OTHER_DED_USD',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).USD },
+  otherDeductionEUR: { name: 'CFG_OTHER_DED_EUR',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).EUR }
 };
 
 /**
@@ -939,10 +944,16 @@ function ensureConfigNamedRanges() {
   const sheet = ss.getSheetByName(CONFIG_SHEET);
   if (!sheet || sheet.getLastRow() < 1) return false;
   const keys = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues().map(r => String(r[0]).trim());
+  let config = null;
   Object.keys(CONFIG_NAMED_RANGES).forEach(key => {
     let row = keys.indexOf(key) + 1;
     if (row === 0) {
-      sheet.appendRow([key, CONFIG_NAMED_RANGES[key].fallback]);
+      const def = CONFIG_NAMED_RANGES[key];
+      let value = def.fallback;
+      if (def.derive) {   // v1.1.59: e.g. an older setup's single "other income" keeps showing on the Dashboard
+        try { config = config || getConfig() || {}; value = def.derive(config); } catch (error) { value = def.fallback; }
+      }
+      sheet.appendRow([key, value]);
       keys.push(key);
       row = keys.length;
     }
@@ -1210,9 +1221,9 @@ function buildOrRefreshDashboard() {
   R.catLast = R.catFirst + n - 1;
   R.transfers = R.catLast + 1;
   R.total = R.transfers + 1;
-  R.income = 12; R.netDop = 18;                                   // right block: 12..18 (v1.1.27: + other income)
-  R.fvHead = 20; R.fvFirst = 21;                                  // 21..23
-  R.bankHead = 25; R.bankFirst = 26; R.bankLast = R.bankFirst + banks.length - 1;
+  R.income = 12; R.netDop = 19;                                   // right block: 12..19 (v1.1.59: + other deductions)
+  R.fvHead = 21; R.fvFirst = 22;                                  // 22..24
+  R.bankHead = 26; R.bankFirst = 27; R.bankLast = R.bankFirst + banks.length - 1;
   R.monthsHead = Math.max(R.total, R.bankLast) + 2;
   R.monthsCols = R.monthsHead + 1; R.monthsFirst = R.monthsCols + 1; R.monthsLast = R.monthsFirst + 11;
   R.gridHead = R.monthsLast + 2; R.gridCols = R.gridHead + 1; R.gridFirst = R.gridCols + 1;
@@ -1317,8 +1328,8 @@ function buildOrRefreshDashboard() {
   const gt = R.gridTotal;
   const kpis = [
     { c1: 2, c2: 2, label: 'NET INCOME', value: `=${NET_DOP}`, fmt: moneyFmt,
-      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & IF(CFG_OTHER_INCOME>0," + " & ' +
-        'TEXT(CFG_OTHER_INCOME,"#,##0") & " " & CFG_OTHER_CURRENCY & " other","") & " / month"' },
+      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & IF(N' + (R.income + 5) + '>0," + other income","") & ' +
+        'IF(N' + (R.income + 6) + '>0," − other deductions","") & " / month"' },
     { c1: 3, c2: 5, label: `="SPENT  ·  " & UPPER(TEXT(${PERIOD},"mmm yyyy"))`, value: `=$C$${R.total}`, fmt: moneyFmt,
       note: `=IF(${MONTH_NUM}=1,"vs. previous month: n/a",IFERROR("vs. previous month: "&TEXT(INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM})/INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM}-1)-1,"+0%;-0%;0%"),"vs. previous month: —"))` },
     { c1: 6, c2: 8, label: 'REMAINING', value: `=${NET_DOP}-$C$${R.total}`, fmt: moneyFmt,
@@ -1389,10 +1400,10 @@ function buildOrRefreshDashboard() {
        '"Income tax (" & TEXT(CFG_TAX_RATE,"0.##") & "%)")',
      `=IF(CFG_INCOME_CURRENCY="DOP",CFG_ISR,N${R.income}*CFG_TAX_RATE/100)`, '#,##0.00'],
     ['="Net salary (" & CFG_INCOME_CURRENCY & ")"', `=N${R.income}-N${R.income + 1}-N${R.income + 2}-N${R.income + 3}`, '#,##0.00'],
-    // v1.1.27: other income, added in full (no deductions), in its own currency
-    ['="Other income (" & CFG_OTHER_CURRENCY & ", no deductions)"', '=CFG_OTHER_INCOME', '#,##0.00'],
-    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})+` +
-      `IF(CFG_OTHER_CURRENCY="DOP",N${R.income + 5},N${R.income + 5}*${USD})`, moneyFmt]
+    // v1.1.59: other incomes (in full, no deductions) and other deductions — every line converted at the live rates
+    ['Other income (DOP-equivalent, no deductions)', `=CFG_OTHER_INCOME_DOP+CFG_OTHER_INCOME_USD*${USD}+CFG_OTHER_INCOME_EUR*${EUR}`, moneyFmt],
+    ['Other deductions (DOP-equivalent)', `=CFG_OTHER_DED_DOP+CFG_OTHER_DED_USD*${USD}+CFG_OTHER_DED_EUR*${EUR}`, moneyFmt],
+    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})+N${R.income + 5}-N${R.income + 6}`, moneyFmt]
   ];
   sheet.getRange(R.income, 10, incomeRows.length, 4).mergeAcross();
   sheet.getRange(R.income, 14, incomeRows.length, 2).mergeAcross();

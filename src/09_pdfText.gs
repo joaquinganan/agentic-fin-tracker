@@ -162,6 +162,8 @@ function pdfParseValue(t, pos) {
 /** Every "n g obj … endobj" of the file → { n: { dict, stream: bytes|null } }. Streams are inflated when FlateDecode. */
 function pdfObjects(bytes) {
   const text = pdfLatin1(bytes, 0, bytes.length);
+  // v1.1.59: a password-protected statement says so, instead of failing on unreadable content
+  if (/\/Encrypt\b/.test(text)) throw new Error('the PDF is password-protected — not supported yet (send one to get it added)');
   if (/\/ObjStm\b/.test(text)) throw new Error('PDF: objects packed in object streams are not supported');
   const objs = {};
   const re = /(\d+)\s+\d+\s+obj\b/g;

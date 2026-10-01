@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.58 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.59 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.58"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.59"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -166,7 +166,7 @@ function openSetupWizard() {
     banksToTrack: existing.banksToTrack || {},
     notifyEnabled: existing.notifyEnabled, notifyMonthly: existing.notifyMonthly, notifyEmail: existing.notifyEmail,
     notifyHour: existing.notifyHour, notifySections: existing.notifySections,
-    otherIncome: existing.otherIncome, otherIncomeCurrency: existing.otherIncomeCurrency, cards: existing.cards
+    otherIncomes: existing.otherIncomes, otherDeductions: existing.otherDeductions, cards: existing.cards   // v1.1.59
   } : { email: defaultEmail };
   // v1.1.27: card catalogue for the "Credit Cards" section (public product facts only)
   const catalogJson = JSON.stringify(Object.keys(CARD_PRODUCTS).map(id =>
@@ -178,6 +178,12 @@ function openSetupWizard() {
     <head>
       <meta charset="utf-8">
       <style>
+        /* v1.1.59: other incomes / deductions as lines */
+        .line { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .line .lineLabel { flex: 2; } .line .lineAmount { flex: 1.2; } .line .lineCur { flex: 0 0 76px; }
+        .lineRemove { flex: 0 0 34px; align-self: stretch; border: 1px solid #D1D5DB; background: #fff; border-radius: 6px; cursor: pointer; color: #6B7280; }
+        .lineRemove:hover { color: #B91C1C; border-color: #B91C1C; }
+        .lineAdd { background: none; border: none; color: #1D4ED8; cursor: pointer; padding: 2px 0; font-size: 13px; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -253,20 +259,12 @@ function openSetupWizard() {
             </div>
           </div>
 
-          <div class="row">
-            <div class="form-group">
-              <label>➕ Other Monthly Income</label>
-              <input type="number" id="otherIncome" placeholder="0.00" step="0.01" min="0">
-            </div>
-            <div class="form-group">
-              <label>Other income currency</label>
-              <select id="otherIncomeCurrency">
-                <option value="DOP">DOP</option>
-                <option value="USD">USD</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label>➕ Other Monthly Income</label>
+            <div id="incomeLines"></div>
+            <button type="button" class="lineAdd" onclick="addLine('income')">+ Add another income</button>
           </div>
-          <div class="hint" style="margin:-6px 0 4px">Freelance work, rent you receive, etc. Added in full to your net income — no deductions.</div>
+          <div class="hint" style="margin:-6px 0 4px">Freelance work, rent you receive, etc. — each in its own currency. Added in full to your net income, no deductions.</div>
 
           <div class="section-title">📊 Monthly Deductions</div>
           <div id="dopModeGroup" class="radio-group">
@@ -302,6 +300,12 @@ function openSetupWizard() {
               <input type="number" id="isrAmount" placeholder="0.00" step="0.01" min="0">
             </div>
           </div>
+          <div class="form-group" style="margin-top:10px">
+            <label>➖ Other Monthly Deductions</label>
+            <div id="deductionLines"></div>
+            <button type="button" class="lineAdd" onclick="addLine('deduction')">+ Add a deduction</button>
+          </div>
+          <div class="hint" style="margin:-6px 0 4px">Anything else taken from your pay — a loan installment, a cooperative, insurance — each in its own currency. Subtracted from your net income.</div>
 
           <div class="section-title">🏦 Banks to Track</div>
           <div class="checkbox-group">
@@ -464,14 +468,46 @@ function openSetupWizard() {
           applyCards(keep);
         }
 
+        // v1.1.59: other incomes / deductions as lines
+        function addLine(kind, item) {
+          const box = el(kind === 'income' ? 'incomeLines' : 'deductionLines');
+          if (box.children.length >= 10) return;
+          const row = document.createElement('div');
+          row.className = 'line';
+          row.innerHTML = '<input class="lineLabel" maxlength="40">' +
+            '<input type="number" class="lineAmount" placeholder="0.00" step="0.01" min="0">' +
+            '<select class="lineCur"><option value="DOP">DOP</option><option value="USD">USD</option><option value="EUR">EUR</option></select>' +
+            '<button type="button" class="lineRemove" title="Remove" onclick="removeLine(this)">✕</button>';
+          box.appendChild(row);
+          row.querySelector('.lineLabel').placeholder = kind === 'income' ? 'Source (optional)' : 'What (optional)';
+          if (item) {
+            row.querySelector('.lineLabel').value = item.label || '';
+            row.querySelector('.lineAmount').value = item.amount;
+            row.querySelector('.lineCur').value = item.currency || 'DOP';
+          }
+        }
+        function removeLine(btn) {
+          const row = btn.parentNode, box = row.parentNode;
+          box.removeChild(row);
+          if (!box.children.length) addLine(box.id === 'incomeLines' ? 'income' : 'deduction');
+        }
+        function lines(kind) {
+          const rows = el(kind === 'income' ? 'incomeLines' : 'deductionLines').children;
+          return Array.prototype.map.call(rows, function (row) {
+            return { label: row.querySelector('.lineLabel').value.trim(), amount: parseFloat(row.querySelector('.lineAmount').value),
+              currency: row.querySelector('.lineCur').value };
+          }).filter(function (x) { return x.amount > 0; });
+        }
         const EXISTING = ${prefillJson};
         (function prefill() {
           const setVal = function(id, v) { if (v !== undefined && v !== null && v !== '') el(id).value = v; };
           setVal('email', EXISTING.email);
           setVal('incomeCurrency', EXISTING.incomeCurrency);
           setVal('monthlyIncome', EXISTING.monthlyIncome);
-          setVal('otherIncome', EXISTING.otherIncome);
-          setVal('otherIncomeCurrency', EXISTING.otherIncomeCurrency);
+          (EXISTING.otherIncomes || []).forEach(function (x) { addLine('income', x); });
+          (EXISTING.otherDeductions || []).forEach(function (x) { addLine('deduction', x); });
+          if (!el('incomeLines').children.length) addLine('income');
+          if (!el('deductionLines').children.length) addLine('deduction');
           if (EXISTING.deductionMode === 'manual') el('dedManual').checked = true;
           if (EXISTING.deductionMode !== 'auto' || EXISTING.incomeCurrency !== 'DOP') {
             setVal('arsAmount', EXISTING.ARS);
@@ -518,8 +554,8 @@ function openSetupWizard() {
             email: el('email').value.trim(),
             incomeCurrency: cur,
             monthlyIncome: income,
-            otherIncome: num('otherIncome'),
-            otherIncomeCurrency: el('otherIncomeCurrency').value,
+            otherIncomes: lines('income'),         // v1.1.59: as many as needed, each in its currency
+            otherDeductions: lines('deduction'),
             cards: cards,
             deductionMode: mode(),
             deductions: {
@@ -659,8 +695,17 @@ function validateSetupInput(config) {
   if (!config.banksToTrack || typeof config.banksToTrack !== 'object') return "Select at least one bank.";
   if (!Object.keys(config.banksToTrack).some(b => config.banksToTrack[b])) return "Select at least one bank.";
   // v1.1.27: other income and cards
-  if (Number(config.otherIncome || 0) < 0) return "Other income can't be negative.";
-  if (config.otherIncomeCurrency && ['USD', 'DOP'].indexOf(config.otherIncomeCurrency) === -1) return "Other income currency must be USD or DOP.";
+  if (Number(config.otherIncome || 0) < 0) return "Other income can't be negative.";   // the older single field
+  // v1.1.59: other incomes and other deductions — lists, each line in its own currency
+  for (const [list, what] of [[config.otherIncomes, 'Other income'], [config.otherDeductions, 'Other deduction']]) {
+    if (list === undefined || list === null) continue;
+    if (!Array.isArray(list)) return what + 's must be a list.';
+    if (list.length > MONEY_LINES_MAX) return 'Up to ' + MONEY_LINES_MAX + ' ' + what.toLowerCase() + 's.';
+    for (const x of list) {
+      if (!x || !(Number(x.amount) >= 0) || !isFinite(Number(x.amount))) return what + ' amounts must be numbers of 0 or more.';
+      if (OTHER_MONEY_CURRENCIES.indexOf(x.currency) === -1) return what + ' currency must be ' + OTHER_MONEY_CURRENCIES.join(', ') + '.';
+    }
+  };
   const cards = config.cards || [];
   if (!Array.isArray(cards)) return "Cards must be a list.";
   for (const c of cards) {
@@ -705,6 +750,9 @@ function saveSetupConfig(config) {
       const sheet = ss.getSheetByName(CONFIG_SHEET);
       sheet.clear();
 
+      if (!Array.isArray(config.otherIncomes) && Number(config.otherIncome) > 0) {   // v1.1.59: the older single field
+        config.otherIncomes = [{ label: '', amount: Number(config.otherIncome), currency: config.otherIncomeCurrency === 'USD' ? 'USD' : 'DOP' }];
+      }
       const dop = config.incomeCurrency === 'DOP';
       const auto = dop && config.deductionMode === 'auto';
       const calc = auto ? computeDrPayroll(config.monthlyIncome) : null;
@@ -715,8 +763,10 @@ function saveSetupConfig(config) {
         ["email", String(config.email).trim()],
         ["incomeCurrency", config.incomeCurrency],
         ["monthlyIncome", Number(config.monthlyIncome)],
-        ["otherIncome", Number(config.otherIncome) || 0],
-        ["otherIncomeCurrency", config.otherIncomeCurrency || 'DOP'],
+        // v1.1.59: the lines, and their totals per currency (what the Dashboard converts at its live rates)
+        ["otherIncomes", JSON.stringify(normalizeMoneyLines(config.otherIncomes))],
+        ["otherDeductions", JSON.stringify(normalizeMoneyLines(config.otherDeductions))],
+      ].concat(moneyTotalsRows(config)).concat([
         ["deductionMode", auto ? 'auto' : 'manual'],
         ["ARS", auto ? calc.sfs : Number(d.ARS) || 0],
         ["AFP", auto ? calc.afp : Number(d.AFP) || 0],
@@ -732,7 +782,7 @@ function saveSetupConfig(config) {
         ["notifyEmail", String(n.email || '').trim()],
         ["notifyHour", Number(n.hour) || 8],
         ["notifySections", JSON.stringify(Object.assign({}, SUMMARY_SECTIONS_DEFAULT, n.sections || {}))]
-      ];
+      ]);
       sheet.getRange(1, 1, rows.length, 2).setValues(rows);
       ensureConfigNamedRanges();
       Logger.log("✅ Config saved successfully");
@@ -769,7 +819,8 @@ function setupSavedMessage(config, ss) {
   const rates = readDashboardRates(ss);
   const lines = ["✅ Configuration saved and Dashboard updated.", "",
     "💵 Net income: " + summaryMoney(computeNetIncomeDop(config, rates)) + " / month (DOP-equivalent)" +
-      (config.otherIncome > 0 ? ", including other income" : ""),
+      ((config.otherIncomes || []).length ? ", with " + config.otherIncomes.length + " other income(s)" : "") +
+      ((config.otherDeductions || []).length ? " and " + config.otherDeductions.length + " other deduction(s)" : ""),
     "🔄 Bank emails are read every morning around 6 AM."];
   if (config.notifyEnabled) lines.push("📬 Daily summary around " + config.notifyHour + ":00.");
   if (config.notifyMonthly) lines.push("🗓️ Monthly summary on the 1st around " + config.notifyHour + ":00.");
@@ -1253,7 +1304,8 @@ Monthly Income: ${config.monthlyIncome} ${config.incomeCurrency}
   AFP: ${config.deductions.AFP} ${config.incomeCurrency}
   ${config.incomeCurrency === 'DOP' ? 'ISR: ' + config.deductions.ISR + ' DOP' : 'Tax rate: ' + config.deductions.taxRate + '%'}
 
-➕ Other income: ${config.otherIncome} ${config.otherIncomeCurrency} (no deductions)
+➕ Other income: ${describeMoneyLines(config.otherIncomes)} (no deductions)
+➖ Other deductions: ${describeMoneyLines(config.otherDeductions)}
 💳 Cards: ${resolveCards(config.cards).map(c => c.bank + (c.name ? ' ' + c.name : '') + (c.closeDay ? ' · closes day ' + c.closeDay : '') + (c.dueDay ? ' · due day ' + c.dueDay : '')).join('; ') || 'none set'}
 
 📬 Daily summary: ${config.notifyEnabled ? 'on — around ' + config.notifyHour + ':00 to ' + (config.notifyEmail || config.email) : 'off'}
@@ -1350,6 +1402,8 @@ function getConfig() {
         config.monthlyIncome = isNaN(n) ? 0 : n;
       } else if (key === 'otherIncome') {
         config.otherIncome = parseFloat(value) || 0;
+      } else if (key === 'otherIncomes' || key === 'otherDeductions') {   // v1.1.59
+        try { config[key] = JSON.parse(value); } catch (e) { config[key] = []; }
       } else if (key === 'cards') {
         try { config.cards = JSON.parse(value); } catch (e) { config.cards = []; }
         if (!Array.isArray(config.cards)) config.cards = [];
@@ -1368,6 +1422,12 @@ function getConfig() {
     if (!config.incomeCurrency) config.incomeCurrency = 'USD';
     config.otherIncome = Number(config.otherIncome) || 0;                  // v1.1.27
     if (config.otherIncomeCurrency !== 'USD') config.otherIncomeCurrency = 'DOP';
+    // v1.1.59: one "other income" became a list — an older setup's single one becomes its first line
+    if (!Array.isArray(config.otherIncomes)) {
+      config.otherIncomes = config.otherIncome > 0 ? [{ label: '', amount: config.otherIncome, currency: config.otherIncomeCurrency }] : [];
+    }
+    config.otherIncomes = normalizeMoneyLines(config.otherIncomes);
+    config.otherDeductions = normalizeMoneyLines(config.otherDeductions);
     if (config.deductionMode !== 'auto') config.deductionMode = 'manual';
     config.notifyEnabled = !!config.notifyEnabled;
     config.notifyMonthly = !!config.notifyMonthly;
@@ -1440,6 +1500,46 @@ function deleteSystemTriggers() {
   ScriptApp.getProjectTriggers()
     .filter(t => SYSTEM_TRIGGER_HANDLERS.indexOf(t.getHandlerFunction()) !== -1)
     .forEach(t => ScriptApp.deleteTrigger(t));
+}
+
+/* ======================================================================
+ * OTHER INCOMES AND DEDUCTIONS — v1.1.59
+ * Lines of { label, amount, currency }, as many as needed (up to MONEY_LINES_MAX), in DOP, USD or EUR — the currencies
+ * the Dashboard has live rates for. Configuration keeps the lines and their totals per currency; the Dashboard and the
+ * summaries convert those totals at their rates.
+ * ====================================================================== */
+const OTHER_MONEY_CURRENCIES = ['DOP', 'USD', 'EUR'];
+const MONEY_LINES_MAX = 10;
+
+function normalizeMoneyLines(list) {
+  return (Array.isArray(list) ? list : []).filter(x => x && Number(x.amount) > 0)
+    .map(x => ({ label: String(x.label || '').trim().slice(0, 40), amount: +Number(x.amount).toFixed(2),
+      currency: OTHER_MONEY_CURRENCIES.indexOf(x.currency) !== -1 ? x.currency : 'DOP' }))
+    .slice(0, MONEY_LINES_MAX);
+}
+
+function moneyLineTotals(list) {
+  const t = { DOP: 0, USD: 0, EUR: 0 };
+  normalizeMoneyLines(list).forEach(x => { t[x.currency] += x.amount; });
+  Object.keys(t).forEach(c => { t[c] = +t[c].toFixed(2); });
+  return t;
+}
+
+/** DOP-equivalent of a list, at the given rates ({ USD, EUR } in DOP). */
+function moneyLinesDop(list, rates) {
+  const t = moneyLineTotals(list);
+  return t.DOP + t.USD * (Number(rates && rates.USD) || 0) + t.EUR * (Number(rates && rates.EUR) || 0);
+}
+
+/** Configuration rows with each list's totals per currency (the Dashboard's named ranges). */
+function moneyTotalsRows(config) {
+  const inc = moneyLineTotals(config.otherIncomes), ded = moneyLineTotals(config.otherDeductions);
+  return OTHER_MONEY_CURRENCIES.map(c => ['otherIncome' + c, inc[c]]).concat(OTHER_MONEY_CURRENCIES.map(c => ['otherDeduction' + c, ded[c]]));
+}
+
+function describeMoneyLines(list) {
+  const lines = normalizeMoneyLines(list);
+  return lines.length ? lines.map(x => (x.label ? x.label + ' ' : '') + x.amount + ' ' + x.currency).join('; ') : 'none';
 }
 
 // ====================================================================================================
@@ -4128,8 +4228,13 @@ const CONFIG_NAMED_RANGES = {
   incomeCurrency: { name: 'CFG_INCOME_CURRENCY', fallback: 'USD' },
   ISR:            { name: 'CFG_ISR',             fallback: 0 },         // v1.1.24
   deductionMode:  { name: 'CFG_DEDUCTION_MODE',  fallback: 'manual' },  // v1.1.24
-  otherIncome:         { name: 'CFG_OTHER_INCOME',   fallback: 0 },      // v1.1.27
-  otherIncomeCurrency: { name: 'CFG_OTHER_CURRENCY', fallback: 'DOP' }   // v1.1.27
+  // v1.1.59: other incomes and deductions — totals per currency; a sheet from before gets them from its setup
+  otherIncomeDOP:    { name: 'CFG_OTHER_INCOME_DOP', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).DOP },
+  otherIncomeUSD:    { name: 'CFG_OTHER_INCOME_USD', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).USD },
+  otherIncomeEUR:    { name: 'CFG_OTHER_INCOME_EUR', fallback: 0, derive: c => moneyLineTotals(c.otherIncomes).EUR },
+  otherDeductionDOP: { name: 'CFG_OTHER_DED_DOP',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).DOP },
+  otherDeductionUSD: { name: 'CFG_OTHER_DED_USD',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).USD },
+  otherDeductionEUR: { name: 'CFG_OTHER_DED_EUR',    fallback: 0, derive: c => moneyLineTotals(c.otherDeductions).EUR }
 };
 
 /**
@@ -4147,10 +4252,16 @@ function ensureConfigNamedRanges() {
   const sheet = ss.getSheetByName(CONFIG_SHEET);
   if (!sheet || sheet.getLastRow() < 1) return false;
   const keys = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues().map(r => String(r[0]).trim());
+  let config = null;
   Object.keys(CONFIG_NAMED_RANGES).forEach(key => {
     let row = keys.indexOf(key) + 1;
     if (row === 0) {
-      sheet.appendRow([key, CONFIG_NAMED_RANGES[key].fallback]);
+      const def = CONFIG_NAMED_RANGES[key];
+      let value = def.fallback;
+      if (def.derive) {   // v1.1.59: e.g. an older setup's single "other income" keeps showing on the Dashboard
+        try { config = config || getConfig() || {}; value = def.derive(config); } catch (error) { value = def.fallback; }
+      }
+      sheet.appendRow([key, value]);
       keys.push(key);
       row = keys.length;
     }
@@ -4418,9 +4529,9 @@ function buildOrRefreshDashboard() {
   R.catLast = R.catFirst + n - 1;
   R.transfers = R.catLast + 1;
   R.total = R.transfers + 1;
-  R.income = 12; R.netDop = 18;                                   // right block: 12..18 (v1.1.27: + other income)
-  R.fvHead = 20; R.fvFirst = 21;                                  // 21..23
-  R.bankHead = 25; R.bankFirst = 26; R.bankLast = R.bankFirst + banks.length - 1;
+  R.income = 12; R.netDop = 19;                                   // right block: 12..19 (v1.1.59: + other deductions)
+  R.fvHead = 21; R.fvFirst = 22;                                  // 22..24
+  R.bankHead = 26; R.bankFirst = 27; R.bankLast = R.bankFirst + banks.length - 1;
   R.monthsHead = Math.max(R.total, R.bankLast) + 2;
   R.monthsCols = R.monthsHead + 1; R.monthsFirst = R.monthsCols + 1; R.monthsLast = R.monthsFirst + 11;
   R.gridHead = R.monthsLast + 2; R.gridCols = R.gridHead + 1; R.gridFirst = R.gridCols + 1;
@@ -4525,8 +4636,8 @@ function buildOrRefreshDashboard() {
   const gt = R.gridTotal;
   const kpis = [
     { c1: 2, c2: 2, label: 'NET INCOME', value: `=${NET_DOP}`, fmt: moneyFmt,
-      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & IF(CFG_OTHER_INCOME>0," + " & ' +
-        'TEXT(CFG_OTHER_INCOME,"#,##0") & " " & CFG_OTHER_CURRENCY & " other","") & " / month"' },
+      note: '="Gross " & TEXT(CFG_MONTHLY_INCOME,"#,##0") & " " & CFG_INCOME_CURRENCY & IF(N' + (R.income + 5) + '>0," + other income","") & ' +
+        'IF(N' + (R.income + 6) + '>0," − other deductions","") & " / month"' },
     { c1: 3, c2: 5, label: `="SPENT  ·  " & UPPER(TEXT(${PERIOD},"mmm yyyy"))`, value: `=$C$${R.total}`, fmt: moneyFmt,
       note: `=IF(${MONTH_NUM}=1,"vs. previous month: n/a",IFERROR("vs. previous month: "&TEXT(INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM})/INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM}-1)-1,"+0%;-0%;0%"),"vs. previous month: —"))` },
     { c1: 6, c2: 8, label: 'REMAINING', value: `=${NET_DOP}-$C$${R.total}`, fmt: moneyFmt,
@@ -4597,10 +4708,10 @@ function buildOrRefreshDashboard() {
        '"Income tax (" & TEXT(CFG_TAX_RATE,"0.##") & "%)")',
      `=IF(CFG_INCOME_CURRENCY="DOP",CFG_ISR,N${R.income}*CFG_TAX_RATE/100)`, '#,##0.00'],
     ['="Net salary (" & CFG_INCOME_CURRENCY & ")"', `=N${R.income}-N${R.income + 1}-N${R.income + 2}-N${R.income + 3}`, '#,##0.00'],
-    // v1.1.27: other income, added in full (no deductions), in its own currency
-    ['="Other income (" & CFG_OTHER_CURRENCY & ", no deductions)"', '=CFG_OTHER_INCOME', '#,##0.00'],
-    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})+` +
-      `IF(CFG_OTHER_CURRENCY="DOP",N${R.income + 5},N${R.income + 5}*${USD})`, moneyFmt]
+    // v1.1.59: other incomes (in full, no deductions) and other deductions — every line converted at the live rates
+    ['Other income (DOP-equivalent, no deductions)', `=CFG_OTHER_INCOME_DOP+CFG_OTHER_INCOME_USD*${USD}+CFG_OTHER_INCOME_EUR*${EUR}`, moneyFmt],
+    ['Other deductions (DOP-equivalent)', `=CFG_OTHER_DED_DOP+CFG_OTHER_DED_USD*${USD}+CFG_OTHER_DED_EUR*${EUR}`, moneyFmt],
+    ['Net income (DOP-equivalent)', `=IF(CFG_INCOME_CURRENCY="DOP",N${R.income + 4},N${R.income + 4}*${USD})+N${R.income + 5}-N${R.income + 6}`, moneyFmt]
   ];
   sheet.getRange(R.income, 10, incomeRows.length, 4).mergeAcross();
   sheet.getRange(R.income, 14, incomeRows.length, 2).mergeAcross();
@@ -5189,8 +5300,11 @@ function computeNetIncomeDop(config, rates) {
     ? gross - (d.ARS || 0) - (d.AFP || 0) - (d.ISR || 0)
     : (gross - (d.ARS || 0) - (d.AFP || 0) - gross * (d.taxRate || 0) / 100) * rates.USD;
   // v1.1.27: other income is added in full, in its own currency
-  const other = Number(config.otherIncome) || 0;
-  return salary + (config.otherIncomeCurrency === 'USD' ? other * rates.USD : other);
+  // v1.1.59: every other income line in, every other deduction line out, each at its currency's rate. A config object
+  // from before (a single otherIncome) still counts it.
+  const incomes = Array.isArray(config.otherIncomes) ? config.otherIncomes
+    : (Number(config.otherIncome) > 0 ? [{ amount: Number(config.otherIncome), currency: config.otherIncomeCurrency === 'USD' ? 'USD' : 'DOP' }] : []);
+  return salary + moneyLinesDop(incomes, rates) - moneyLinesDop(config.otherDeductions || [], rates);
 }
 
 /**
@@ -8257,6 +8371,8 @@ function pdfParseValue(t, pos) {
 /** Every "n g obj … endobj" of the file → { n: { dict, stream: bytes|null } }. Streams are inflated when FlateDecode. */
 function pdfObjects(bytes) {
   const text = pdfLatin1(bytes, 0, bytes.length);
+  // v1.1.59: a password-protected statement says so, instead of failing on unreadable content
+  if (/\/Encrypt\b/.test(text)) throw new Error('the PDF is password-protected — not supported yet (send one to get it added)');
   if (/\/ObjStm\b/.test(text)) throw new Error('PDF: objects packed in object streams are not supported');
   const objs = {};
   const re = /(\d+)\s+\d+\s+obj\b/g;

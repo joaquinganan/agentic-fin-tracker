@@ -77,8 +77,11 @@ function computeNetIncomeDop(config, rates) {
     ? gross - (d.ARS || 0) - (d.AFP || 0) - (d.ISR || 0)
     : (gross - (d.ARS || 0) - (d.AFP || 0) - gross * (d.taxRate || 0) / 100) * rates.USD;
   // v1.1.27: other income is added in full, in its own currency
-  const other = Number(config.otherIncome) || 0;
-  return salary + (config.otherIncomeCurrency === 'USD' ? other * rates.USD : other);
+  // v1.1.59: every other income line in, every other deduction line out, each at its currency's rate. A config object
+  // from before (a single otherIncome) still counts it.
+  const incomes = Array.isArray(config.otherIncomes) ? config.otherIncomes
+    : (Number(config.otherIncome) > 0 ? [{ amount: Number(config.otherIncome), currency: config.otherIncomeCurrency === 'USD' ? 'USD' : 'DOP' }] : []);
+  return salary + moneyLinesDop(incomes, rates) - moneyLinesDop(config.otherDeductions || [], rates);
 }
 
 /**

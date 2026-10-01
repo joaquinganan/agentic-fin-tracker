@@ -2,6 +2,21 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.59 (Sept 30, 2026) — several other incomes; other deductions; each in its currency
+- **Requested:** the Setup Wizard takes as many other incomes as needed (up to 10), each in DOP, USD or EUR, and a new
+  **Other Monthly Deductions** list under Monthly Deductions, the same way — a loan installment, a cooperative, insurance.
+  Configuration keeps the lines and their totals per currency; the Dashboard converts every line at its live rates (a new
+  "Other deductions" row; the sections below it move down a row) and the summaries' net income adds the incomes and
+  takes the deductions off.
+- An older setup's single "other income" becomes the first line, and the Dashboard keeps showing it even before the
+  wizard is saved again: a missing Configuration key can now be derived from the setup instead of defaulting to 0
+  (mutation-checked). Saving still accepts the older single field.
+- A password-protected statement PDF is named as such in Unrecognized instead of failing on unreadable content. Reading
+  one (a national-ID password, as some banks use) waits for a real protected statement: it needs PDF decryption that can
+  only be verified against one, and the ID would be kept in the script's private properties, never in the sheet.
+- The wizard's lines were exercised in a real browser (prefilled, added, removed, what's sent on save). Tests: 203, on
+  `src/` and on the single file.
+
 ### v1.1.58 (Sept 30, 2026) — typed transfers keep their date; typed again, they're repaired
 - **Reported:** transfers sent, pasted from Excel into Bank Transfers, were saved with no date — while rows pasted as
   text into Incoming Transfers kept theirs; deleted and pasted again, they were saved twice. The difference: v1.1.57
