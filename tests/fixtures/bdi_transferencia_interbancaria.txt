@@ -1,0 +1,56 @@
+Transacción Interbancaria en Proceso
+Cuenta Origen
+4100000000
+Tipo Cuenta
+Cuenta Digital
+Alias
+Cuenta de Ahorro Digital
+Tipo de Transacción
+Transferencia Interbancaria
+[Salida]
+Fecha Transacción
+29/09/2026 09:30:17
+Impuesto 0.20%
+RD$5.00
+Monto
+RD$2,500.00
+No. Referencia
+4100001
+Beneficiario
+******1234
+Luis Ramirez
+Banco Destino / Código Swift
+QIK BANCO DIGITAL DOMINICANO, S.A.
+QDDMDOSDXXX
+Monto
+RD$2,500.00
+Tasa de Cambio
+1.00
+Comisión
+RD$0.00
+Comentario
+pago
+Notas de seguridad
+Asegúrate de que la dirección que aparece en tu explorador sea igual a la siguiente y que sobre todo contiene https al inicio y que aparece un candado a la izquierda
+https://www.bdi.com.do
+.
+Recuerda que el Banco BDI nunca te pedirá tus datos de acceso.
+Recibido por los valores indicados en este comprobante.
+Para más información de nuestros productos y servicios:
+Banco Múltiple BDI, S.A. envía este correo porque tu perfil nos indica que esta información es relevante para ti o has solicitado recibir este tipo de comunicación.
+Si tienes alguna sugerencia, queja o comentario, puedes escribirnos al correo:
+BDIDigital@bdi.com.do
+.
+El nombre BANCO BDI, logotipo, nombres registrados y marcas de servicios son propiedad exclusiva del Banco Múltiple BDI, S. A. con domicilio social en
+Av. Sarasota No. 27, La Julia. Santo Domingo, República Dominicana.
+, Tel.
+809.535.8586
+.
+Banco Múltiple BDI, S.A. | Todos los derechos reservados
+Banco Múltiple BDI, S.A
+envía este correo electrónico porque su perfil nos indica que esta información es relevante para usted o ha solicitado recibir este tipo de comunicación. El nombre BANCO BDI, logotipo, nombres registrados y marcas de servicios son propiedad exclusiva de
+Banco Múltiple BDI, S.A.
+Av. Sarasota No. 27, La Julia, Santo Domingo, República Dominicana Tel.: (809) 535-3586.
+If you'd like to unsubscribe and stop receiving these emails
+click here
+.

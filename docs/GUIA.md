@@ -25,7 +25,7 @@ paneles) está en inglés; esta guía usa los nombres tal como aparecen en panta
 
 Abre **📊 Tracker › 🔧 Setup Wizard**. Te pide:
 
-- **Tu correo** y los **bancos** cuyas alertas llegan a tu Gmail.
+- **Tu correo** y los **bancos** cuyas alertas llegan a tu Gmail: LAFISE, BANESCO, BHD, BDI, POPULAR, Scotiabank y QIK.
 - **Tus ingresos:** el sueldo, y los **otros ingresos** que quieras (freelance, alquileres…), cada uno con su moneda
   (DOP, USD o EUR), con **+ Add another income**.
 - **Tus descuentos:** ARS, AFP e ISR (automáticos con las reglas de nómina dominicanas, o con tus montos), y **otros

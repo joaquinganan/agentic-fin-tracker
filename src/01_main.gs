@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.59"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.60"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -156,6 +156,9 @@ function openSetupWizard() {
     otherIncomes: existing.otherIncomes, otherDeductions: existing.otherDeductions, cards: existing.cards   // v1.1.59
   } : { email: defaultEmail };
   // v1.1.27: card catalogue for the "Credit Cards" section (public product facts only)
+  // v1.1.60: one checkbox per bank the tracker reads, from the one list of banks
+  const bankBoxesHtml = BANK_ORDER.map(b => '<div class="checkbox-item"><input type="checkbox" id="bank_' + b.toLowerCase() +
+    '" checked onchange="renderCards()"><label for="bank_' + b.toLowerCase() + '">' + BANK_PATTERNS[b].name + '</label></div>').join('\n            ');
   const catalogJson = JSON.stringify(Object.keys(CARD_PRODUCTS).map(id =>
     ({ id: id, bank: CARD_PRODUCTS[id].bank, name: CARD_PRODUCTS[id].name }))).replace(/</g, '\\u003c');
   const prefillJson = JSON.stringify(prefill).replace(/</g, '\\u003c');
@@ -296,11 +299,7 @@ function openSetupWizard() {
 
           <div class="section-title">🏦 Banks to Track</div>
           <div class="checkbox-group">
-            <div class="checkbox-item"><input type="checkbox" id="bank_lafise" checked onchange="renderCards()"><label for="bank_lafise">LAFISE</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_banesco" checked onchange="renderCards()"><label for="bank_banesco">BANESCO</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bhd" checked onchange="renderCards()"><label for="bank_bhd">BHD</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_popular" checked onchange="renderCards()"><label for="bank_popular">POPULAR</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bdi" checked onchange="renderCards()"><label for="bank_bdi">BDI</label></div>
+            ${bankBoxesHtml}
           </div>
 
           <div class="section-title">💳 Credit Cards</div>
@@ -402,7 +401,7 @@ function openSetupWizard() {
         }
 
         const CATALOG = ${catalogJson};
-        const BANKS = ['LAFISE', 'BANESCO', 'BHD', 'POPULAR', 'BDI'];
+        const BANKS = ${JSON.stringify(BANK_ORDER)};   // v1.1.60
         function cardRows() { return Array.prototype.slice.call(document.querySelectorAll('.card-row')); }
         function readCards() {
           return cardRows().map(function(r) {
@@ -503,9 +502,8 @@ function openSetupWizard() {
             setVal('isrAmount', EXISTING.ISR);
           }
           if (EXISTING.banksToTrack) {
-            ['LAFISE', 'BANESCO', 'BHD', 'POPULAR', 'BDI'].forEach(function(b) {
-              if (b in EXISTING.banksToTrack) el('bank_' + b.toLowerCase()).checked = !!EXISTING.banksToTrack[b];
-            });
+            // v1.1.60: a bank added since the setup was saved starts unticked — saving doesn't turn on banks you don't use
+            BANKS.forEach(function(b) { el('bank_' + b.toLowerCase()).checked = !!EXISTING.banksToTrack[b]; });
           }
           el('notifyEnabled').checked = !!EXISTING.notifyEnabled;
           el('notifyMonthly').checked = !!EXISTING.notifyMonthly;
@@ -550,10 +548,7 @@ function openSetupWizard() {
               taxRate: cur === 'DOP' ? 0 : num('taxRate'),
               ISR: cur === 'DOP' ? num('isrAmount') : 0
             },
-            banksToTrack: {
-              LAFISE: el('bank_lafise').checked, BANESCO: el('bank_banesco').checked, BHD: el('bank_bhd').checked,
-              POPULAR: el('bank_popular').checked, BDI: el('bank_bdi').checked
-            },
+            banksToTrack: BANKS.reduce(function (o, b) { o[b] = el('bank_' + b.toLowerCase()).checked; return o; }, {}),
             notify: {
               enabled: el('notifyEnabled').checked, monthly: el('notifyMonthly').checked, email: el('notifyEmail').value.trim(),
               hour: parseInt(el('notifyHour').value, 10), sections: sections
@@ -1299,11 +1294,7 @@ Monthly Income: ${config.monthlyIncome} ${config.incomeCurrency}
 🗓️ Monthly summary: ${config.notifyMonthly ? 'on — the 1st, around ' + config.notifyHour + ':00' : 'off'}
 
 🏦 Banks Tracked:
-  LAFISE: ${config.banksToTrack.LAFISE ? '✅' : '❌'}
-  BANESCO: ${config.banksToTrack.BANESCO ? '✅' : '❌'}
-  BHD: ${config.banksToTrack.BHD ? '✅' : '❌'}
-  POPULAR: ${config.banksToTrack.POPULAR ? '✅' : '❌'}
-  BDI: ${config.banksToTrack.BDI ? '✅' : '❌'}
+${BANK_ORDER.map(b => '  ' + b + ': ' + (config.banksToTrack[b] ? '✅' : '❌')).join('\n')}
 
 Version: ${SCRIPT_VERSION}
   `;

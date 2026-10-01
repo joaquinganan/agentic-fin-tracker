@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.59 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.60 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.59"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.60"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -169,6 +169,9 @@ function openSetupWizard() {
     otherIncomes: existing.otherIncomes, otherDeductions: existing.otherDeductions, cards: existing.cards   // v1.1.59
   } : { email: defaultEmail };
   // v1.1.27: card catalogue for the "Credit Cards" section (public product facts only)
+  // v1.1.60: one checkbox per bank the tracker reads, from the one list of banks
+  const bankBoxesHtml = BANK_ORDER.map(b => '<div class="checkbox-item"><input type="checkbox" id="bank_' + b.toLowerCase() +
+    '" checked onchange="renderCards()"><label for="bank_' + b.toLowerCase() + '">' + BANK_PATTERNS[b].name + '</label></div>').join('\n            ');
   const catalogJson = JSON.stringify(Object.keys(CARD_PRODUCTS).map(id =>
     ({ id: id, bank: CARD_PRODUCTS[id].bank, name: CARD_PRODUCTS[id].name }))).replace(/</g, '\\u003c');
   const prefillJson = JSON.stringify(prefill).replace(/</g, '\\u003c');
@@ -309,11 +312,7 @@ function openSetupWizard() {
 
           <div class="section-title">🏦 Banks to Track</div>
           <div class="checkbox-group">
-            <div class="checkbox-item"><input type="checkbox" id="bank_lafise" checked onchange="renderCards()"><label for="bank_lafise">LAFISE</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_banesco" checked onchange="renderCards()"><label for="bank_banesco">BANESCO</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bhd" checked onchange="renderCards()"><label for="bank_bhd">BHD</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_popular" checked onchange="renderCards()"><label for="bank_popular">POPULAR</label></div>
-            <div class="checkbox-item"><input type="checkbox" id="bank_bdi" checked onchange="renderCards()"><label for="bank_bdi">BDI</label></div>
+            ${bankBoxesHtml}
           </div>
 
           <div class="section-title">💳 Credit Cards</div>
@@ -415,7 +414,7 @@ function openSetupWizard() {
         }
 
         const CATALOG = ${catalogJson};
-        const BANKS = ['LAFISE', 'BANESCO', 'BHD', 'POPULAR', 'BDI'];
+        const BANKS = ${JSON.stringify(BANK_ORDER)};   // v1.1.60
         function cardRows() { return Array.prototype.slice.call(document.querySelectorAll('.card-row')); }
         function readCards() {
           return cardRows().map(function(r) {
@@ -516,9 +515,8 @@ function openSetupWizard() {
             setVal('isrAmount', EXISTING.ISR);
           }
           if (EXISTING.banksToTrack) {
-            ['LAFISE', 'BANESCO', 'BHD', 'POPULAR', 'BDI'].forEach(function(b) {
-              if (b in EXISTING.banksToTrack) el('bank_' + b.toLowerCase()).checked = !!EXISTING.banksToTrack[b];
-            });
+            // v1.1.60: a bank added since the setup was saved starts unticked — saving doesn't turn on banks you don't use
+            BANKS.forEach(function(b) { el('bank_' + b.toLowerCase()).checked = !!EXISTING.banksToTrack[b]; });
           }
           el('notifyEnabled').checked = !!EXISTING.notifyEnabled;
           el('notifyMonthly').checked = !!EXISTING.notifyMonthly;
@@ -563,10 +561,7 @@ function openSetupWizard() {
               taxRate: cur === 'DOP' ? 0 : num('taxRate'),
               ISR: cur === 'DOP' ? num('isrAmount') : 0
             },
-            banksToTrack: {
-              LAFISE: el('bank_lafise').checked, BANESCO: el('bank_banesco').checked, BHD: el('bank_bhd').checked,
-              POPULAR: el('bank_popular').checked, BDI: el('bank_bdi').checked
-            },
+            banksToTrack: BANKS.reduce(function (o, b) { o[b] = el('bank_' + b.toLowerCase()).checked; return o; }, {}),
             notify: {
               enabled: el('notifyEnabled').checked, monthly: el('notifyMonthly').checked, email: el('notifyEmail').value.trim(),
               hour: parseInt(el('notifyHour').value, 10), sections: sections
@@ -1312,11 +1307,7 @@ Monthly Income: ${config.monthlyIncome} ${config.incomeCurrency}
 🗓️ Monthly summary: ${config.notifyMonthly ? 'on — the 1st, around ' + config.notifyHour + ':00' : 'off'}
 
 🏦 Banks Tracked:
-  LAFISE: ${config.banksToTrack.LAFISE ? '✅' : '❌'}
-  BANESCO: ${config.banksToTrack.BANESCO ? '✅' : '❌'}
-  BHD: ${config.banksToTrack.BHD ? '✅' : '❌'}
-  POPULAR: ${config.banksToTrack.POPULAR ? '✅' : '❌'}
-  BDI: ${config.banksToTrack.BDI ? '✅' : '❌'}
+${BANK_ORDER.map(b => '  ' + b + ': ' + (config.banksToTrack[b] ? '✅' : '❌')).join('\n')}
 
 Version: ${SCRIPT_VERSION}
   `;
@@ -2022,11 +2013,33 @@ const BANK_PATTERNS = {
     name: 'BDI',
     fromDomain: 'bdi.com.do',
     searchQuery: 'from:bdi.com.do',
-    extractors: {}, // no real sample yet — always uses the generic extractAllAmounts() fallback
+    // v1.1.60: real samples — card purchases ("Notificacion de Consumos") and interbank transfers sent
+    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions },
     keywords: ['BDI', 'BDI DIGITAL', 'BANCO BDI'],
     merchantPattern: /(?:en|en el|hacia|a)([^\n]{10,50})/i
+  },
+  // v1.1.60: two more banks, from real samples
+  SCOTIABANK: {
+    name: 'SCOTIABANK',
+    fromDomain: 'scotiabank.com',                        // alertas@scotiabank.com, and *.scotiabank.com.do
+    searchQuery: 'from:alertas@scotiabank.com OR from:scotiabank.com.do',
+    extractors: { consumo: extractSCOTIABANKConsumoTransactions },
+    keywords: ['SCOTIABANK', 'SCOTIA'],
+    merchantPattern: /\ben\s+(.{3,50}?)\s+con su/i
+  },
+  QIK: {
+    name: 'QIK',
+    fromDomain: '@qik.',                                 // notificaciones@qik.do, …@qik.com.do
+    searchQuery: 'from:qik.do OR from:qik.com.do',
+    extractors: { consumo: extractQIKConsumoTransactions },
+    keywords: ['QIK'],
+    merchantPattern: /\ben\s+(.{3,50}?)\s+con tu tarjeta/i
   }
 };
+
+// v1.1.60: THE list of banks, in tab order (Raw_BDI before Raw_POPULAR, as asked in v1.1.5) — the Setup Wizard, View
+// Config and the sheet order all come from it, so a bank is added in one place
+const BANK_ORDER = ['LAFISE', 'BANESCO', 'BHD', 'BDI', 'POPULAR', 'SCOTIABANK', 'QIK'];
 
 /**
  * v1.0.3: Emails to reject outright — marketing/promo sends from the bank,
@@ -2136,6 +2149,7 @@ const TYPE_SUBJECT_KEYWORDS = {
     '¡TRANSFERENCIA EXITOSA!',              // LAFISE
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
     'TRANSACCIONES ENTRE MIS PRODUCTOS',    // BHD
+    'TRANSACCIÓN INTERBANCARIA', 'TRANSACCION INTERBANCARIA',   // BDI (v1.1.60)
   ],
   // v1.1.17: BUG FIX — real confirmed LAFISE subject is "¡Realizaste un
   // pago a tu tarjeta LAFISE!" (active/informal phrasing — "you made a
@@ -2487,9 +2501,17 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       return { items: [], status: 'filtered' };
     }
     if (isNonTransactionalEmail(subject, plainText)) {
-      stats.nonTransactional++;
-      Logger.log("Skipped non-transactional email: " + subject);
-      return { items: [], status: 'filtered' };
+      // v1.1.60: a footer like "we'll never ask for your card's security code" isn't a security-code email. When the
+      // bank's own extractor finds a real transaction (an amount), the email is read; otherwise it's filtered.
+      const bankType = detectTransactionType(subject, plainText);
+      const real = bankPattern.extractors && Object.keys(bankPattern.extractors).length &&
+        extractTransactionItems(bank, bankType, plainText).some(x => x && x.amount > 0);
+      if (!real) {
+        stats.nonTransactional++;
+        Logger.log("Skipped non-transactional email: " + subject);
+        return { items: [], status: 'filtered' };
+      }
+      Logger.log("Kept: a real transaction whose footer only mentions a non-transactional phrase — " + subject);
     }
     if (isDeclinedTransactionEmail(subject, plainText) && !hasApprovedRow(plainText)) {
       stats.declined++;
@@ -3302,6 +3324,76 @@ function isStatementEmail(message) {
   return Object.keys(BANK_PATTERNS).some(b => BANK_PATTERNS[b].statement && BANK_PATTERNS[b].statement.subject.test(subject));
 }
 
+/* ======================================================================
+ * BDI, SCOTIABANK, QIK — v1.1.60 (real samples; fixtures with invented data)
+ * Each reads the text flattened to single spaces, so it doesn't matter how Gmail's plain-text version splits the
+ * email's table cells into lines.
+ * ====================================================================== */
+function moneyCurrency(token, fallback) {
+  const t = String(token || '').toUpperCase().replace(/\s+/g, '');
+  if (t === 'RD$' || t === 'DOP') return 'DOP';
+  if (t === 'US$' || t === 'USD') return 'USD';
+  if (t === 'EUR' || t === '€') return 'EUR';
+  return fallback || 'DOP';
+}
+
+/** BDI "Notificacion de Consumos": a table — Fecha | Moneda | Monto | Comercio | Estado — with one or more rows. */
+function extractBDIConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const re = /(\d{2}\/\d{2}\/\d{2,4}\s+\d{1,2}:\d{2})\s+(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})\s+(.+?)\s+(APROBADA|RECHAZADA|DECLINADA|REVERSADA|ANULADA)\b/gi;
+  const out = [];
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    if (m[5].toUpperCase() !== 'APROBADA') continue;   // only charges that went through
+    out.push({ amount: parseFloat(m[3].replace(/,/g, '')), currency: moneyCurrency(m[2]), merchant: m[4].trim().substring(0, 50),
+      timeKey: m[1], context: m[0] });
+  }
+  return out;
+}
+
+/**
+ * BDI "Comprobante transacción Interbancaria": a transfer SENT ("[Salida]") to another bank — the amount, the
+ * beneficiary's name and, as its own row, the tax and commission when there are any. Anything else (an incoming one
+ * would say "[Entrada]") is left for Unrecognized rather than guessed.
+ */
+function extractBDITransferTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  if (!/\[\s*Salida\s*\]/i.test(flat)) return [];
+  const amt = flat.match(/Monto\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
+  if (!amt) return [];
+  const currency = moneyCurrency(amt[1]);
+  const who = (flat.match(/Beneficiario\s+\**\d*\s*(.+?)\s+Banco Destino/i) || [])[1];
+  const bank = (flat.match(/Banco Destino(?:\s*\/\s*C[óo]digo Swift)?\s+(.+?)\s+[A-Z0-9]{8,11}\s+Monto/i) || [])[1];
+  const fee = s => { const f = flat.match(s); return f ? parseFloat(f[2].replace(/,/g, '')) : 0; };
+  const fees = fee(/Impuesto[^$]*?(RD|US)\$\s*([\d,]+\.\d{2})/i) + fee(/Comisi[óo]n\s+(RD|US)\$\s*([\d,]+\.\d{2})/i);
+  const out = [{ amount: parseFloat(amt[2].replace(/,/g, '')), currency: currency,
+    merchant: (who || 'Transferencia interbancaria').trim().substring(0, 50), context: (bank ? 'to ' + bank.trim() : 'interbank transfer') }];
+  if (fees > 0) out.push({ amount: +fees.toFixed(2), currency: currency, merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' });
+  return out;
+}
+
+/** Scotiabank "Autorización …": "por un monto de $25.50 USD en <merchant> con su Tarjeta de Crédito Scotiabank ***1234". */
+function extractSCOTIABANKConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/por un monto de\s+(RD\$|US\$|\$)?\s*([\d,]+\.\d{2})\s*(USD|DOP|EUR)?\s+en\s+(.+?)\s+con su\s+Tarjeta/i);
+  if (!m) return [];
+  const currency = m[3] ? moneyCurrency(m[3]) : (m[1] === 'US$' ? 'USD' : 'DOP');
+  return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: currency, merchant: m[4].trim().substring(0, 50), context: m[0] }];
+}
+
+/**
+ * QIK "Usaste tu tarjeta de crédito Qik": "Se hizo una transacción de RD$ 640.00 en <merchant> con tu tarjeta …".
+ * The email also shows the card's available balance — never taken for the amount.
+ */
+function extractQIKConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/transacci[óo]n de\s+(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})\s+en\s+(.+?)\s+con tu tarjeta/i);
+  if (!m) return [];
+  const when = (flat.match(/Fecha y hora\s+(\d{2}-\d{2}-\d{4}\s+\d{1,2}:\d{2}\s*[AP]M)/i) || [])[1] || '';
+  return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: moneyCurrency(m[1]), merchant: m[3].trim().substring(0, 50),
+    timeKey: when, context: m[0] }];
+}
+
 // ====================================================================================================
 // 04_sheetsWriter.gs
 // ====================================================================================================
@@ -3343,10 +3435,11 @@ const AUTO_NONE = '(none)';
 // v1.1.37: spending, then everything about investments together, then settings
 const CANONICAL_SHEET_ORDER = [
   "Dashboard", "Transactions", "Bank Transfers", "Incoming Transfers",
-  "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
+].concat(BANK_ORDER.map(b => 'Raw_' + b)).concat([   // v1.1.60: from the one list of banks
+  "Unrecognized",
   "Holdings", "Investment Ledger", "Portfolio History",
   "Custom Rules", "Investment Accounts", "Configuration", "Categories"
-];
+]);
 // Settings tabs you rarely open; 📊 Tracker › Show / Hide Settings Tabs toggles them. Custom Rules isn't one of them:
 // it's edited often, and the summary emails link to it (a hidden sheet can't be opened from a link).
 const SETTINGS_TABS = ["Investment Accounts", "Configuration", "Categories"];
@@ -4344,7 +4437,21 @@ const OLD_DEFAULT_CARD_NOTES = [
 const CARD_PRODUCTS = {
   LAFISE_CLASICA:        { bank: 'LAFISE',  name: 'Clásica Mastercard', cashback: 0.10, note: CARD_NOTES.LAFISE },
   BANESCO_SUPERCASHBACK: { bank: 'BANESCO', name: 'Super Cashback',     cashback: 0.07, note: CARD_NOTES.BANESCO },
-  BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD }
+  BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD },
+  // v1.1.60: public product facts (each bank's site, Sept 2026). The rate is the BASE cashback every purchase earns —
+  // what the Dashboard uses; points, miles and day- or merchant-specific promotions are in the note, not in the rate.
+  // Nothing about a particular holder (credit limit, statement and payment days) belongs here.
+  BHD_LIFEMILES:         { bank: 'BHD',     name: 'Visa LifeMiles',     cashback: 0,
+    note: 'Miles, not cashback: 2 LifeMiles per US$1 at Avianca and Star Alliance airlines, 1 per US$1 elsewhere. ' +
+      'Installment purchases and cash advances earn none. 4 LoungeKey visits a year.' },
+  BDI_VISA_CLASICA:      { bank: 'BDI',     name: 'Visa Clásica',       cashback: 0,
+    note: 'No base cashback: returns of 15-20% on set days at specific merchants (a yearly program, with minimums ' +
+      'per purchase and caps). Check the current program on the bank\'s site.' },
+  SCOTIABANK_AMEX_GOLD:  { bank: 'SCOTIABANK', name: 'American Express Gold', cashback: 0,
+    note: 'Membership Rewards points, not cashback: 3x in restaurants, bars and entertainment; 2x in clothing, shoes, ' +
+      'gyms, spas and salons; 1x (1 point per US$1) elsewhere. Points don\'t expire. Cashback promotions vary by year.' },
+  QIK_MASTERCARD:        { bank: 'QIK',     name: 'Mastercard',         cashback: 0.01,
+    note: '1% cashback on every purchase, no cap, credited weekly. No issuance, renewal or handling fees.' }
 };
 
 /**

@@ -35,10 +35,11 @@ const AUTO_NONE = '(none)';
 // v1.1.37: spending, then everything about investments together, then settings
 const CANONICAL_SHEET_ORDER = [
   "Dashboard", "Transactions", "Bank Transfers", "Incoming Transfers",
-  "Raw_LAFISE", "Raw_BANESCO", "Raw_BHD", "Raw_BDI", "Raw_POPULAR", "Unrecognized",
+].concat(BANK_ORDER.map(b => 'Raw_' + b)).concat([   // v1.1.60: from the one list of banks
+  "Unrecognized",
   "Holdings", "Investment Ledger", "Portfolio History",
   "Custom Rules", "Investment Accounts", "Configuration", "Categories"
-];
+]);
 // Settings tabs you rarely open; 📊 Tracker › Show / Hide Settings Tabs toggles them. Custom Rules isn't one of them:
 // it's edited often, and the summary emails link to it (a hidden sheet can't be opened from a link).
 const SETTINGS_TABS = ["Investment Accounts", "Configuration", "Categories"];
@@ -1036,7 +1037,21 @@ const OLD_DEFAULT_CARD_NOTES = [
 const CARD_PRODUCTS = {
   LAFISE_CLASICA:        { bank: 'LAFISE',  name: 'Clásica Mastercard', cashback: 0.10, note: CARD_NOTES.LAFISE },
   BANESCO_SUPERCASHBACK: { bank: 'BANESCO', name: 'Super Cashback',     cashback: 0.07, note: CARD_NOTES.BANESCO },
-  BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD }
+  BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD },
+  // v1.1.60: public product facts (each bank's site, Sept 2026). The rate is the BASE cashback every purchase earns —
+  // what the Dashboard uses; points, miles and day- or merchant-specific promotions are in the note, not in the rate.
+  // Nothing about a particular holder (credit limit, statement and payment days) belongs here.
+  BHD_LIFEMILES:         { bank: 'BHD',     name: 'Visa LifeMiles',     cashback: 0,
+    note: 'Miles, not cashback: 2 LifeMiles per US$1 at Avianca and Star Alliance airlines, 1 per US$1 elsewhere. ' +
+      'Installment purchases and cash advances earn none. 4 LoungeKey visits a year.' },
+  BDI_VISA_CLASICA:      { bank: 'BDI',     name: 'Visa Clásica',       cashback: 0,
+    note: 'No base cashback: returns of 15-20% on set days at specific merchants (a yearly program, with minimums ' +
+      'per purchase and caps). Check the current program on the bank\'s site.' },
+  SCOTIABANK_AMEX_GOLD:  { bank: 'SCOTIABANK', name: 'American Express Gold', cashback: 0,
+    note: 'Membership Rewards points, not cashback: 3x in restaurants, bars and entertainment; 2x in clothing, shoes, ' +
+      'gyms, spas and salons; 1x (1 point per US$1) elsewhere. Points don\'t expire. Cashback promotions vary by year.' },
+  QIK_MASTERCARD:        { bank: 'QIK',     name: 'Mastercard',         cashback: 0.01,
+    note: '1% cashback on every purchase, no cap, credited weekly. No issuance, renewal or handling fees.' }
 };
 
 /**

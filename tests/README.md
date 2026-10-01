@@ -44,6 +44,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v157.test.js` | Transfers sent typed in Bank Transfers: saved once, category kept or set by a Custom Rule; rows of pre-v1.1.39 sheets never duplicated. |
 | `v158.test.js` | Typed transfers keep their date (real dates and text), no day shift on yyyy-mm-dd text, rows saved without a date repaired instead of duplicated, the check after saving. |
 | `v159.test.js` | Other incomes and deductions as lines (net income, validation, saving, Dashboard rows), an older single other income migrated (Dashboard included), protected PDFs named. |
+| `v160.test.js` | BDI (purchases, interbank transfers sent), Scotiabank and QIK from real-sample structure; a security footer not filtering a purchase; one list of banks; the new catalogue products. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 

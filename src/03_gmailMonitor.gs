@@ -104,11 +104,33 @@ const BANK_PATTERNS = {
     name: 'BDI',
     fromDomain: 'bdi.com.do',
     searchQuery: 'from:bdi.com.do',
-    extractors: {}, // no real sample yet — always uses the generic extractAllAmounts() fallback
+    // v1.1.60: real samples — card purchases ("Notificacion de Consumos") and interbank transfers sent
+    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions },
     keywords: ['BDI', 'BDI DIGITAL', 'BANCO BDI'],
     merchantPattern: /(?:en|en el|hacia|a)([^\n]{10,50})/i
+  },
+  // v1.1.60: two more banks, from real samples
+  SCOTIABANK: {
+    name: 'SCOTIABANK',
+    fromDomain: 'scotiabank.com',                        // alertas@scotiabank.com, and *.scotiabank.com.do
+    searchQuery: 'from:alertas@scotiabank.com OR from:scotiabank.com.do',
+    extractors: { consumo: extractSCOTIABANKConsumoTransactions },
+    keywords: ['SCOTIABANK', 'SCOTIA'],
+    merchantPattern: /\ben\s+(.{3,50}?)\s+con su/i
+  },
+  QIK: {
+    name: 'QIK',
+    fromDomain: '@qik.',                                 // notificaciones@qik.do, …@qik.com.do
+    searchQuery: 'from:qik.do OR from:qik.com.do',
+    extractors: { consumo: extractQIKConsumoTransactions },
+    keywords: ['QIK'],
+    merchantPattern: /\ben\s+(.{3,50}?)\s+con tu tarjeta/i
   }
 };
+
+// v1.1.60: THE list of banks, in tab order (Raw_BDI before Raw_POPULAR, as asked in v1.1.5) — the Setup Wizard, View
+// Config and the sheet order all come from it, so a bank is added in one place
+const BANK_ORDER = ['LAFISE', 'BANESCO', 'BHD', 'BDI', 'POPULAR', 'SCOTIABANK', 'QIK'];
 
 /**
  * v1.0.3: Emails to reject outright — marketing/promo sends from the bank,
@@ -218,6 +240,7 @@ const TYPE_SUBJECT_KEYWORDS = {
     '¡TRANSFERENCIA EXITOSA!',              // LAFISE
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
     'TRANSACCIONES ENTRE MIS PRODUCTOS',    // BHD
+    'TRANSACCIÓN INTERBANCARIA', 'TRANSACCION INTERBANCARIA',   // BDI (v1.1.60)
   ],
   // v1.1.17: BUG FIX — real confirmed LAFISE subject is "¡Realizaste un
   // pago a tu tarjeta LAFISE!" (active/informal phrasing — "you made a
@@ -569,9 +592,17 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       return { items: [], status: 'filtered' };
     }
     if (isNonTransactionalEmail(subject, plainText)) {
-      stats.nonTransactional++;
-      Logger.log("Skipped non-transactional email: " + subject);
-      return { items: [], status: 'filtered' };
+      // v1.1.60: a footer like "we'll never ask for your card's security code" isn't a security-code email. When the
+      // bank's own extractor finds a real transaction (an amount), the email is read; otherwise it's filtered.
+      const bankType = detectTransactionType(subject, plainText);
+      const real = bankPattern.extractors && Object.keys(bankPattern.extractors).length &&
+        extractTransactionItems(bank, bankType, plainText).some(x => x && x.amount > 0);
+      if (!real) {
+        stats.nonTransactional++;
+        Logger.log("Skipped non-transactional email: " + subject);
+        return { items: [], status: 'filtered' };
+      }
+      Logger.log("Kept: a real transaction whose footer only mentions a non-transactional phrase — " + subject);
     }
     if (isDeclinedTransactionEmail(subject, plainText) && !hasApprovedRow(plainText)) {
       stats.declined++;
@@ -1382,4 +1413,74 @@ function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
 function isStatementEmail(message) {
   const subject = message.getSubject() || '';
   return Object.keys(BANK_PATTERNS).some(b => BANK_PATTERNS[b].statement && BANK_PATTERNS[b].statement.subject.test(subject));
+}
+
+/* ======================================================================
+ * BDI, SCOTIABANK, QIK — v1.1.60 (real samples; fixtures with invented data)
+ * Each reads the text flattened to single spaces, so it doesn't matter how Gmail's plain-text version splits the
+ * email's table cells into lines.
+ * ====================================================================== */
+function moneyCurrency(token, fallback) {
+  const t = String(token || '').toUpperCase().replace(/\s+/g, '');
+  if (t === 'RD$' || t === 'DOP') return 'DOP';
+  if (t === 'US$' || t === 'USD') return 'USD';
+  if (t === 'EUR' || t === '€') return 'EUR';
+  return fallback || 'DOP';
+}
+
+/** BDI "Notificacion de Consumos": a table — Fecha | Moneda | Monto | Comercio | Estado — with one or more rows. */
+function extractBDIConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const re = /(\d{2}\/\d{2}\/\d{2,4}\s+\d{1,2}:\d{2})\s+(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})\s+(.+?)\s+(APROBADA|RECHAZADA|DECLINADA|REVERSADA|ANULADA)\b/gi;
+  const out = [];
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    if (m[5].toUpperCase() !== 'APROBADA') continue;   // only charges that went through
+    out.push({ amount: parseFloat(m[3].replace(/,/g, '')), currency: moneyCurrency(m[2]), merchant: m[4].trim().substring(0, 50),
+      timeKey: m[1], context: m[0] });
+  }
+  return out;
+}
+
+/**
+ * BDI "Comprobante transacción Interbancaria": a transfer SENT ("[Salida]") to another bank — the amount, the
+ * beneficiary's name and, as its own row, the tax and commission when there are any. Anything else (an incoming one
+ * would say "[Entrada]") is left for Unrecognized rather than guessed.
+ */
+function extractBDITransferTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  if (!/\[\s*Salida\s*\]/i.test(flat)) return [];
+  const amt = flat.match(/Monto\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
+  if (!amt) return [];
+  const currency = moneyCurrency(amt[1]);
+  const who = (flat.match(/Beneficiario\s+\**\d*\s*(.+?)\s+Banco Destino/i) || [])[1];
+  const bank = (flat.match(/Banco Destino(?:\s*\/\s*C[óo]digo Swift)?\s+(.+?)\s+[A-Z0-9]{8,11}\s+Monto/i) || [])[1];
+  const fee = s => { const f = flat.match(s); return f ? parseFloat(f[2].replace(/,/g, '')) : 0; };
+  const fees = fee(/Impuesto[^$]*?(RD|US)\$\s*([\d,]+\.\d{2})/i) + fee(/Comisi[óo]n\s+(RD|US)\$\s*([\d,]+\.\d{2})/i);
+  const out = [{ amount: parseFloat(amt[2].replace(/,/g, '')), currency: currency,
+    merchant: (who || 'Transferencia interbancaria').trim().substring(0, 50), context: (bank ? 'to ' + bank.trim() : 'interbank transfer') }];
+  if (fees > 0) out.push({ amount: +fees.toFixed(2), currency: currency, merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' });
+  return out;
+}
+
+/** Scotiabank "Autorización …": "por un monto de $25.50 USD en <merchant> con su Tarjeta de Crédito Scotiabank ***1234". */
+function extractSCOTIABANKConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/por un monto de\s+(RD\$|US\$|\$)?\s*([\d,]+\.\d{2})\s*(USD|DOP|EUR)?\s+en\s+(.+?)\s+con su\s+Tarjeta/i);
+  if (!m) return [];
+  const currency = m[3] ? moneyCurrency(m[3]) : (m[1] === 'US$' ? 'USD' : 'DOP');
+  return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: currency, merchant: m[4].trim().substring(0, 50), context: m[0] }];
+}
+
+/**
+ * QIK "Usaste tu tarjeta de crédito Qik": "Se hizo una transacción de RD$ 640.00 en <merchant> con tu tarjeta …".
+ * The email also shows the card's available balance — never taken for the amount.
+ */
+function extractQIKConsumoTransactions(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  const m = flat.match(/transacci[óo]n de\s+(RD\$|US\$|DOP|USD|EUR)\s*([\d,]+\.\d{2})\s+en\s+(.+?)\s+con tu tarjeta/i);
+  if (!m) return [];
+  const when = (flat.match(/Fecha y hora\s+(\d{2}-\d{2}-\d{4}\s+\d{1,2}:\d{2}\s*[AP]M)/i) || [])[1] || '';
+  return [{ amount: parseFloat(m[2].replace(/,/g, '')), currency: moneyCurrency(m[1]), merchant: m[3].trim().substring(0, 50),
+    timeKey: when, context: m[0] }];
 }

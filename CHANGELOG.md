@@ -2,6 +2,25 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.60 (Sept 30, 2026) — BDI read for real; Scotiabank and QIK added
+- From real samples (shared by another user; the fixtures keep their structure with invented data): **BDI** card
+  purchases (a table of rows — approved ones only) and interbank transfers sent ("[Salida]": the amount to the
+  beneficiary, and the tax and commission as their own row when not zero; anything else is left for Unrecognized). BDI
+  had no extractor until now, only a generic amount guess. Two new banks: **Scotiabank** (card authorizations, the
+  amount in its own currency) and **QIK** (card purchases — the purchase, never the available balance the email shows).
+- **Found on the QIK sample:** its security footer ("we'll never ask for your card's … security code") made it look
+  like a security-code email, and it was filtered. When the bank's own extractor finds a real transaction, the email is
+  read; a real code email (no amount) is still filtered (mutation-checked).
+- One list of banks, `BANK_ORDER`: the Setup Wizard's checkboxes, View Config and the tab order come from it (they were
+  six hand-written lists). In a setup saved before, a bank added since starts unticked, so saving doesn't turn on banks
+  that aren't used.
+- Card catalogue: QIK Mastercard (1% on everything), BDI Visa Clásica, Scotiabank American Express Gold and BHD Visa
+  LifeMiles — public product facts only. The rate is the base cashback every purchase earns; points, miles and
+  day-specific or yearly promotions are in the note, and nothing about a particular holder (credit limit, statement and
+  payment days) is in the code.
+- Tests: 210, on `src/` and on the single file (mutation-checked: the footer rule, approved rows only, sent transfers
+  only, the fees row); the wizard checked in a real browser.
+
 ### v1.1.59 (Sept 30, 2026) — several other incomes; other deductions; each in its currency
 - **Requested:** the Setup Wizard takes as many other incomes as needed (up to 10), each in DOP, USD or EUR, and a new
   **Other Monthly Deductions** list under Monthly Deductions, the same way — a loan installment, a cooperative, insurance.
