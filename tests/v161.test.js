@@ -59,7 +59,7 @@ test('BDI transfer RECEIVED: money in (negative, Incoming), not a transfer sent;
   assert.deepEqual(r.items.map(row), [['BDI', 'Incoming', 'DOP', -3500, 'MARIA ELENA GOMEZ', 'Exclude']],
     'reported: saved as a Transfer (spending) with a garbled name');
   assert.equal(r.items[0].description, 'MARIA ELENA GOMEZ (own account)');
-  const third = parseBody(h, EMAILS.bdiIn, fixture('bdi_transferencia_recibida').replace(/Pagado Por\nMARIA ELENA GOMEZ/, 'Pagado Por\nJUAN PEREZ'));
+  const third = parseBody(h, EMAILS.bdiIn, fixture('bdi_transferencia_recibida').replace(/Pagado Por\n\*?MARIA ELENA GOMEZ\*?/, 'Pagado Por\n*JUAN PEREZ*'));
   assert.deepEqual(third.items.map(row), [['BDI', 'Incoming', 'DOP', -3500, 'JUAN PEREZ', '']]);
   // its subject is the same as a sent one's ("… Interbancaria" → Transfer): the saved type must survive Recategorize
   const TX = h.get('TX_COL');

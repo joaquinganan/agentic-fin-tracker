@@ -673,7 +673,11 @@ function computeRecategorization(row, rawCustomRules) {
   const currency = (oldCurrency && !VALID_CURRENCIES.has(oldCurrency)) ? 'DOP' : oldCurrency;
   const isCredit = (type === 'Card Payment' || type === 'Cashback' || type === 'Incoming') ? 'YES' : row[TX_COL.IS_CREDIT];
   const isCashback = type === 'Cashback' ? 'YES' : 'NO';
-  return { type: type, category: category || '', currency: currency, isCredit: isCredit, isCashback: isCashback };
+  // v1.1.62: money received is saved negative. A row that becomes Incoming here (BANESCO's "Transferencia Recibida",
+  // saved as a positive transfer before this version) turns negative, so it stops counting as spending.
+  const oldAmount = row[TX_COL.AMOUNT];
+  const amount = (type === 'Incoming' && typeof oldAmount === 'number' && oldAmount > 0) ? -oldAmount : oldAmount;
+  return { type: type, category: category || '', currency: currency, isCredit: isCredit, isCashback: isCashback, amount: amount };
 }
 
 /**
@@ -739,7 +743,7 @@ function recategorizeAllTransactions(userEmail) {
       const auto = r.category || AUTO_NONE;
       if (asText(row[TX_COL.AUTO_CATEGORY]) !== auto) { row[TX_COL.AUTO_CATEGORY] = auto; changedCols.add(TX_COL.AUTO_CATEGORY); }
       [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, manual ? row[TX_COL.CATEGORY] : r.category], [TX_COL.CURRENCY, r.currency],
-       [TX_COL.IS_CREDIT, r.isCredit], [TX_COL.IS_CASHBACK, r.isCashback]].forEach(pair => {
+       [TX_COL.IS_CREDIT, r.isCredit], [TX_COL.IS_CASHBACK, r.isCashback], [TX_COL.AMOUNT, r.amount]].forEach(pair => {
         const c = pair[0], v = pair[1];
         if (asText(row[c]) !== asText(v)) {
           row[c] = v;
@@ -1205,6 +1209,24 @@ function resetDashboardSheet(sheet) {
   sheet.setRowHeights(1, sheet.getMaxRows(), 21);
 }
 
+/**
+ * v1.1.62: categories used in Transactions that are neither a default one nor a Custom Rule's (typed by hand in
+ * Transactions, Bank Transfers or Incoming Transfers). The Dashboard only had rows for the named ones, so amounts in a
+ * category typed by hand were in no row and no total. Exclude is never a row. Case and spaces are ignored, as SUMIFS
+ * ignores case.
+ */
+function categoriesOnlyInTransactions(named) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const known = new Set(named.map(c => String(c).trim().toUpperCase()).concat([EXCLUDE_CATEGORY.toUpperCase()]));
+  const out = [];
+  sheet.getDataRange().getValues().slice(1).forEach(r => {
+    const c = String(r[TX_COL.CATEGORY] === null || r[TX_COL.CATEGORY] === undefined ? '' : r[TX_COL.CATEGORY]).trim();
+    if (c && !known.has(c.toUpperCase())) { known.add(c.toUpperCase()); out.push(c); }
+  });
+  return out.sort();
+}
+
 function buildOrRefreshDashboard() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const config = getConfig();
@@ -1225,7 +1247,8 @@ function buildOrRefreshDashboard() {
   const pctFmt = '0.0%';
   const colL = c => String.fromCharCode(64 + c);                 // B=2 … O=15
   const MONTHS12 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-  const categories = getCategories().concat(userEmail ? getCustomCategoryNames(userEmail) : []);
+  const named = getCategories().concat(userEmail ? getCustomCategoryNames(userEmail) : []);
+  const categories = named.concat(categoriesOnlyInTransactions(named));   // v1.1.62
   const banks = Object.keys(BANK_PATTERNS).filter(b => !(config && config.banksToTrack) || config.banksToTrack[b]);
   const n = categories.length;
   const put = (range, v) => (typeof v === 'string' && v.charAt(0) === '=') ? range.setFormula(v) : range.setValue(v);

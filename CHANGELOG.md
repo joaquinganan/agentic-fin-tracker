@@ -2,6 +2,38 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.62 (Oct 2, 2026): real emails as Gmail gives them; transfers received at BANESCO; the Dashboard's sums checked
+- **Reported:** LAFISE's second card template ("Detalle de Transaccion Tarjeta de Crédito") was still "Amount not found",
+  49 of them in Unrecognized; QIK purchases didn't show up. **Cause:** Gmail's `getPlainBody()` writes bold as `*text*`
+  ("*COMERCIO: *UBER*EATS …", "*MONTO: *100.00", "*RD$ 20.00*"), and the fixtures of v1.1.60/61 had no markers, so the
+  tests passed while the real emails failed. QIK's was worse: its extractor missed the bold amount, so the security
+  footer ("código de seguridad") filtered the purchase without a trace. The newer extractors read the text through
+  `flatText()`, which drops a marker (an asterisk touching a space or an edge) and keeps one inside a word (UBER*EATS,
+  PedidosYa*Market, a masked card). Fixtures now carry the markers where the real emails have them, and a test checks
+  that bolding every line of every newer fixture reads the same rows. LAFISE's first template is untouched, except
+  that the currency written next to the amount now wins over the rest of the email (below).
+- **Reported:** BANESCO transfers received ("Notificación de Transferencia Recibida") were saved as transfers sent: the
+  subject wasn't known, and the body's "Transferencia Recibida" made it a Transfer, so money in counted as spending
+  when it had no category. Now Incoming (negative): the sender from a sender field, or from "Concepto: LBTR <name>"
+  (as in the transfer sent), else the sending bank; yours (Exclude) when it's the beneficiary. No sample of this email
+  yet: written from the one sent and from what the old extractor read off it. **Rows already saved** are repaired by
+  Recategorize (it runs after every update): the subject makes them Incoming and a positive amount turns negative.
+- **Reported:** a category's month on the Dashboard was far above what its rows seemed to add up to. The Dashboard was
+  right for its data: one of the rows is in **USD**, and it's converted at the USD rate. Whether that email really said
+  USD is open (no sample). One way it could be wrong was found and closed: LAFISE's first template took the currency from the first
+  currency-like token anywhere between the merchant and the amount; now the one written next to the amount wins.
+- **Requested, "check every category's calculation":** a test now **computes** the Dashboard's formulas (an evaluator
+  for exactly what it writes: SUMIFS by currency × rate, DATE, EDATE, SUM) over transactions in every category, currency
+  and type, against totals worked out by hand. It confirmed the arithmetic, and found one gap: a category typed by hand
+  with no Custom Rule had no row, so its amounts were in no total. It gets a row now.
+- From the Unrecognized sheet (all 59 resolved): BDI's card payment from the account ("Comprobante de Transacción",
+  "Pago Tarjetas de Crédito") is a Card Payment, with its tax as its own Transfer row (an item can now carry its own
+  type). Not a movement of their own, now filtered: BDI's "Transacción Interbancaria - Completada" (it confirms a
+  transfer already read from its Comprobante, same time), QIK's "Código CASH para ti creado" (the money leaves with
+  the withdrawal), Banreservas' payroll notice (the salary is set in the Setup Wizard, as with POPULAR's) and loan
+  reminder, and BHD's purchase-validation code. Banks declare these in `ignore`, checked before anything else.
+- Tests: 230, on `src/` and on the single file (mutation-checked, 16 mutations).
+
 ### v1.1.61 (Oct 1, 2026): more formats from real samples; Banreservas; unknown emails never guessed for the newer banks
 - **Reported:** BDI emails that aren't purchases were saved as spending, among them a welcome email that lists the first
   deposit and the account's limits. Found on a real sample: a BDI interbank transfer **received** has the same subject as

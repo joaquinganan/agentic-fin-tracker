@@ -1,0 +1,13 @@
+[image: Logo]
+Aviso Notificación Transacción Interbancaria - Completada
+Estimado(a) *GOMEZ ., MARIA ELENA*
+Te informamos que la transacción interbancaria realizada vía Pagos al Instante BCRD el 29/09/2026 09:30:17 AM fue enviada al beneficiario de manera satisfactoria. A continuación, te presentamos los detalles:
+[Salida]
+Monto
+*RD$2,500.00*
+Beneficiario
+Luis Ramirez
+Banco Destino / Código Swift
+QIK BANCO DIGITAL DOMINICANO, S.A.
+QDDMDOSDXXX
+Recuerda que el Banco BDI nunca te pedirá tus datos de acceso.

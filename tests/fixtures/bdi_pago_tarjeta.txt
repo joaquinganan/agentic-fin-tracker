@@ -1,0 +1,23 @@
+[image: Logo]
+Comprobante de Transacción
+Monto Transferido
+*RD$4,000.00*
+Cuenta Origen
+4100000000
+Tipo de cuenta
+Cuenta Digital
+Alias
+Cuenta de Ahorro Digital
+Tipo de Transacción
+*Pago Tarjetas de Crédito*
+Fecha Transacción
+25/09/2026 13:06:45
+Impuesto 0.20%
+RD$8.00
+Monto
+RD$4,008.00
+No. Referencia
+4100003
+Notas de seguridad
+Recuerda que el Banco BDI nunca te pedirá tus datos de acceso.
+Banco Múltiple BDI, S.A.  | Todos los derechos reservados

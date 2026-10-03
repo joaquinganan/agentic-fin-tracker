@@ -1,10 +1,10 @@
 Comprobante Transacción Interbancaria Recibida
 Pagado Por
-MARIA ELENA GOMEZ
+*MARIA ELENA GOMEZ*
 Fecha Transacción
-21/09/2026 18:16:37
+*21/09/2026 18:16:37*
 Tipo de Transacción
-Transferencia Interbancaria Recibidas
+*Transferencia Interbancaria Recibidas*
 No. Referencia
 4100002
 No. Contrato
@@ -14,9 +14,9 @@ MARIA ELENA GOMEZ .
 No. Autorización
 4100002
 Monto
-RD$3,500.00
+*RD$3,500.00*
 Comisión
-RD$0.00
+*RD$0.00*
 Comentario
 ahorro
 Notas de seguridad

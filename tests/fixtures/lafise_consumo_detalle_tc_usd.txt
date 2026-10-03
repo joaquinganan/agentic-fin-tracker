@@ -1,8 +1,8 @@
 Estimado Cliente:
 MARIA GOMEZ
 Te notificamos el consumo realizado con tu tarjeta BLRD CLASICO NUEVO Terminal 1111 con el siguiente detalle:
-*COMERCIO: *SUPERMERCADO EJEMPLO           SANTO DOMINGODO
-*MONTO: *1,234.56 PESOS DOMI
-*FECHA: *29/09/2026
+*COMERCIO: *TIENDA*DIGITAL EJEMPLO Stockholm SE
+*MONTO: *12.34 Dolares US
+*FECHA: *14/09/2026
 Si no reconoce este consumo, llamar de inmediato al 809-541-4100
 Alerta de Consumo Banco LAFISE

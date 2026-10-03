@@ -1,0 +1,17 @@
+Hola ,
+
+Nos place informarte que recibiste una transacción vía pago al instante en
+fecha 01/10/2026 10:21 AM.
+
+A continuación, detalles de la transacción:
+
+Monto: DOP15,000.00
+Cuenta Destino: DO00BANS****************0000
+Fecha de la Transacción: 01/10/2026
+No. Referencia: E000000.A1000001
+Banco Ordenante: BANCO EJEMPLO, S.A.
+Nombre del Beneficiario: MARIA ELENA GOMEZ
+Concepto: LBTR MARIA ELENA GOMEZ
+
+Queremos recordarte que ningún personal o proveedor de Banesco te llamará
+para solicitarte información bancaria, claves o contraseñas.

@@ -1,0 +1,10 @@
+Notificación Pago Nómina - Banreservas
+Notificación Pago Nómina
+Le notificamos que se le presenta un pago de nómina a su cuenta:
+Monto:
+DOP$ 25,000.00
+Cuenta:
+Cuenta de Ahorros •••• 0000
+Fecha de transacción:
+30/09/2026 07:35 PM
+Recibido por los valores indicados en este comprobante.
