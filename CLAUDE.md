@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.63** (5 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.64** (5 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.63)
+## 2. Estado actual (v1.1.64)
 
-- **235 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **245 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -164,6 +164,12 @@ git push
   hoja. Una vez, filas pegadas desde Excel quedaron sin fecha en una corrida que además murió por tiempo, y **no se
   pudo reproducir**. Quedó una verificación posterior al guardado que corrige la fecha y deja en el registro la línea
   "⚠️ … please report this line". Si aparece, investigar con esa evidencia.
+- **Pruebas en Windows:** con `core.autocrlf=true` el checkout queda en CRLF y en un clon limpio fallan 3 pruebas que
+  en CI (Linux, LF) pasan: `bundle:check` (el `dist/` se compara byte a byte), BDI recibida (`tests/v161.test.js`) y la
+  moneda de la primera plantilla de LAFISE (`tests/v162.test.js`), que buscan `
+` en un fixture. Para verificar como
+  CI: `git -c core.autocrlf=false checkout-index -a --prefix=<carpeta>/` y correr las pruebas ahí. En Windows,
+  `npm run test:bundle` no corre (cmd no entiende `GS_BUNDLE=…`): usar Git Bash.
 - **No editar la hoja mientras corre el tracker** (pegar o borrar filas durante una ejecución).
 - Para diagnosticar en la hoja real, una técnica útil: un archivo temporal `Diagnostico` en Apps Script con una función
   que llame a las funciones del tracker (que son globales) y registre resultados paso a paso; se borra al terminar.
@@ -192,9 +198,11 @@ git push
   enviada; falta el `.eml` para confirmar el campo del remitente.
 - **LAFISE "Aviso de transferencia en banco local" exitoso:** solo hay muestras fallidas ("Estado: Error"); cualquier
   estado que no sea un fallo se lee como transferencia. Con un `.eml` exitoso, confirmar la palabra del estado.
-- **Resumen diario, "% sobre tu promedio":** compara un día contra el promedio de 30 días (sin facturas ni costos
-  fijos), y un gasto grande pero esporádico (combustible, una compra grande) dispara porcentajes enormes. Propuesta en
-  discusión: comparar contra un "día típico" robusto (mediana o percentil) y nombrar los gastos esporádicos aparte.
+- **Resumen diario, "día típico" (v1.1.64):** compara ayer con la mediana del día a día de 60 días, avisa solo por
+  encima del percentil 90 y nombra aparte las compras de 3 días típicos o más (`SUMMARY_TYPICAL_WINDOW_DAYS`,
+  `SUMMARY_HIGH_DAY_PERCENTILE`, `SUMMARY_SPORADIC_MULTIPLE` en `05_dailySummary.gs`). Falta confirmar con correos
+  reales que los umbrales (60 días, percentil 90, 3×) se sienten bien; ajustarlos es cambiar esas constantes.
+  La clave de la sección en la configuración sigue siendo `vsAverage` para que las configuraciones guardadas sirvan.
 - **Uber en LAFISE:** aparecen retenciones "UBR* PENDING.UBER.COM" con el mismo monto que un "UBER*RIDES" minutos
   después. Si se confirma que son retenciones, una Custom Rule a Exclude evita contarlas dos veces.
 - **Sin muestra todavía:** el correo de bienvenida de BDI (hoy se filtra por palabras: "bienvenido/a", "primer

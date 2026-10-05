@@ -25,8 +25,9 @@ test('daily: rent/electricity are left out of the day-to-day comparison, but sti
   const s = h.plain(h.ctx.computeDailySummary(rowsFor(h, list), { today: h.date(2026, 9, 25), rates: RATES, netIncomeDop: 60000, cards: [] }));
   assert.equal(s.spent, 4500, 'hero total includes the bill');
   assert.equal(s.spentDayToDay, 900);
-  assert.equal(Math.round(s.vsAverage * 100), -10, 'compared on day-to-day spending only');
-  assert.ok(!s.recommendations.some(r => /above your daily average/.test(r.text)), 'no false alarm from the bill');
+  assert.equal(Math.round(s.vsTypical * 100), -10, 'compared on day-to-day spending only');   // v1.1.64: typical day, was the average
+  assert.equal(s.highDay, false);
+  assert.ok(!s.recommendations.some(r => /highest days/.test(r.text)), 'no false alarm from the bill');
   assert.equal(s.last7.length, 7);
   assert.deepEqual(s.last7.map(x => x.amount), [1000, 1000, 1000, 1000, 1000, 1000, 4500]);
   assert.ok(s.mtdTop.every(c => c.cat !== 'Electricity'), 'bars show variable categories only');

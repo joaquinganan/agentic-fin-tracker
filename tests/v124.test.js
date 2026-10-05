@@ -157,12 +157,14 @@ test('daily summary: totals, average, pace, open transfers, card tips (pure)', (
   assert.equal(s.dayKey, '2026-09-24');
   assert.equal(s.spent, 3000 + 25 * 60, 'card payment and open transfer are not spending');
   assert.equal(s.purchases, 2);
-  assert.equal(s.windowDays, 23, 'average uses only the days that have history');
-  assert.equal(Math.round(s.avgDaily), 1000);
-  assert.equal(Math.round(s.vsAverage * 100), 350);
+  // v1.1.64: the 30-day average became a typical day (median of up to 60 days); with a steady history both are RD$1,000
+  assert.equal(s.historyDays, 23, 'typical day uses only the days that have history');
+  assert.equal(s.typicalDay, 1000);
+  assert.equal(Math.round(s.vsTypical * 100), 350);
   assert.equal(s.openTransfersTotal, 1500);
   assert.equal(s.mtd, 23000 + 4500);
-  assert.ok(s.recommendations.some(r => /above your daily average/.test(r.text) && /FARMA VALUE/.test(r.text)));
+  // v1.1.64: warned because the day is among the highest of its history, and the RD$3,000 pharmacy is named as a one-off
+  assert.ok(s.recommendations.some(r => /one of your highest days/.test(r.text) && /It includes FARMA VALUE FD05, RD\$3,000/.test(r.text)));
   assert.ok(s.recommendations.some(r => /1 transfer\(s\) this month have no category/.test(r.text)));
   assert.ok(s.recommendations.some(r => /of your net income/.test(r.text)));
   assert.equal(s.tips.length, 1);

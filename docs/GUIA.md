@@ -62,7 +62,9 @@ que esas líneas no aparezcan: los correos ya leídos se saltan, así que cada v
 
 - Cada mañana a las 6 AM se leen las alertas nuevas y se actualizan las hojas y el Dashboard.
 - Si los activaste, recibes el **resumen diario** (lo que gastaste ayer, cómo vas en el mes, recomendaciones) y el
-  **resumen mensual** el día 1.
+  **resumen mensual** el día 1. El diario compara ayer con un **día típico** (la mediana de tus últimos 60 días, sin
+  facturas ni costos fijos), avisa solo si fue uno de tus días más altos (el 10% de arriba) y nombra aparte una compra
+  grande y esporádica, como un tanque de combustible.
 - **📊 Tracker › 🔄 Monitor Gmail Now** hace la misma actualización en el momento.
 
 **Lo que conviene revisar de vez en cuando:**

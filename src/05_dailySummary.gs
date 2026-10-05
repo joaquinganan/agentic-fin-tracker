@@ -23,7 +23,14 @@ const SUMMARY_MIN_HISTORY_DAYS = 7;
 // or electricity payment would otherwise make any day look like an alarming spike.
 const SUMMARY_BILL_CATEGORIES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions', 'Electricity'];
 function isBillCategory(cat) { return SUMMARY_BILL_CATEGORIES.indexOf(cat) !== -1; }
-const SUMMARY_ABOVE_USUAL = 1.05;   // v1.1.26: only flag a category once it's 5%+ over its usual month   // below this, "vs. average" isn't meaningful yet
+const SUMMARY_ABOVE_USUAL = 1.05;   // v1.1.26: only flag a category once it's 5%+ over its usual month
+// v1.1.64: yesterday is compared with a "typical day" — the median of the day-to-day totals of the last 60 days (days
+// with nothing spent count as RD$0) — instead of the 30-day average, which one tank of fuel or one big purchase turned
+// into "+730%". A day is flagged only when it ranks among the highest of those days (above the 90th percentile), and
+// a purchase of several typical days is named apart so the rest of the day is compared on its own.
+const SUMMARY_TYPICAL_WINDOW_DAYS = 60;
+const SUMMARY_HIGH_DAY_PERCENTILE = 0.9;
+const SUMMARY_SPORADIC_MULTIPLE = 3;
 
 // Kinds of purchase with an unambiguous best card (see "Which card for what").
 const CARD_TIP_RULES = [
@@ -64,6 +71,19 @@ function stripAstral(text) {
   return String(text).replace(/[\u{10000}-\u{10FFFF}]\uFE0F?[ ]?/gu, '');
 }
 
+/** v1.1.64: median of a list of numbers (the mean of the middle two for an even count); null when empty. */
+function summaryMedian(list) {
+  if (!list.length) return null;
+  const a = list.slice().sort((x, y) => x - y), mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+/** v1.1.64: nearest-rank percentile (p in 0..1) — always a value that occurred; null when empty. */
+function summaryPercentile(list, p) {
+  if (!list.length) return null;
+  const a = list.slice().sort((x, y) => x - y);
+  return a[Math.min(a.length, Math.max(1, Math.ceil(p * a.length))) - 1];
+}
+
 function keyToDate(key) {
   const m = String(key).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12) : null;
@@ -101,15 +121,16 @@ function computeDailySummary(values, opts) {
 
   const s = {
     day: day, dayKey: dayKey, spent: 0, spentDayToDay: 0, purchases: 0, items: [], openTransfers: [], openTransfersTotal: 0,
-    windowSpent: 0, mtd: 0, mtdByCategory: {}, prevByCategory: {}, prevMonthsWithData: 0,
+    mtd: 0, mtdByCategory: {}, prevByCategory: {}, prevMonthsWithData: 0,
     mtdOpenCount: 0, mtdOpenTotal: 0, firstKey: null,
     dayOfMonth: day.getDate(), daysInMonth: new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate(),
     netIncomeDop: Number(opts.netIncomeDop) || 0
   };
   const monthsSeen = {};
-  const windowStartKey = shiftKey(-30);
+  const windowStartKey = shiftKey(-SUMMARY_TYPICAL_WINDOW_DAYS);
   const weekStartKey = shiftKey(-6);          // v1.1.26: last 7 days incl. yesterday
   const dayTotals = {};
+  const dayToDayTotals = {};                  // v1.1.64: day-to-day spending per day, for the typical day
 
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
@@ -132,7 +153,7 @@ function computeDailySummary(values, opts) {
       }
       if (open) { s.openTransfers.push(item); s.openTransfersTotal += amt; }
     }
-    if (spend && !isBillCategory(cat) && key >= windowStartKey && key < dayKey) s.windowSpent += amt;
+    if (spend && !isBillCategory(cat) && key >= windowStartKey && key < dayKey) dayToDayTotals[key] = (dayToDayTotals[key] || 0) + amt;
     if (spend && key >= weekStartKey && key <= dayKey) dayTotals[key] = (dayTotals[key] || 0) + amt;
     if (month === monthKey && key <= dayKey) {
       if (spend) { s.mtd += amt; s.mtdByCategory[cat] = (s.mtdByCategory[cat] || 0) + amt; }
@@ -144,13 +165,24 @@ function computeDailySummary(values, opts) {
     }
   }
 
-  // Daily average over the 30 days before yesterday — or fewer, if tracking started later.
+  // v1.1.64: typical day over the 60 days before yesterday — or fewer, if tracking started later. Every day counts,
+  // RD$0 included. Day-to-day spending only (bills and fixed costs excluded on both sides, as since v1.1.26).
   const windowStart = s.firstKey && s.firstKey > windowStartKey ? s.firstKey : windowStartKey;
-  const windowDays = Math.round((day - keyToDate(windowStart)) / 86400000);
-  s.windowDays = Math.max(0, windowDays);
-  s.avgDaily = s.windowDays >= SUMMARY_MIN_HISTORY_DAYS ? s.windowSpent / s.windowDays : null;
-  // v1.1.26: day-to-day spending only (bills and fixed costs excluded on both sides)
-  s.vsAverage = s.avgDaily && s.avgDaily > 0 && s.spentDayToDay > 0 ? s.spentDayToDay / s.avgDaily - 1 : null;
+  s.historyDays = Math.max(0, Math.round((day - keyToDate(windowStart)) / 86400000));
+  const history = [];
+  for (let n = 1; n <= s.historyDays; n++) history.push(dayToDayTotals[shiftKey(-n)] || 0);
+  const enough = s.historyDays >= SUMMARY_MIN_HISTORY_DAYS;
+  s.typicalDay = enough ? summaryMedian(history) : null;
+  s.highDayThreshold = enough ? summaryPercentile(history, SUMMARY_HIGH_DAY_PERCENTILE) : null;
+  const comparable = s.typicalDay !== null && s.typicalDay > 0;
+  // A threshold of RD$0 (most days with nothing spent) would make every purchase "high": no warning then.
+  s.highDay = comparable && s.highDayThreshold > 0 && s.spentDayToDay > s.highDayThreshold;
+  s.vsTypical = comparable && s.spentDayToDay > 0 ? s.spentDayToDay / s.typicalDay - 1 : null;
+  // Purchases of several typical days at once (fuel, an appliance): named apart, the rest compared on its own
+  s.sporadic = comparable ? s.items.filter(it => !isBillCategory(it.category) && it.amount >= s.typicalDay * SUMMARY_SPORADIC_MULTIPLE)
+    .sort((a, b) => b.amount - a.amount).map(it => ({ merchant: it.merchant, amount: it.amount })) : [];
+  s.restDayToDay = s.spentDayToDay - s.sporadic.reduce((sum, it) => sum + it.amount, 0);
+  s.vsTypicalRest = comparable ? s.restDayToDay / s.typicalDay - 1 : null;
   s.prevMonthsWithData = Object.keys(monthsSeen).length;
   s.usualByCategory = {};
   if (s.prevMonthsWithData) {
@@ -186,12 +218,16 @@ function summaryRecommendations(s) {
   const out = [];
   if (s.spent <= 0) {
     out.push({ icon: '🟢', text: 'No spending logged yesterday.' });
-  } else if (s.vsAverage !== null && s.vsAverage > 0.5) {
+  } else if (s.highDay) {
+    // v1.1.64: from the day's rank among the last 60 days, not from a percentage over the average
     const top = s.items.filter(it => !isBillCategory(it.category))[0];
-    out.push({ icon: '🟠', text: 'Day-to-day spending was ' + summaryPct(s.vsAverage) + ' above your daily average (' +
-      summaryMoney(s.avgDaily) + '). Biggest item: ' + top.merchant + ' (' + summaryMoney(top.amount) + ').' });
-  } else if (s.vsAverage !== null && s.vsAverage < -0.3) {
-    out.push({ icon: '🟢', text: 'Nice — day-to-day spending was ' + summaryPct(s.vsAverage) + ' below your daily average.' });
+    out.push({ icon: '🟠', text: 'Day-to-day spending (' + summaryMoney(s.spentDayToDay) + ') was one of your highest days in the last ' +
+      s.historyDays + ' days (the top ' + summaryPct(1 - SUMMARY_HIGH_DAY_PERCENTILE) + ' start above ' + summaryMoney(s.highDayThreshold) +
+      '). A typical day is ' + summaryMoney(s.typicalDay) + '.' + (s.sporadic.length ? ' It includes ' + summarySporadicText(s.sporadic) + '.'
+      : ' Biggest item: ' + top.merchant + ' (' + summaryMoney(top.amount) + ').') });
+  } else if (s.vsTypical !== null && s.vsTypical < -0.3) {
+    out.push({ icon: '🟢', text: 'Nice — day-to-day spending was ' + summaryPct(s.vsTypical) + ' below a typical day (' +
+      summaryMoney(s.typicalDay) + ').' });
   }
   if (s.projectedPct !== null && s.dayOfMonth >= 5) {
     if (s.projectedPct > 1) {
@@ -217,6 +253,43 @@ function summaryRecommendations(s) {
       ') — add a Custom Rule, or use "Exclude" for transfers between your own accounts.' });
   }
   return out;
+}
+
+/** v1.1.64: "SHELL, RD$2,500; FERRETERIA, RD$1,500" — the first three, then "and N more". */
+function summarySporadicText(list) {
+  const shown = list.slice(0, 3).map(it => it.merchant + ', ' + summaryMoney(it.amount)).join('; ');
+  return shown + (list.length > 3 ? ' and ' + (list.length - 3) + ' more' : '');
+}
+
+/**
+ * v1.1.64: how yesterday compares with a typical day, for the hero chip, the line under it and the subject.
+ * No percentage when there is too little history or the typical day is RD$0; big one-off purchases are named and the
+ * rest of the day is compared on its own. Returns {chip: {text, tone}, line, subject}.
+ */
+function summaryTypicalView(s) {
+  const typical = summaryMoney(s.typicalDay);
+  if (s.spent <= 0) return { chip: { text: 'No spending logged', tone: 'good' }, line: '', subject: '' };
+  if (s.spentDayToDay <= 0) return { chip: { text: 'Only bills and fixed costs', tone: 'info' }, line: '', subject: '' };
+  if (s.typicalDay === null) {
+    return { chip: { text: 'Typical day available after ' + SUMMARY_MIN_HISTORY_DAYS + ' days of history', tone: 'note' }, line: '', subject: '' };
+  }
+  if (!(s.typicalDay > 0)) {
+    return { chip: { text: 'Most days have no day-to-day spending — no typical day to compare with yet', tone: 'note' }, line: '', subject: '' };
+  }
+  const chip = s.highDay ? { text: 'One of your highest days in the last ' + s.historyDays + ' days', tone: 'warn' }
+    : s.vsTypical < -0.1 ? { text: 'Below a typical day', tone: 'good' }
+    : s.vsTypical > 0.1 ? { text: 'Above a typical day, not unusual', tone: 'info' }
+    : { text: 'Close to a typical day', tone: 'info' };
+  if (s.sporadic.length) {
+    const first = s.sporadic[0];
+    return { chip: chip,
+      line: 'Includes ' + summarySporadicText(s.sporadic) + ' · ' + (s.restDayToDay > 0
+        ? 'the rest of the day (' + summaryMoney(s.restDayToDay) + ') ' + summarySignedPct(s.vsTypicalRest) + ' vs. a typical day (' + typical + ')'
+        : 'nothing else day-to-day (a typical day is ' + typical + ')'),
+      subject: ' (incl. ' + first.merchant + ' ' + summaryMoney(first.amount) + (s.sporadic.length > 1 ? ' and ' + (s.sporadic.length - 1) + ' more' : '') + ')' };
+  }
+  return { chip: chip, line: summarySignedPct(s.vsTypical) + ' vs. a typical day (' + typical + ')',
+    subject: ' (' + summarySignedPct(s.vsTypical) + ' vs. typical day)' };
 }
 
 /** Card tips for yesterday's purchases, only for banks with a cashback rate in the card table. */
@@ -431,25 +504,21 @@ function buildDailySummaryEmail(s, opts) {
   const sec = Object.assign({}, SUMMARY_SECTIONS_DEFAULT, opts.sections || {});
   const links = opts.links || { dashboard: opts.sheetUrl };
   const d = s.day;
-  const vs = s.vsAverage === null ? '' : ' (' + summarySignedPct(s.vsAverage) + ' vs. average)';
-  const subject = summaryShortDate(d) + ' ' + d.getFullYear() + ': ' + summaryMoney(s.spent) + ' spent' + vs;
+  const view = summaryTypicalView(s);   // v1.1.64
+  const subject = summaryShortDate(d) + ' ' + d.getFullYear() + ': ' + summaryMoney(s.spent) + ' spent' + view.subject;
   const rows = [], T = [];
 
   // ---- hero
   if (sec.totals) {
-    let chip = '';
-    if (s.spent <= 0) chip = ekChip('No spending logged', 'good');
-    else if (s.spentDayToDay <= 0) chip = ekChip('Only bills and fixed costs', 'info');
-    else if (s.avgDaily === null) chip = ekChip('Average available after ' + SUMMARY_MIN_HISTORY_DAYS + ' days of history', 'note');
-    else if (s.vsAverage > 0.5) chip = ekChip('Day-to-day ' + summaryPct(s.vsAverage) + ' above your average', 'warn');
-    else if (s.vsAverage < -0.1) chip = ekChip('Day-to-day ' + summaryPct(s.vsAverage) + ' below your average', 'good');
-    else chip = ekChip('Day-to-day close to your average', 'info');
+    const chip = ekChip(view.chip.text, view.chip.tone) + (view.line ? '<div style="font-size:13px;color:' + EK.muted +
+      ';margin-top:8px">' + summaryEscape(view.line) + '</div>' : '');
     rows.push('<tr><td style="padding:24px 28px 0">' +
       '<div style="font-size:13px;color:' + EK.muted + '">Spent yesterday · ' + s.purchases + ' purchase(s)</div>' +
       '<div style="font-size:40px;font-weight:800;color:' + EK.navy + ';line-height:1.15;margin:4px 0 10px">' +
       summaryMoney(s.spent) + '</div>' + chip + '</td></tr>');
     T.push('Yesterday (' + summaryLongDate(d) + '): ' + summaryMoney(s.spent) + ' · ' + s.purchases + ' purchase(s)' +
-      (s.avgDaily !== null ? ' · daily average ' + summaryMoney(s.avgDaily) + vs : ''));
+      (s.typicalDay !== null ? ' · typical day ' + summaryMoney(s.typicalDay) : '') + ' · ' + view.chip.text);
+    if (view.line) T.push(view.line);
   }
 
   // ---- month KPIs + pace
@@ -459,8 +528,8 @@ function buildDailySummaryEmail(s, opts) {
     tiles.push({ label: 'Month-end pace', value: s.dayOfMonth >= 5 ? summaryMoneyShort(s.projected) : '—',
       sub: s.dayOfMonth < 5 ? 'from day 5' : (s.projectedPct !== null ? summaryPct(s.projectedPct) + ' of net income' : 'projected'),
       tone: s.projectedPct !== null && s.dayOfMonth >= 5 ? (s.projectedPct > 1 ? 'bad' : s.projectedPct > 0.85 ? 'warn' : null) : null });
-    tiles.push({ label: 'Daily average', value: s.avgDaily !== null ? summaryMoneyShort(s.avgDaily) : '—',
-      sub: s.avgDaily !== null ? 'day-to-day, ' + s.windowDays + ' days' : 'not enough history yet' });
+    tiles.push({ label: 'Typical day', value: s.typicalDay !== null ? summaryMoneyShort(s.typicalDay) : '—',
+      sub: s.typicalDay !== null ? 'median of ' + s.historyDays + ' days' : 'not enough history yet' });
     let inner = ekKpis(tiles);
     if (s.mtdPct !== null) {
       const used = s.mtdPct, elapsed = s.elapsedPct;
@@ -472,7 +541,7 @@ function buildDailySummaryEmail(s, opts) {
     rows.push(ekSection('This month', inner));
     T.push('', 'This month so far: ' + summaryMoney(s.mtd) + (s.mtdPct !== null ? ' (' + summaryPct(s.mtdPct) + ' of net income)' : ''));
     if (s.dayOfMonth >= 5) T.push('At this pace: ' + summaryMoney(s.projected) + (s.projectedPct !== null ? ' (' + summaryPct(s.projectedPct) + ' of net income)' : '') + ' by month-end');
-    if (s.avgDaily === null) T.push('Daily average: not enough history yet (needs ' + SUMMARY_MIN_HISTORY_DAYS + ' days).');
+    if (s.typicalDay === null) T.push('Typical day: not enough history yet (needs ' + SUMMARY_MIN_HISTORY_DAYS + ' days).');
   }
 
   // ---- last 7 days + purchases

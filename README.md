@@ -95,8 +95,8 @@ The full history — what was wrong, how it was found and what changed — is in
   scale), or entered manually — plus other monthly income, added with no deductions.
 - **Your credit cards** (set in the Setup Wizard): card, statement and payment days, with cashback rates and
   rules from a catalogue of each program's public terms.
-- **Daily email:** yesterday's spending, month pace against income, last 7 days, categories against their usual
-  month, transfers to review, rule-based recommendations, card tips and a data-health line.
+- **Daily email:** yesterday's spending against a typical day (the median of 60 days, big one-off purchases named
+  apart), month pace against income, last 7 days, categories against their usual month, transfers to review, rule-based recommendations, card tips and a data-health line.
 - **Monthly email** (on the 1st): left over and savings rate, comparisons, a day-by-day heat calendar,
   subscriptions detected, cashback left on the table, and year to date.
 

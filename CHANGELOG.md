@@ -2,6 +2,31 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.64 (Oct 5, 2026) — the daily summary compares with a typical day
+- **Reported:** a day with a tank of fuel and three Uber Eats came out "+730% vs. average". The comparison divided
+  yesterday by the 30-day average, so one tank of fuel or one big purchase made an ordinary day look like a spike, and
+  any day 50% over the average was a warning. The test reproduces the number first (a 60-day history whose 30-day
+  average gives exactly +730%), then checks the new behaviour.
+- **Typical day:** the median of the day-to-day totals (bills and fixed costs left out, as since v1.1.26) of the last
+  60 days, or fewer if tracking started later; a day with nothing spent counts as RD$0. A few big days don't move a
+  median the way they move an average. It replaces "Daily average" in the email's tile, line and subject.
+- **Warning:** only when the day ranks among the highest of those days — above the 90th percentile (nearest rank, so
+  the threshold is a day that really happened) — never from a percentage. The message names the threshold and the
+  typical day.
+- **One-off purchases** of three typical days or more (bills excluded) are named apart: "Includes SHELL, RD$2,500 · the
+  rest of the day (RD$1,260) +196% vs. a typical day (RD$425)", and the subject says "(incl. SHELL RD$2,500)". The
+  whole day still decides the warning; the percentage is only for the rest. Being below a typical day keeps its
+  percentage (it cannot exceed 100%).
+- **Little history** (under 7 days) or **a typical day of RD$0** (most days with nothing spent) is said in words, with
+  no percentage, no one-off names and no warning (with most days at RD$0, any purchase would rank "high").
+- The Setup Wizard's section is now "Comparison with a typical day and your usual month" (same setting: saved
+  configurations keep it).
+- Two tests that pinned the 30-day average (v1.1.24, v1.1.26) were changed on purpose to the typical day, with the
+  reason in them.
+- Tests: 245, on `src/` and on the single file (mutation-checked: median vs. mean, 60 vs. 30 days, RD$0 days counted,
+  bills out, the percentile and its RD$0 guard, the one-off multiple and its edge, the empty rest, the history minimum,
+  the RD$0 typical day).
+
 ### v1.1.63 (Oct 5, 2026) — currency codes, LAFISE transfer notices, quieter Unrecognized, CLAUDE.md
 - **Reported:** an Uber Eats purchase of DOP 390 was saved as USD. Its `.eml` confirmed the cause: the authorization
   code began with "US" (like "US34K7"), and v1.1.60 took the currency from the whole context. v1.1.62 already read the

@@ -50,7 +50,10 @@ full, deductions taken off your net income.
    - Deductions: automatic (DOP salary, DR payroll rules) or entered manually
    - Banks to track (LAFISE, BANESCO, BHD, BDI, POPULAR, Scotiabank, QIK, Banreservas; a bank added in a newer version
      starts unticked in a saved setup, and a run that finds its emails says so) and, for each, your credit card with its statement and payment days
-   - Optionally, summary emails: daily and/or monthly (on the 1st), recipient, hour, and what the daily one includes
+   - Optionally, summary emails: daily and/or monthly (on the 1st), recipient, hour, and what the daily one includes.
+     The daily one compares yesterday with a **typical day** (the median of your last 60 days, bills and fixed costs
+     left out), warns only when it was one of your highest days (the top 10%), and names a big one-off purchase, such
+     as a tank of fuel, on its own
 7. Click **✅ Save Configuration**
 
 ### Step 4: Test Gmail Monitor

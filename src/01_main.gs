@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.63"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.64"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -336,7 +336,7 @@ function openSetupWizard() {
             <label>The daily email includes</label>
             <div class="checkbox-group">
               <div class="checkbox-item"><input type="checkbox" id="sec_totals" checked><label for="sec_totals">Yesterday's total &amp; top purchases</label></div>
-              <div class="checkbox-item"><input type="checkbox" id="sec_vsAverage" checked><label for="sec_vsAverage">Comparison with your averages</label></div>
+              <div class="checkbox-item"><input type="checkbox" id="sec_vsAverage" checked><label for="sec_vsAverage">Comparison with a typical day and your usual month</label></div>
               <div class="checkbox-item"><input type="checkbox" id="sec_transfers" checked><label for="sec_transfers">Transfers to review</label></div>
               <div class="checkbox-item"><input type="checkbox" id="sec_recommendations" checked><label for="sec_recommendations">Recommendations &amp; feedback</label></div>
               <div class="checkbox-item"><input type="checkbox" id="sec_cashback" checked><label for="sec_cashback">Card &amp; cashback tips</label></div>

@@ -48,6 +48,7 @@ GS_ROOT=/other/copy node --test tests/*.test.js   # run against another copy of 
 | `v161.test.js` | LAFISE card payments and its second card template (both senders searched), QIK Código CASH, transfers received (BDI, Scotiabank, Banreservas), Banreservas transfers and TuEfectivo withdrawals, strict banks never guessed, welcome emails filtered, unticked banks named in the summary, counts by bank. |
 | `v160.test.js` | BDI (purchases, interbank transfers sent), Scotiabank and QIK from real-sample structure; a security footer not filtering a purchase; one list of banks; the new catalogue products. |
 | `v163.test.js` | Authorization codes not read as dollars; LAFISE transfer notices (failed filtered, sent, own money); replies, forwards and account notices skipped. |
+| `v164.test.js` | Daily summary's typical day: the reported +730% reproduced; median of 60 days (RD$0 days in, bills out); the high-day warning from the 90th percentile; big one-off purchases named apart; little history or a RD$0 typical day said in words. |
 | `pipeline.test.js` | Date windows, dedup, recategorize rules, run summary. |
 | `integration.test.js` | Full runs against the mock: search bounds, month-spanning threads, raw-sheet rebuild, Notes, run lock, 2,000+ rows; Dashboard formula lint (syntax, real functions, existing named ranges), row wiring, migration from the v1.1.20 layout and preservation of every input. |
 
