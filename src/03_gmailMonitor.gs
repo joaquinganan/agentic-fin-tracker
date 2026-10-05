@@ -73,7 +73,7 @@ const BANK_PATTERNS = {
     // template (notificacioneslafisedo@lafise.com.do). Neither was searched, so neither ever reached the sheet.
     searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com' +
       ' OR from:bancanet@notificaciones.lafise.com OR from:notificacioneslafisedo@lafise.com.do',
-    extractors: { consumo: extractLAFISEAnyConsumo, transfer: extractLAFISETransferTransactions, incoming: extractLAFISEIncomingTransactions,
+    extractors: { consumo: extractLAFISEAnyConsumo, transfer: extractLAFISEAnyTransfer, incoming: extractLAFISEIncomingTransactions,
       cardPayment: extractLAFISECardPaymentTransactions },
     keywords: ['LAFISE', 'LAFISE BANCO'],
     merchantPattern: /(?:en|en el|en\s+)([^\n]{10,50})/i
@@ -214,6 +214,11 @@ const NON_TRANSACTIONAL_KEYWORDS = [
   'CAMBIO DE CONTRASEÑA', 'CAMBIO DE CLAVE', 'RESTABLECER CONTRASEÑA', 'ACTUALIZACIÓN DE DATOS',
   'ACTUALIZACION DE DATOS', 'VERIFICACIÓN DE IDENTIDAD', 'VERIFICACION DE IDENTIDAD',
   'SOLICITUD OPCIONES DE MENÚ', 'SOLICITUD OPCIONES DE MENU',
+  // v1.1.63: account notices with no money in them — LAFISE's Bancanet (user blocked or about to be, temporary password,
+  // alias or password changed, duplicate session, unblocked) and BDI's online registration
+  'USUARIO DE BANCANET', 'TU USUARIO SE BLOQUEE', 'CONTRASEÑA TEMPORAL', 'CONTRASENA TEMPORAL', 'CONTRASEÑA EN BANCANET',
+  'ALIAS DEL USUARIO', 'SESIÓN DUPLICADA', 'SESION DUPLICADA', 'DESBLOQUEO DE USUARIO', 'HACE TIEMPO QUE NO TE VEMOS',
+  'SOLICITUD DE REGISTRO', 'CÓDIGO DE ACTIVACIÓN', 'CODIGO DE ACTIVACION', 'FIRMA DE CONTRATO', 'CLICK & SIGN',
   // v1.1.52: bank announcements (LAFISE's Pagos al Instante schedule comes from the incoming-transfers sender)
   'HORARIO TRANSFERENCIAS', 'HORARIOS TRANSFERENCIAS', 'HORARIO DE TRANSFERENCIAS', 'NOTA INFORMATIVA',
   // v1.1.23: incoming payroll deposit notices (POPULAR "Notificación Depósito de
@@ -289,6 +294,7 @@ const TYPE_SUBJECT_KEYWORDS = {
     'NOTIFICACIÓN DE TRANSFERENCIA REALIZADA', 'NOTIFICACION DE TRANSFERENCIA REALIZADA', // BANESCO
     'TRANSACCIONES ENTRE MIS PRODUCTOS',    // BHD
     'TRANSACCIÓN INTERBANCARIA', 'TRANSACCION INTERBANCARIA',   // BDI (v1.1.60)
+    'AVISO DE TRANSFERENCIA',                 // LAFISE online banking, to another bank (v1.1.63)
   ],
   // v1.1.17: BUG FIX — real confirmed LAFISE subject is "¡Realizaste un
   // pago a tu tarjeta LAFISE!" (active/informal phrasing — "you made a
@@ -337,6 +343,11 @@ function isPromotionalEmail(subject, bodyText) {
  * account/security notices (see NON_TRANSACTIONAL_KEYWORDS above).
  */
 function isNonTransactionalEmail(subject, bodyText) {
+  // v1.1.63: a reply or a forward is a conversation (with the bank's staff, or your own), never an alert
+  if (/^\s*(RE|RV|FW|FWD|TR)\s*:/i.test(String(subject || ''))) {
+    Logger.log('  ↳ a reply or forward — a conversation, not an alert');
+    return true;
+  }
   const upper = (subject + ' ' + bodyText).toUpperCase();
   const matched = findMatchingKeyword(upper, NON_TRANSACTIONAL_KEYWORDS); // v1.1.19: shared engine (02_categorizer.gs)
   if (matched) {
@@ -351,6 +362,13 @@ function isNonTransactionalEmail(subject, bodyText) {
  * failed charge — no money moved, so it must not be logged as an expense.
  */
 function isDeclinedTransactionEmail(subject, bodyText) {
+  // v1.1.63: LAFISE's "Aviso de transferencia" reports its result — "Estado: Error" means no money moved (reported: two
+  // failed rent payments would have been saved as transfers)
+  const failed = flatText(bodyText).match(/\bEstado:\s*(Error|Rechazad[ao]|Fallid[ao]|Cancelad[ao]|Denegad[ao])\b/i);
+  if (failed) {
+    Logger.log('  ↳ the transfer failed: "Estado: ' + failed[1] + '"');
+    return true;
+  }
   const upper = (subject + ' ' + bodyText).toUpperCase();
   const matched = findMatchingKeyword(upper, DECLINED_KEYWORDS); // v1.1.19: shared engine (02_categorizer.gs)
   if (matched) {
@@ -717,7 +735,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       // v1.1.51: money received is saved NEGATIVE, like a reversal — given a category (a Custom Rule, or by hand) it
       // reduces what you spent there; money from your own account is Exclude
       const isIncoming = type === 'Incoming';
-      if (isIncoming && item.own) category = EXCLUDE_CATEGORY;
+      if (item.own && (isIncoming || type === 'Transfer')) category = EXCLUDE_CATEGORY;   // v1.1.63: sent, too
       // v1.1.23: paying the card is never spending — explicit "Exclude"
       if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
       if (merchant === GARBLED_PLACEHOLDER) stats.placeholders++;
@@ -734,7 +752,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
         currency: currency,
         category: category,
         type: type,
-        description: isIncoming && item.own ? merchant + OWN_ACCOUNT_SUFFIX : merchant,
+        description: item.own && (isIncoming || type === 'Transfer') ? merchant + OWN_ACCOUNT_SUFFIX : merchant,
         reversal: isReversal,
         timeKey: item.timeKey || '',
         txRef: item.ref ? bank + ':' + item.ref : '',
@@ -775,7 +793,9 @@ function parseEmailMessage(message, rawCustomRules, stats) {
  * currency shows up in real data — don't widen it back to a wildcard.
  */
 function detectCurrencyFromMatch(matchText) {
-  const m = matchText.match(/\b(RD|US|DOP|USD|EUR|COP)\s*\$?\s*[\d,]/);
+  // v1.1.63: "US" is dollars only as "US$" (or USD) — a LAFISE authorization code like "US34K7" read as US 12 made a
+  // DOP purchase USD (reported, Uber Eats DOP 390)
+  const m = matchText.match(/\b(RD|US(?=\s*\$)|DOP|USD|EUR|COP)\s*\$?\s*[\d,]/);
   if (!m) return 'DOP';
   if (m[1] === 'RD') return 'DOP';
   if (m[1] === 'US') return 'USD';
@@ -1795,4 +1815,30 @@ function extractBANESCOIncomingTransactions(text) {
   const merchant = sender || ('Transferencia recibida' + (fromBank ? ' desde ' + fromBank : ''));
   return [{ amount: moneyNumber(amt[2]), currency: amt[1] ? moneyCurrency(amt[1]) : 'DOP', merchant: merchant.substring(0, 50),
     own: !!(sender && beneficiary && sameHolder(sender, beneficiary)), ref: ref ? 'IN:' + ref : '', context: 'incoming transfer' }];
+}
+
+/* ======================================================================
+ * LAFISE online banking "Aviso de transferencia en banco local" — v1.1.63 (real sample; fixture with invented data)
+ *   Cuenta de origen Titular: <HOLDER> … Cuenta destino Titular: <NAME> … Concepto: <text> Monto: 12,500.00 DOP
+ *   … Resultado Estado: <status> Referencia: <n>
+ * A failed one ("Estado: Error") never gets here: isDeclinedTransactionEmail filters it. To your own name, it's Exclude.
+ * ====================================================================== */
+function extractLAFISELocalBankTransfer(text) {
+  const flat = flatText(text);
+  if (!/Aviso de transferencia/i.test(flat)) return [];
+  const amt = flat.match(/Monto:\s*([\d,]+\.\d{2})\s*(DOP|USD|EUR)\b/i);
+  if (!amt) return [];
+  const origin = ((flat.match(/Cuenta de origen\s+Titular:\s*(.+?)\s+N[úu]mero de cuenta:/i) || [])[1] || '').trim();
+  const dest = ((flat.match(/Cuenta destino\s+Titular:\s*(.+?)\s+N[úu]mero de cuenta:/i) || [])[1] || '').trim();
+  const concept = ((flat.match(/Concepto:\s*(.+?)\s+Monto:/i) || [])[1] || '').trim();
+  const ref = (flat.match(/Referencia:\s*(\d{4,})/i) || [])[1];
+  return [{ amount: parseFloat(amt[1].replace(/,/g, '')), currency: amt[2].toUpperCase(), merchant: (dest || 'Transferencia').substring(0, 50),
+    context: concept ? 'Concepto: ' + concept : 'local bank transfer', own: !!(origin && dest && sameHolder(origin, dest)),
+    ref: ref ? 'OUT:' + ref : '' }];
+}
+
+/** LAFISE transfers sent: the online-banking notice, or the app's "¡Transferencia exitosa!". */
+function extractLAFISEAnyTransfer(text) {
+  const notice = extractLAFISELocalBankTransfer(text);
+  return notice.length ? notice : extractLAFISETransferTransactions(text);
 }

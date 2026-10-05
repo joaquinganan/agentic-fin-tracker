@@ -2,6 +2,25 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.63 (Oct 5, 2026) — currency codes, LAFISE transfer notices, quieter Unrecognized, CLAUDE.md
+- **Reported:** an Uber Eats purchase of DOP 390 was saved as USD. Its `.eml` confirmed the cause: the authorization
+  code began with "US" (like "US34K7"), and v1.1.60 took the currency from the whole context. v1.1.62 already read the
+  currency next to the amount; now the detector itself only takes "US" as dollars when written "US$" (or USD), so no
+  path can read an authorization code as a currency. A test that kept the older behaviour on purpose ("as before") was
+  changed deliberately, with the reason in it.
+- **Reported:** LAFISE online banking's "Aviso de transferencia en banco local" came as Unrecognized. The samples were
+  failed transfers ("Estado: Error") — saving them would have counted money that never moved. A failed one is now
+  filtered as failed; one that went through is a transfer to the beneficiary (the success wording has no sample yet:
+  any status that isn't a failure is read), and to the holder's own name, Exclude — own money is now recognized on
+  transfers sent, not only received.
+- Unrecognized noise skipped on purpose: replies and forwards ("RE:", "RV:", "FW:" — conversations with the bank's
+  staff), LAFISE account notices (user blocked, temporary password, alias, duplicate session, unblocked) and BDI's
+  online registration emails. A real purchase whose footer mentions them is still read.
+- `CLAUDE.md`: the shared project context (Claude Code loads it on its own; in a chat it can be attached), kept up to
+  date with each version. Personal preferences go in `CLAUDE.local.md`, ignored by git.
+- Tests: 235, on `src/` and on the single file (mutation-checked: the currency rule, failed transfers, own money on
+  transfers sent, the notice reader, the reply rule).
+
 ### v1.1.62 (Oct 2, 2026): real emails as Gmail gives them; transfers received at BANESCO; the Dashboard's sums checked
 - **Reported:** LAFISE's second card template ("Detalle de Transaccion Tarjeta de Crédito") was still "Amount not found",
   49 of them in Unrecognized; QIK purchases didn't show up. **Cause:** Gmail's `getPlainBody()` writes bold as `*text*`

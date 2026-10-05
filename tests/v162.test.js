@@ -49,8 +49,11 @@ test('LAFISE first template: the currency written next to the amount wins over a
   assert.deepEqual(h.plain(h.ctx.extractLAFISETransactions(withNoise)).map(x => [x.currency, x.amount]), [['DOP', 297.25]],
     'the context alone said USD: the first currency-like token anywhere between the merchant and the amount');
   assert.deepEqual(h.plain(h.ctx.extractLAFISETransactions(fixture('lafise_consumo_ubereats').replace('DOP 297.25', 'USD 6.50'))).map(x => x.currency), ['USD']);
-  assert.deepEqual(h.plain(h.ctx.extractLAFISETransactions(withNoise.replace('DOP 297.25', '297.25'))).map(x => x.currency), ['USD'],
-    'no currency next to the amount: the context still decides, as before');
+  // v1.1.63: with no currency next to the amount, an authorization code like "US 4000123" is not dollars (reported: a
+  // DOP purchase saved as USD) — a real "US$" in the context still is
+  assert.deepEqual(h.plain(h.ctx.extractLAFISETransactions(withNoise.replace('DOP 297.25', '297.25'))).map(x => x.currency), ['DOP'],
+    'no currency next to the amount: an authorization code is not a currency');
+  assert.deepEqual(h.plain(h.ctx.extractLAFISETransactions(withNoise.replace('US 4000123', 'US$ 4000123').replace('DOP 297.25', '297.25'))).map(x => x.currency), ['USD']);
 });
 
 test('Gmail bold never changes what the newer extractors read: every fixture, each line in *…*, gives the same rows', () => {

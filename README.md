@@ -199,3 +199,8 @@ numbers were replaced. Summary emails are sent from the user's own Gmail. Nothin
 ## License
 
 Built collaboratively with AI (Claude). Free to use, modify and adapt.
+
+## Working on it with Claude
+
+`CLAUDE.md` is the shared project context (conventions, known pitfalls, pending work). Claude Code loads it
+automatically; in a Claude chat, attach it. It's updated with every version, alongside `CHANGELOG.md`.

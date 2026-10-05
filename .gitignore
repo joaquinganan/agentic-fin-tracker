@@ -3,3 +3,5 @@ node_modules/
 .clasprc.json
 .DS_Store
 *.log
+# personal Claude preferences, never committed
+CLAUDE.local.md

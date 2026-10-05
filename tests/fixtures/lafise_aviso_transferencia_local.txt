@@ -1,0 +1,22 @@
+[image: ICBanking]
+Aviso de transferencia en banco local
+Cuenta de origen
+Titular: MARIA ELENA GOMEZ DIAZ
+Número de cuenta: DO00BCCE00000000011111111111
+Moneda: DOP
+Tipo: Cuenta de Ahorro
+Cuenta destino
+Titular: PEDRO ANTONIO RAMIREZ
+Número de cuenta: DO00BPDO00000000022222222222
+Moneda: DOP
+Tipo: Cuenta corriente
+Datos de la operación
+Operador: MARIA ELENA GOMEZ DIAZ
+Concepto: Alquiler octubre
+Monto: 12,500.00 DOP
+Fecha: 02/OCT/2026 09:15:00 AM
+Resultado
+Estado: Error
+Referencia: 100000001
+Puede escribirnos o llamarnos en:
+Rep. Dominicana: (809) 541 4100
