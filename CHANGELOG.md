@@ -2,6 +2,21 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.65 (Oct 6, 2026) — the month-end pace counts bills once
+- **Reported:** on day 5 the daily summary said "At this pace the month ends around … — 166% of your net income".
+  The pace was everything spent so far × days in the month / day of the month, so a rent paid on day 1 was counted
+  6.2 times (31/5), and the rent was most of what had been spent. The test
+  reproduces the alarm first with invented amounts of the same shape (rent on day 1, a gym transfer, a subscription,
+  a normal week of Uber Eats and fuel).
+- **Now:** bills and fixed costs (the same categories left out of the day-to-day comparison since v1.1.26: Rent, Gym +
+  Calisthenics, Telecommunications, Streaming & Subscriptions, Electricity) count once; only day-to-day spending is
+  extrapolated. The bills of a usual month (average of the last three months) not paid yet this month are added
+  once, so the pace is not low before rent day; a bill paid above its usual adds nothing negative.
+- Same warning thresholds (85% and 100% of net income), same day-5 start, same texts; the email's tile and text line
+  show the new figure.
+- Tests: 249, on `src/` and on the single file (mutation-checked: the old formula, bills counted once, day-to-day
+  extrapolated, pending bills added, paid bills not added again, no negative pending).
+
 ### v1.1.64 (Oct 5, 2026) — the daily summary compares with a typical day
 - **Reported:** a day with a tank of fuel and three Uber Eats came out "+730% vs. average". The comparison divided
   yesterday by the 30-day average, so one tank of fuel or one big purchase made an ordinary day look like a spike, and

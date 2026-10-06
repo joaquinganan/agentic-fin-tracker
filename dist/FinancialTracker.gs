@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.64 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.65 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.64"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.65"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -5841,7 +5841,7 @@ function computeDailySummary(values, opts) {
 
   const s = {
     day: day, dayKey: dayKey, spent: 0, spentDayToDay: 0, purchases: 0, items: [], openTransfers: [], openTransfersTotal: 0,
-    mtd: 0, mtdByCategory: {}, prevByCategory: {}, prevMonthsWithData: 0,
+    mtd: 0, mtdFixed: 0, mtdByCategory: {}, prevByCategory: {}, prevMonthsWithData: 0,
     mtdOpenCount: 0, mtdOpenTotal: 0, firstKey: null,
     dayOfMonth: day.getDate(), daysInMonth: new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate(),
     netIncomeDop: Number(opts.netIncomeDop) || 0
@@ -5876,7 +5876,10 @@ function computeDailySummary(values, opts) {
     if (spend && !isBillCategory(cat) && key >= windowStartKey && key < dayKey) dayToDayTotals[key] = (dayToDayTotals[key] || 0) + amt;
     if (spend && key >= weekStartKey && key <= dayKey) dayTotals[key] = (dayTotals[key] || 0) + amt;
     if (month === monthKey && key <= dayKey) {
-      if (spend) { s.mtd += amt; s.mtdByCategory[cat] = (s.mtdByCategory[cat] || 0) + amt; }
+      if (spend) {
+        s.mtd += amt; s.mtdByCategory[cat] = (s.mtdByCategory[cat] || 0) + amt;
+        if (isBillCategory(cat)) s.mtdFixed += amt;
+      }
       if (open) { s.mtdOpenCount++; s.mtdOpenTotal += amt; }
     }
     if (spend && prevMonths.indexOf(month) !== -1) {
@@ -5908,7 +5911,13 @@ function computeDailySummary(values, opts) {
   if (s.prevMonthsWithData) {
     Object.keys(s.prevByCategory).forEach(c => { s.usualByCategory[c] = s.prevByCategory[c] / s.prevMonthsWithData; });
   }
-  s.projected = s.dayOfMonth ? s.mtd / s.dayOfMonth * s.daysInMonth : 0;
+  // v1.1.65: bills and fixed costs are paid once a month, mostly at its start: they count once, not times the days
+  // left (a rent paid on day 1 made day 5 project the month at 6.2 rents). Bills of a usual month not paid yet are
+  // added, so the pace is not low before rent day. Only day-to-day spending is extrapolated.
+  s.mtdDayToDay = s.mtd - s.mtdFixed;
+  s.pendingFixed = SUMMARY_BILL_CATEGORIES
+    .reduce((sum, c) => sum + Math.max(0, (s.usualByCategory[c] || 0) - (s.mtdByCategory[c] || 0)), 0);
+  s.projected = s.dayOfMonth ? s.mtdFixed + s.pendingFixed + s.mtdDayToDay / s.dayOfMonth * s.daysInMonth : 0;
   s.mtdPct = s.netIncomeDop > 0 ? s.mtd / s.netIncomeDop : null;
   s.projectedPct = s.netIncomeDop > 0 ? s.projected / s.netIncomeDop : null;
   s.items.sort((a, b) => b.amount - a.amount);

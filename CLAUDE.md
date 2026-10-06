@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.64** (5 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.65** (6 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.64)
+## 2. Estado actual (v1.1.65)
 
-- **245 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **249 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -203,6 +203,9 @@ git push
   `SUMMARY_HIGH_DAY_PERCENTILE`, `SUMMARY_SPORADIC_MULTIPLE` en `05_dailySummary.gs`). Falta confirmar con correos
   reales que los umbrales (60 días, percentil 90, 3×) se sienten bien; ajustarlos es cambiar esas constantes.
   La clave de la sección en la configuración sigue siendo `vsAverage` para que las configuraciones guardadas sirvan.
+- **Ritmo de fin de mes (v1.1.65):** los fijos (`SUMMARY_BILL_CATEGORIES`) cuentan una vez, más los de un mes usual
+  (promedio de 3 meses) que aún no se han pagado; solo el día a día se extrapola. Un pago mensual que no esté en
+  esas categorías (préstamo, seguro) todavía se multiplica: si aparece, agregar su categoría a la lista.
 - **Uber en LAFISE:** aparecen retenciones "UBR* PENDING.UBER.COM" con el mismo monto que un "UBER*RIDES" minutos
   después. Si se confirma que son retenciones, una Custom Rule a Exclude evita contarlas dos veces.
 - **Sin muestra todavía:** el correo de bienvenida de BDI (hoy se filtra por palabras: "bienvenido/a", "primer
