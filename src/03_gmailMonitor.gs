@@ -13,8 +13,9 @@
  *              Consumo ("Servicio de Alerta - Nuevo Consumo"): labeled fields,
  *              "Comercio/Ciudad/País:" (merchant) BEFORE "Monto:" (amount,
  *              format "DOP 412.86" — no $ sign, uses the DOP code instead).
- *              Transferencia ("<Nombre>, ¡Transferencia exitosa!"): no real
- *              sample seen yet — falls back to the generic extractor.
+ *              Transferencia ("<Nombre>, ¡Transferencia exitosa!"): HTML only
+ *              (empty plain part); real sample seen in v1.1.66, see
+ *              extractLAFISETransferTransactions().
  *   BANESCO  — notificaciones@banesco.com.do
  *              Consumo, approved ("Alerta de Consumo Banesco RD"): one
  *              sentence — "...consumo de RD$ 2,640.00, en MERCHANT y su
@@ -607,6 +608,45 @@ function computeIsCredit(type, context) {
 }
 
 /**
+ * v1.1.66: the email's text. Some emails carry an EMPTY plain-text part and everything in the HTML (LAFISE's
+ * "¡Transferencia exitosa!", seen in a real .eml): getPlainBody() alone gave nothing and the email went to
+ * Unrecognized as "Amount not found". Then the HTML is read as text. A plain part with any text is used as before.
+ */
+function emailPlainText(message) {
+  let text = '';
+  try { text = String(message.getPlainBody() || ''); } catch (e) { text = ''; }
+  if (/\S/.test(text) || typeof message.getBody !== 'function') return text;
+  try { return htmlToPlainText(message.getBody()) || text; } catch (e) { return text; }
+}
+
+const HTML_ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", aacute: 'á', eacute: 'é', iacute: 'í',
+  oacute: 'ó', uacute: 'ú', ntilde: 'ñ', uuml: 'ü', Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ',
+  Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordm: 'º', ordf: 'ª', deg: '°', copy: '©', reg: '®', euro: '€', middot: '·', ndash: '–',
+  mdash: '—', hellip: '…', laquo: '«', raquo: '»' };
+
+/**
+ * v1.1.66: HTML → text the way the extractors expect it from Gmail: one line per block or table cell, bold as *text*
+ * (as getPlainBody() writes it), entities decoded; styles, scripts and comments dropped; no empty lines. Pure.
+ */
+function htmlToPlainText(html) {
+  const code = n => (n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : '');
+  return String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(style|script|head|title)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<(b|strong)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, (m, tag, inner) => {
+      const x = inner.replace(/<[^>]*>/g, '').trim();
+      return x ? '*' + x + '*' : '';
+    })
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(p|div|tr|td|th|li|ul|ol|table|tbody|thead|tfoot|h[1-6]|blockquote|center)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#(\d+);/g, (m, n) => code(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (m, n) => code(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (m, n) => (HTML_ENTITIES[n] !== undefined ? HTML_ENTITIES[n] : m))
+    .split('\n').map(line => line.replace(/[ \t\r\f\v ]+/g, ' ').trim()).filter(Boolean).join('\n');
+}
+
+/**
  * Parse one email into zero or more transaction items.
  * History: v1.0.5 bank by sender domain; v1.0.3/v1.0.8 promotional,
  * non-transactional and declined filters; v1.0.9 array of items; v1.1.0
@@ -629,7 +669,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
   stats = stats || newParseStats();
   try {
     const subject = message.getSubject() || '';
-    const plainText = message.getPlainBody() || '';
+    const plainText = emailPlainText(message);   // v1.1.66: the HTML when the plain-text part is empty
     const fromAddress = message.getFrom() || ''; // e.g. "LAFISE CF <notificaciones@bancolafise.com>"
 
     // v1.0.5: bank by the sender's DOMAIN, not by the bank name appearing in
@@ -768,7 +808,7 @@ function parseEmailMessage(message, rawCustomRules, stats) {
     stats.parseErrors++;
     Logger.log("Error parsing email: " + error + (error && error.stack ? " | " + error.stack : ""));
     let snippet = '';
-    try { snippet = String(message.getPlainBody() || '').substring(0, 700).replace(/\s+/g, ' ').trim(); } catch (e) { snippet = ''; }
+    try { snippet = String(emailPlainText(message)).substring(0, 700).replace(/\s+/g, ' ').trim(); } catch (e) { snippet = ''; }
     return { items: [], status: 'failed', bank: '', reason: 'Could not read: ' + error, snippet: snippet };
   }
 }
@@ -877,6 +917,10 @@ function extractLAFISETransactions(text) {
  * least traceable back to the real transfer even without a confirmed
  * beneficiary field. Silently keeps the plain placeholder if none of these
  * labels match (still a guess at the real template).
+ * v1.1.66: a real .eml is in hand: "Acabas de realizar una transferencia de USD 75.50 entre tus cuentas. … De paso te
+ * dejamos tu número de referencia: <n>", all in the HTML (the plain-text part is empty — see emailPlainText()). The
+ * amount and reference rules above read it; "entre tus cuentas" makes it yours (Exclude). Only a transfer between
+ * your own accounts has been seen: one to someone else is read the same way, without a beneficiary.
  */
 function extractLAFISETransferTransactions(text) {
   // v1.1.19: first amount that is NOT an available-balance figure.
@@ -900,7 +944,8 @@ function extractLAFISETransferTransactions(text) {
     amount: amount,
     currency: detectCurrencyFromMatch(m[0]),
     context: text.substring(0, 400).replace(/\s+/g, ' ').trim(),
-    ref: refMatch ? refMatch[1] : ''   // v1.1.23: bank's unique id → duplicate guard
+    ref: refMatch ? refMatch[1] : '',   // v1.1.23: bank's unique id → duplicate guard
+    own: /\bentre tus cuentas\b/i.test(flatText(text))   // v1.1.66: "…una transferencia de USD 75.50 entre tus cuentas."
   }];
 }
 

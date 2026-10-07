@@ -1,0 +1,80 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>Transferencia exitosa</title>
+<style type="text/css">
+  body { margin: 0; padding: 0; } .pc-email-body { table-layout: fixed; } td { font-family: Arial, sans-serif; }
+</style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #eaf4f2;">
+<!-- BEGIN MODULE: Preheader -->
+<div style="display: none !important; visibility: hidden; opacity: 0; overflow: hidden; mso-hide: all; height: 0; width: 0; font-size: 1px; line-height: 1px;">
+  Tu dinero ya est&aacute; donde lo necesitas &#128515;
+</div>
+<!-- END MODULE: Preheader -->
+<table class="pc-email-body" width="100%" bgcolor="#ffffff" border="0" cellpadding="0" cellspacing="0" role="presentation">
+  <tbody>
+    <tr>
+      <td class="pc-email-body-inner" align="center" valign="top">
+        <table width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation">
+          <tbody>
+            <tr><td height="30" style="font-size: 1px; line-height: 1px"> &nbsp; </td></tr>
+            <tr>
+              <td bgcolor="#ffffff" align="center" valign="top">
+                <img src="https://cdn.example.com/logo.png" width="130" alt="Logo LAFISE" style="border: 0; display: block;" />
+              </td>
+            </tr>
+            <tr>
+              <td bgcolor="#ffffff" align="center" valign="top">
+                <img src="https://cdn.example.com/animacion.gif" alt="Transferencia cuentas LAFISE" width="100%">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" role="presentation">
+          <tbody>
+            <tr><td height="10"> &nbsp; </td></tr>
+            <tr><td valign="top" style="font-family: Arial; font-size: 24px; font-weight: bold; color: #00594f;"> Hola Ana, </td></tr>
+          </tbody>
+        </table>
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" role="presentation">
+          <tbody>
+            <tr><td valign="top" style="font-size: 16px;"> Acabas de realizar una transferencia de </td></tr>
+            <tr><td valign="top" style="font-size: 32px; font-weight: bold;"> USD 75.50 </td></tr>
+            <tr><td valign="top" style="font-size: 16px;"> entre tus cuentas. </td></tr>
+            <tr><td height="10"> &nbsp; </td></tr>
+          </tbody>
+        </table>
+        <!--[if !gte mso 9]><!-->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" role="presentation">
+          <tbody>
+            <tr>
+              <td bgcolor="#00594f" valign="top" align="center">
+                <div class="gmail-blend-screen"><a class="gmail-blend-difference" href="https://digital.example.com/"> Ver m&aacute;s </a></div>
+              </td>
+            </tr>
+          </tbody>
+          <tbody>
+            <tr><td height="10">&nbsp; </td></tr>
+            <tr><td valign="top"> De paso te dejamos tu n&uacute;mero de referencia: <span>990011223344</span> </td></tr>
+          </tbody>
+        </table>
+        <!--<![endif]-->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" role="presentation">
+          <tbody>
+            <tr><td valign="top">Si no reconoces esta transferencia de dinero, cont&aacute;ctate <a href="https://www.example.com/#rd">aqu&iacute;</a></td></tr>
+            <tr><td height="30">&nbsp; </td></tr>
+            <tr><td valign="top"> Banco LAFISE Rep&uacute;blica Dominicana </td></tr>
+            <tr><td valign="top" style="font-size: 11px;"> Como protecci&oacute;n a tu privacidad, Banco LAFISE nunca<br />
+              te pedir&aacute; informaci&oacute;n confidencial por tel&eacute;fono,<br />
+              SMS, correos o redes sociales. Revisa<br />
+              nuestros consejos de ciberseguridad. </td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>

@@ -2,6 +2,36 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.66 (Oct 7, 2026) — a regression over the real samples: HTML-only emails, statement credits counted twice
+Found by a full regression: every real sample email replayed through the whole reader, in memory.
+- **LAFISE "¡Transferencia exitosa!" (app transfers) were not read.** The real email has an EMPTY plain-text part;
+  everything is in the HTML. The bank reader only used `getPlainBody()`, so the email went to Unrecognized as "Amount
+  not found" (the investments reader already fell back to the HTML). Now, when the plain part has no text, the HTML is
+  read as text (`emailPlainText`, `htmlToPlainText`: one line per block or cell, bold as `*text*` as Gmail writes it,
+  entities decoded). A plain part with text is used exactly as before. With the real email in hand, the extractor
+  written in v1.1.10 without a sample reads it (amount, currency, reference); "entre tus cuentas" makes it yours
+  (Exclude). HTML fixture with the real structure and invented data. What `getPlainBody()` returns in Apps Script for
+  an empty part could not be checked here: an Unrecognized row "Amount not found" for that subject confirms it.
+- **A transfer sent to your own account lost its Exclude at the end of every run.** v1.1.63 marks it Exclude when read,
+  but Recategorize (run after every update) only kept the "(own account)" mark for money received, and set the
+  category back to empty: the transfer was "open" again. Now sent and received alike.
+- **BANESCO transfers received were counted twice.** Since v1.1.62 the email "Notificación de Transferencia Recibida"
+  is read, and the monthly statement imports every credit (v1.1.55); their references differ, so both were saved and
+  the income doubled. A statement credit and a notified one (email or typed by hand) of the same bank, currency and
+  amount, at most 5 days apart (`STATEMENT_MATCH_DAYS`: the email is dated when it arrives, the statement when the
+  bank posts it), are the same money; the first saved stays. Each credit pairs once, so of two equal transfers with
+  one notified, the other is still saved. Pairs already saved by earlier versions are not removed (delete the
+  statement row by hand), but they are paired again so a later credit isn't taken as their copy.
+- **Amounts typed by hand** like "1.234,56" became 1.23456 (every comma dropped) and were saved without a word. Now
+  `typedAmount` accepts numbers and text like "1,234.56", "4800", "RD$ 1,500"; anything else ("1.234,56", "1.500")
+  goes to Unrecognized with what was typed, and the reason shows the format.
+- `.gitattributes`: LF everywhere, as CI checks it out. On Windows with `core.autocrlf=true` a test of BDI received
+  failed only there (its fixture got CRLF).
+- The real BANESCO "Transferencia Recibida" sample confirms the email does not name the sender (only the sending bank),
+  as v1.1.62 supposed: the row is named "Transferencia recibida desde <bank>".
+- Tests: 259, on `src/` and on the single file (mutation-checked: the HTML fallback, the own-account mark on the email
+  and in Recategorize, the statement pairing and its window, one pair per credit, the typed-amount format).
+
 ### v1.1.65 (Oct 6, 2026) — the month-end pace counts bills once
 - **Reported:** on day 5 the daily summary said "At this pace the month ends around … — 166% of your net income".
   The pace was everything spent so far × days in the month / day of the month, so a rent paid on day 1 was counted

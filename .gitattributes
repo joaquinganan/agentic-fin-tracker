@@ -1,0 +1,5 @@
+# v1.1.66: LF everywhere, as CI (Linux) checks it out. With core.autocrlf=true a Windows checkout got CRLF and
+# tests that look for "\n" in a fixture, and the byte-for-byte dist/ check, failed only there.
+* text=auto eol=lf
+*.pdf binary
+*.png binary

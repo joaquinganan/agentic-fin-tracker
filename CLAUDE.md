@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.65** (6 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.66** (7 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.65)
+## 2. Estado actual (v1.1.66)
 
-- **249 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **259 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -53,8 +53,8 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 
 | Banco | Qué lee | Remitente |
 |---|---|---|
-| LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com |
-| BANESCO | Consumos, transferencias enviadas y recibidas (v1.1.62, sin muestra propia), **estado de cuenta de ahorros en PDF** (todos los créditos) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
+| LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app —"¡Transferencia exitosa!", solo HTML; "entre tus cuentas", Exclude— y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com |
+| BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
 | BHD | Consumos (tabla con varias filas), transferencias | bhd.com.do |
 | POPULAR | Consumos, Código Cash | popularenlinea.com |
 | BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta | bdi.com.do |
@@ -149,6 +149,9 @@ git push
   pesados para la siguiente (`⏸` y `⏭` en el resumen). El registro de ejecución muestra el tiempo de cada fase (`⏱`).
 - **Gmail `getPlainBody()`** convierte el HTML del banco a texto a su manera; los extractores trabajan sobre el texto
   **aplanado** (espacios simples) para no depender de cómo reparte las celdas de una tabla.
+- **Correos con la parte de texto vacía:** algunos bancos mandan la parte `text/plain` vacía y todo en el HTML (LAFISE
+  "¡Transferencia exitosa!"). `emailPlainText()` lee entonces el HTML con `htmlToPlainText()`. Al revisar un `.eml`,
+  mirar si la parte de texto tiene contenido: si no, el fixture es el HTML (como `lafise_transferencia_exitosa_html`).
 - **Gmail escribe las negritas como `*texto*`** (`*COMERCIO: *UBER*EATS`, `*RD$ 20.00*`). Al parecer solo marca las
   etiquetas `<b>` y `<strong>`, no los estilos `font-weight:bold` (evidencia: el registro real de la plantilla
   "Servicio de Alerta - Nuevo Consumo" de LAFISE no trae asteriscos, y su HTML usa estilos para las etiquetas). Al
@@ -164,12 +167,11 @@ git push
   hoja. Una vez, filas pegadas desde Excel quedaron sin fecha en una corrida que además murió por tiempo, y **no se
   pudo reproducir**. Quedó una verificación posterior al guardado que corrige la fecha y deja en el registro la línea
   "⚠️ … please report this line". Si aparece, investigar con esa evidencia.
-- **Pruebas en Windows:** con `core.autocrlf=true` el checkout queda en CRLF y en un clon limpio fallan 3 pruebas que
-  en CI (Linux, LF) pasan: `bundle:check` (el `dist/` se compara byte a byte), BDI recibida (`tests/v161.test.js`) y la
-  moneda de la primera plantilla de LAFISE (`tests/v162.test.js`), que buscan `
-` en un fixture. Para verificar como
-  CI: `git -c core.autocrlf=false checkout-index -a --prefix=<carpeta>/` y correr las pruebas ahí. En Windows,
-  `npm run test:bundle` no corre (cmd no entiende `GS_BUNDLE=…`): usar Git Bash.
+- **Pruebas en Windows:** desde v1.1.66, `.gitattributes` fija LF en todo el repo, como en CI. Antes, con
+  `core.autocrlf=true`, el checkout quedaba en CRLF y fallaban pruebas que buscan `
+` en un fixture y `bundle:check`.
+  Un checkout anterior a ese cambio sigue en CRLF hasta renovarlo (`git rm -r --cached -q .` y `git reset --hard`, con
+  el árbol limpio). En Windows, `npm run test:bundle` no corre (cmd no entiende `GS_BUNDLE=…`): usar Git Bash.
 - **No editar la hoja mientras corre el tracker** (pegar o borrar filas durante una ejecución).
 - Para diagnosticar en la hoja real, una técnica útil: un archivo temporal `Diagnostico` en Apps Script con una función
   que llame a las funciones del tracker (que son globales) y registre resultados paso a paso; se borra al terminar.
@@ -194,8 +196,14 @@ git push
 - **PDF protegidos con contraseña** (algunos bancos usan la cédula): hoy se detectan y aparecen en Unrecognized como
   *password-protected*. Implementar el descifrado necesita una muestra real. Si se hace, la cédula se guarda en las
   propiedades privadas del script, **nunca** en la hoja, los registros ni el repo.
-- **Transferencia recibida de Banesco** ("Notificación de Transferencia Recibida"): escrita en v1.1.62 a partir de la
-  enviada; falta el `.eml` para confirmar el campo del remitente.
+- **Transferencias de Banesco contadas dos veces antes de v1.1.66:** una transferencia recibida por correo (desde
+  v1.1.62) y la misma en el estado de cuenta se guardaban ambas. Desde v1.1.66 se emparejan (banco, moneda, monto, ±5
+  días, `STATEMENT_MATCH_DAYS`), pero los pares ya guardados no se borran: buscar en Incoming Transfers filas iguales
+  de BANESCO ("Transferencia recibida desde …" y la del estado de cuenta) y borrar la del estado en Transactions.
+- **LAFISE "¡Transferencia exitosa!" a un tercero:** solo hay muestra entre cuentas propias. Con un `.eml` a otra
+  persona, ver si nombra al beneficiario (hoy se guarda como "LAFISE Transfer (ref: …)").
+- **Confirmar en Apps Script real** que `getPlainBody()` devuelve vacío para la transferencia de la app de LAFISE (la
+  hipótesis de v1.1.66): una fila "Amount not found" de ese asunto en Unrecognized antes de actualizar lo confirma.
 - **LAFISE "Aviso de transferencia en banco local" exitoso:** solo hay muestras fallidas ("Estado: Error"); cualquier
   estado que no sea un fallo se lee como transferencia. Con un `.eml` exitoso, confirmar la palabra del estado.
 - **Resumen diario, "día típico" (v1.1.64):** compara ayer con la mediana del día a día de 60 días, avisa solo por

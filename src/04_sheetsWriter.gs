@@ -449,23 +449,63 @@ function legacyKey(date, bank, amount) {
   return normalizeDateForCompare(date) + '|' + bank + '|' + Math.round(Number(amount) * 100);
 }
 
+/**
+ * v1.1.66: a transfer received can arrive twice — its email (BANESCO since v1.1.62) and the monthly statement, which
+ * lists every credit (v1.1.55). Their references differ, so both were saved and the money counted twice. A statement
+ * credit and a notified one (an email, or a row typed by hand) of the same bank, currency and amount, at most
+ * STATEMENT_MATCH_DAYS apart, are the same money: the one saved first stays. The days differ: the email is dated when
+ * it arrives, the statement on the day the bank posts it (a Friday-evening transfer posts on Monday). Each credit
+ * pairs once, so two equal transfers with only one notified still save the other.
+ */
+const STATEMENT_MATCH_DAYS = 5;
+function isStatementRef(ref) { return /:STMT:/.test(String(ref || '')); }
+function incomingKey(bank, currency, amount) {
+  return String(bank) + '|' + (currency || 'DOP') + '|' + Math.round(Math.abs(Number(amount)) * 100);
+}
+function dayNumber(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizeDateForCompare(date));
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : NaN;
+}
+/** The closest unpaired credit of the other kind (statement ↔ notified) for this one, or null. */
+function findIncomingPair(index, key, day, statement) {
+  let best = null;
+  (index.incoming[key] || []).forEach(e => {
+    if (e.paired || e.statement === statement || !(Math.abs(e.day - day) <= STATEMENT_MATCH_DAYS)) return;
+    if (!best || Math.abs(e.day - day) < Math.abs(best.day - day)) best = e;
+  });
+  return best;
+}
+
 function buildExistingIndex(values) {
   const messageIds = new Set();
   const legacyKeys = new Set();
   const refs = new Set();
+  const incoming = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const id = row[TX_COL.MESSAGE_ID];
     if (id) messageIds.add(String(id));
     else legacyKeys.add(legacyKey(row[TX_COL.DATE], row[TX_COL.BANK], row[TX_COL.AMOUNT]));
     if (row[TX_COL.TX_REF]) refs.add(String(row[TX_COL.TX_REF]));
+    if (row[TX_COL.TYPE] === 'Incoming' && row[TX_COL.DATE]) {
+      const key = incomingKey(row[TX_COL.BANK], row[TX_COL.CURRENCY], row[TX_COL.AMOUNT]);
+      (incoming[key] = incoming[key] || []).push({ day: dayNumber(row[TX_COL.DATE]), statement: isStatementRef(row[TX_COL.TX_REF]), paired: false });
+    }
   }
-  return { messageIds: messageIds, legacyKeys: legacyKeys, refs: refs };
+  const index = { messageIds: messageIds, legacyKeys: legacyKeys, refs: refs, incoming: incoming };
+  // both copies saved before v1.1.66: paired now, so neither is taken as the copy of a later credit
+  Object.keys(incoming).forEach(key => incoming[key].forEach(e => {
+    if (!e.statement || e.paired) return;
+    const other = findIncomingPair(index, key, e.day, true);
+    if (other) { e.paired = true; other.paired = true; }
+  }));
+  return index;
 }
 
 function selectNewTransactions(transactions, index) {
   const fresh = [];
   let duplicates = 0;
+  if (!index.incoming) index.incoming = {};
   for (const t of transactions) {
     const id = t.messageId ? String(t.messageId) : '';
     const key = legacyKey(t.date, t.bank, t.amount);
@@ -475,6 +515,18 @@ function selectNewTransactions(transactions, index) {
     if ((id && index.messageIds.has(id)) || index.legacyKeys.has(key) || (ref && index.refs.has(ref))) {
       duplicates++;
       continue;
+    }
+    if (t.type === 'Incoming') {   // v1.1.66: the same transfer received, from its email and from the statement
+      const inKey = incomingKey(t.bank, t.currency, t.amount), day = dayNumber(t.date), statement = isStatementRef(ref);
+      const pair = findIncomingPair(index, inKey, day, statement);
+      if (pair) {
+        pair.paired = true;
+        duplicates++;
+        Logger.log('Already saved from ' + (statement ? 'its notice' : 'the statement') + ': ' + t.bank + ' ' + (t.currency || 'DOP') + ' ' +
+          Math.abs(Number(t.amount)).toFixed(2) + ' received ' + normalizeDateForCompare(t.date) + ' — not saved twice');
+        continue;
+      }
+      (index.incoming[inKey] = index.incoming[inKey] || []).push({ day: day, statement: statement, paired: false });
     }
     if (id) index.messageIds.add(id); else index.legacyKeys.add(key); // same-run repeats too
     if (ref) index.refs.add(ref);
@@ -664,7 +716,9 @@ function computeRecategorization(row, rawCustomRules) {
   if (!category && type === 'Transaction') category = categorizeTransaction(description);
   // v1.1.23: paying the card is never spending — explicit "Exclude"
   if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
-  if (type === 'Incoming' && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;   // v1.1.51: your own money
+  // v1.1.51: your own money. v1.1.66: sent, too — a transfer to your own account was Exclude when read (v1.1.63) and
+  // lost it here at the end of the same run
+  if ((type === 'Incoming' || type === 'Transfer') && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;
   // v1.1.23: an unmatched reversal keeps whatever category it has (normally
   // blank) instead of being guessed from the placeholder text
   if (merchant === REVERSAL_UNMATCHED) category = row[TX_COL.CATEGORY] || '';
@@ -1862,6 +1916,19 @@ function importTypedIncomingRows(now) {
 }
 
 /**
+ * v1.1.66: an amount typed by hand → a positive number, or NaN when it can't be read safely. Numbers as they are; text
+ * like "1,234.56", "4800", "RD$ 1,500" or "-300" (commas only between thousands, at most two decimals). "1.234,56" used
+ * to become 1.23456 (every comma dropped) and was saved as RD$1.23 without a word; it, and "1.500", now go to
+ * Unrecognized with what was typed. Pure — see tests/.
+ */
+function typedAmount(value) {
+  if (typeof value === 'number') return Math.abs(value);
+  const s = String(value === null || value === undefined ? '' : value).replace(/RD\$|US\$|DOP|USD|EUR|COP|\$|\s/gi, '');
+  if (!/^-?(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$/.test(s)) return NaN;
+  return Math.abs(Number(s.replace(/,/g, '')));
+}
+
+/**
  * v1.1.57: rows typed by hand in a transfer sheet → Transactions. Incoming Transfers: money received (Type Incoming,
  * saved negative). Bank Transfers: money sent (Type Transfer, positive). Your category is kept as yours; the row gets its
  * Id at once, so it's never imported twice; a row without a date or an amount goes to Unrecognized with what was typed.
@@ -1896,13 +1963,13 @@ function importTypedTransferRows(sheetName, type, now) {
   values.forEach((r, i) => {
     if (String(r[W - 1] || '').trim()) return;                                    // has an Id: it comes from Transactions
     if (r.slice(0, W - 1).every(x => x === '' || x === null)) return;             // empty row
-    if (r[0] && saved.has(keyOf(r[0], r[2], Math.abs(Number(String(r[4]).replace(/[^\d.\-]/g, '')) || 0)))) return;   // an older sheet's row
+    if (r[0] && saved.has(keyOf(r[0], r[2], typedAmount(r[4]) || 0))) return;   // an older sheet's row
     // v1.1.58: the day as yyyy-mm-dd text first, then a NEW date at noon. v1.1.57 passed the cell's own Date on, and
     // rows pasted from Excel (real dates) were saved with none, while rows pasted as text kept theirs (reported)
     const dayKey = r[0] === '' || r[0] === null ? '' : String(normalizeDateForCompare(r[0]) || '').trim();
     const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
     const d = dm ? new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]), 12, 0, 0) : null;
-    const amount = Math.abs(Number(String(r[4]).replace(/[^\d.\-]/g, '')));
+    const amount = typedAmount(r[4]);   // v1.1.66: NaN for a format it can't read safely
     if (!d || isNaN(d.getTime()) || !(amount > 0)) { bad.push(r); return; }
     const uk = (String(r[2] || '').trim() || 'Added by hand') + '|' + amount.toFixed(2);
     if (undated[uk] && undated[uk].length) {        // the same row, saved without its date: date it, don't add it again
@@ -1940,7 +2007,7 @@ function importTypedTransferRows(sheetName, type, now) {
     recordUnrecognized(bad.map(r => {
       const typed = r.slice(0, 6).map(x => x instanceof Date ? normalizeDateForCompare(x) : String(x)).join(' · ');
       return { id: 'typed:' + typed.replace(/\s+/g, ''), date: now, bank: sheetName, subject: 'Typed by hand',
-        reason: 'Not saved: a transfer needs a date (yyyy-mm-dd) and an amount — type it again in ' + sheetName, snippet: typed };
+        reason: 'Not saved: a transfer needs a date (yyyy-mm-dd) and an amount (like 1,234.56) — type it again in ' + sheetName, snippet: typed };
     }), [], now);
   }
   if (add.length || bad.length) Logger.log(sheetName + ' typed by hand: ' + add.length + ' saved, ' + bad.length + ' without a date or amount');
