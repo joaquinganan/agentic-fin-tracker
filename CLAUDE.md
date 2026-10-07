@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.66** (7 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.67** (7 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.66)
+## 2. Estado actual (v1.1.67)
 
-- **259 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **272 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -62,6 +62,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 | QIK | Consumos con tarjeta de crédito, retiros con Código CASH | notificaciones@qik.do, no-reply-qik@qik.com.do |
 | BANRESERVAS | Transferencias enviadas (con impuesto aparte), retiros TuEfectivo, transferencias recibidas | NotificacionesTuBancoApp@banreservas.com, notificaciones@banreservas.com |
 | HAPI (inversiones) | Órdenes (mercado y límite), dividendos, avisos de depósito | hapi.trade |
+| Uber (recibos, no es banco) | Recibo de viaje ("… trip with Uber"): lo cobrado a cada tarjeta y la hora del pedido; corrige los avisos de viajes del banco (v1.1.67) | noreply@uber.com |
 
 `BANK_ORDER` (en `03_gmailMonitor.gs`) es **la única lista de bancos**: las casillas del Wizard, View Config y el
 orden de pestañas salen de ella.
@@ -214,8 +215,14 @@ git push
 - **Ritmo de fin de mes (v1.1.65):** los fijos (`SUMMARY_BILL_CATEGORIES`) cuentan una vez, más los de un mes usual
   (promedio de 3 meses) que aún no se han pagado; solo el día a día se extrapola. Un pago mensual que no esté en
   esas categorías (préstamo, seguro) todavía se multiplica: si aparece, agregar su categoría a la lista.
-- **Uber en LAFISE:** aparecen retenciones "UBR* PENDING.UBER.COM" con el mismo monto que un "UBER*RIDES" minutos
-  después. Si se confirma que son retenciones, una Custom Rule a Exclude evita contarlas dos veces.
+- **Viajes de Uber (v1.1.67):** Uber autoriza un estimado al pedir el viaje; si la tarifa cambia autoriza la final (y
+  libera el estimado), o cobra menos sin aviso nuevo; un pedido que no llega a viaje también deja una autorización.
+  El banco avisa cada una como consumo. `reconcileRideReceipts` compara los avisos de viajes (`RIDE_MERCHANT_RE`) con
+  los recibos de Uber: el cobro se queda, las retenciones van a Exclude con "(Uber hold, not charged)" y un cobro menor
+  sin aviso corrige el monto. Verificado con 3 días reales (Sept–Oct 2026): cuadra exacto con lo cobrado. La hora del
+  aviso se toma del correo (Gmail), no del cuerpo: el campo "Fecha y Hora" de LAFISE viene en UTC−6 (2 h atrás). Falta:
+  recibos en español (hoy solo el formato en inglés), propinas añadidas después del viaje, Uber Eats (por ahora se
+  cobra una vez y no se toca), viajes pedidos en otra zona horaria.
 - **Sin muestra todavía:** el correo de bienvenida de BDI (hoy se filtra por palabras: "bienvenido/a", "primer
   depósito", "apertura de cuenta"; con su `.eml` se puede confirmar), consumos de Scotiabank en DOP, consumos con
   tarjeta de débito de Banreservas, otros recibos de la app de Banreservas (pagos de servicio, entre cuentas propias),

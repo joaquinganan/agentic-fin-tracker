@@ -335,6 +335,10 @@ function makeServices(options) {
         return matches.slice(start, start + max);
       },
       markThreadsRead(threads) { gmail.markedRead.push(...threads.map(t => t.getId())); },
+      getMessageById(id) {   // v1.1.67; like Gmail, an id it doesn't have is an error
+        for (const t of gmail.threads) for (const m of t.getMessages()) if (m.getId() === id) return m;
+        throw new Error('Mock: Invalid argument: id ' + id);
+      },
       getUserLabelByName: n => gmail.labels[n] || null,
       sendEmail(to, subject, body, options) { gmail.sent.push({ to, subject, body, options }); },
       createLabel(n) {

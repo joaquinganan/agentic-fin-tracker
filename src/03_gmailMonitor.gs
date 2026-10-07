@@ -1887,3 +1887,102 @@ function extractLAFISEAnyTransfer(text) {
   const notice = extractLAFISELocalBankTransfer(text);
   return notice.length ? notice : extractLAFISETransferTransactions(text);
 }
+
+/* ======================================================================
+ * UBER RIDES — v1.1.67 (real LAFISE alerts and Uber receipts, Sept–Oct 2026; fixtures with invented data)
+ * Uber authorizes an estimate on the card when a ride is requested. When the fare changes it authorizes the final
+ * amount and the estimate is released; when the final fare is lower it may charge it with no new alert. A request
+ * that never becomes a trip leaves an authorization too. The bank emails every authorization as a purchase, so a ride
+ * was saved twice (estimate + final), or at the estimate, and the card statement shows only what Uber charged.
+ * Uber's trip receipt ("Your <day> <time> trip with Uber") says what each card was charged and when the ride was
+ * requested: the ride alerts around it are checked against it (matchRideReceipts) and the sheet is corrected
+ * (reconcileRideReceipts, 04_sheetsWriter.gs). Uber Eats is charged once and is not touched.
+ * ====================================================================== */
+const RIDE_RECEIPT_QUERY = 'from:noreply@uber.com subject:"trip with Uber"';
+const RIDE_RECEIPT_SUBJECT = /trip with Uber/i;
+const RIDE_MERCHANT_RE = /\bUBER\s*\*?\s*(?:RIDES?|TRIP)\b|\bUBR\s*\*|PENDING\.UBER/i;
+const RECEIPT_MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+/**
+ * The receipt's text → { requested: Date (the time printed at its top, the rider's local time), payments: [{ last4,
+ * bank, currency, amount }] }, or null when it isn't a trip receipt. Only card payments whose bank (in parentheses,
+ * "Mastercard ••••1234 (LAFISE)") is one the tracker reads; Uber Cash, cash and other cards are left out. Works on the
+ * text by lines or flattened to one line. Pure — see tests/.
+ */
+function parseUberTripReceipt(text) {
+  const flat = String(text || '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ');
+  const when = /\b([A-Z][a-z]{2})[a-z]*\.? (\d{1,2}), (\d{4}) ,? ?(\d{1,2}):(\d{2}) ?([AP])\.? ?M\b/i.exec(flat);
+  if (!when || RECEIPT_MONTHS[when[1].toLowerCase()] === undefined) return null;
+  const hour = Number(when[4]) % 12 + (/p/i.test(when[6]) ? 12 : 0);
+  const requested = new Date(Number(when[3]), RECEIPT_MONTHS[when[1].toLowerCase()], Number(when[2]), hour, Number(when[5]));
+  const payments = [];
+  const re = /(?:•|\*){2,} ?(\d{4}) ?\(([^)]+)\) ?(RD\$|DOP|US\$|USD) ?([\d,]+\.\d{2})/gi;
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    const label = m[2].toUpperCase().replace(/\s+/g, '');
+    const bank = BANK_ORDER.find(b => label.indexOf(b) !== -1);
+    if (bank) payments.push({ last4: m[1], bank: bank, currency: moneyCurrency(m[3]), amount: moneyNumber(m[4]) });
+  }
+  return { requested: requested, payments: payments };
+}
+
+/**
+ * Ride alerts vs. trip receipts. alerts: [{ id, bank, currency, amount, at (ms, the alert email's time), state: ''
+ * | 'charged' | 'hold' (settled by an earlier run) }]; receipts: [{ bank, currency, amount (that card's charge),
+ * requested, sent (ms) }]. Returns { decisions: { id: { kind: 'charge' } | { kind: 'hold' } | { kind: 'adjust', amount,
+ * was } }, unmatched: [ids] } — decisions only for alerts not settled yet. Pure — see tests/.
+ *  1. the charge: an alert of the receipt's amount from the request (−2 min) to the receipt (+15 min), the one
+ *     closest to the receipt (the final authorization comes with it);
+ *  2. no alert of that amount: the ride's own authorization (the alert closest to the request) was charged at the
+ *     receipt's amount — corrected;
+ *  3. every other alert from 30 min before the request up to the charge: the estimate, or requests that never
+ *     became a trip — holds.
+ * An alert near no receipt is left as it is (unmatched): a missing receipt never removes a real charge.
+ */
+const RIDE_WINDOW = { beforeRequest: 2, afterReceipt: 15, attemptsBefore: 30 };   // minutes
+function matchRideReceipts(alerts, receipts) {
+  const M = 60000, used = {}, decisions = {};
+  const seen = {};
+  const list = receipts.filter(r => {   // Uber sends some receipts twice
+    const k = r.bank + '|' + r.currency + '|' + Math.round(r.amount * 100) + '|' + r.requested;
+    if (seen[k]) return false;
+    seen[k] = true;
+    return true;
+  }).sort((a, b) => a.requested - b.requested);
+  const fits = (a, r) => a.bank === r.bank && a.currency === r.currency &&
+    a.at >= r.requested - RIDE_WINDOW.beforeRequest * M && a.at <= r.sent + RIDE_WINDOW.afterReceipt * M;
+  const charge = [];
+  list.forEach((r, i) => {
+    let best = null;
+    alerts.forEach(a => {
+      if (used[a.id] || !fits(a, r) || Math.abs(a.amount - r.amount) >= 0.005) return;
+      if (!best || Math.abs(a.at - r.sent) < Math.abs(best.at - r.sent)) best = a;
+    });
+    if (!best) return;
+    used[best.id] = true;
+    charge[i] = best;
+    if (best.state !== 'charged') decisions[best.id] = { kind: 'charge' };
+  });
+  list.forEach((r, i) => {
+    if (charge[i]) return;
+    let best = null;
+    alerts.forEach(a => {
+      if (used[a.id] || a.state || !fits(a, r)) return;
+      if (!best || Math.abs(a.at - r.requested) < Math.abs(best.at - r.requested)) best = a;
+    });
+    if (!best) return;
+    used[best.id] = true;
+    charge[i] = best;
+    decisions[best.id] = { kind: 'adjust', amount: r.amount, was: best.amount };
+  });
+  list.forEach((r, i) => {
+    if (!charge[i]) return;
+    alerts.forEach(a => {
+      if (used[a.id] || a.bank !== r.bank || a.currency !== r.currency ||
+          a.at < r.requested - RIDE_WINDOW.attemptsBefore * M || a.at > charge[i].at) return;
+      used[a.id] = true;
+      if (a.state !== 'hold') decisions[a.id] = { kind: 'hold' };
+    });
+  });
+  return { decisions: decisions, unmatched: alerts.filter(a => !a.state && !used[a.id]).map(a => a.id) };
+}

@@ -2,6 +2,28 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.67 (Oct 7, 2026) — Uber rides checked against Uber's trip receipts
+- **Reported:** Uber rides paid with a LAFISE card were counted more than once, while the card statement shows only
+  the final fare. Uber authorizes an estimate when a ride is requested; when the fare changes it authorizes the final
+  amount (and the estimate is released), or charges a lower fare with no new alert; a request that never becomes a
+  trip leaves an authorization too. The bank emails every authorization as a purchase. Checked on three real days
+  (alerts and receipts, Sept–Oct 2026, one of each case): the sheet had 1.4–1.7 times what Uber charged; the new
+  matching gives exactly what was charged on all three.
+- **Now:** after saving, each run reads Uber's trip receipts ("Your <day> <time> trip with Uber", `noreply@uber.com`):
+  when the ride was requested and what each card was charged ("Mastercard ••••1234 (LAFISE) DOP …"). The ride alerts
+  around each receipt (`UBER*RIDES`, `UBER RIDES-…`, `UBR* PENDING.UBER.COM`; the alert's time from Gmail, since the
+  sheet keeps only the day) are matched (`matchRideReceipts`): the alert of the receipt's amount is the charge
+  ("(Uber receipt)"); the estimate and requests that never became a trip, from 30 minutes before the request up to the
+  charge, are holds — Exclude, "(Uber hold, not charged)", kept by Recategorize; a ride with no alert of its amount has
+  its own alert corrected to the amount charged, saying what the alert said. An alert near no receipt is left as a
+  charge (a missing receipt never removes a real one) and counted in the run summary. Uber Eats is not touched.
+  Without receipts in Gmail nothing changes; a category you set on a hold is yours.
+- The run summary has a 🚕 line; the log names each row decided.
+- Not covered yet: receipts in Spanish, a tip added after the ride, rides requested in another time zone.
+- Tests: 272, on `src/` and on the single file (mutation-checked: the charge by amount and nearest the receipt, the
+  correction, holds before the charge only, the 30-minute window, duplicated receipts, bank and currency, settled rows,
+  Eats left alone, 12 AM, Recategorize, the run step). Fixture: a receipt with the real structure and invented data.
+
 ### v1.1.66 (Oct 7, 2026) — a regression over the real samples: HTML-only emails, statement credits counted twice
 Found by a full regression: every real sample email replayed through the whole reader, in memory.
 - **LAFISE "¡Transferencia exitosa!" (app transfers) were not read.** The real email has an EMPTY plain-text part;

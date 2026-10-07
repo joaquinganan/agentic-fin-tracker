@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.66"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.67"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -933,6 +933,7 @@ function runGmailMonitorCore(search, config) {
   let investments = null;   // v1.1.29
   let unrecognizedOpen = null;   // v1.1.35
   let stopped = null;            // v1.1.36
+  let rides = null;              // v1.1.67
   const deferred = [];           // v1.1.43
   const errors = [];
 
@@ -958,6 +959,8 @@ function runGmailMonitorCore(search, config) {
   } finally {
     const steps = [
       ["sort", () => sortAllDataSheets()],
+      // v1.1.67: Uber ride alerts checked against Uber's trip receipts — before Recategorize rebuilds the sheets
+      ["uber receipts", () => { rides = reconcileRideReceipts(new Date(), search.range ? search.range.start : null); }],
       ["recategorize", () => {
         safeToast("Recategorizing...", "📊 Financial Tracker", -1);
         recatChanged = recategorizeAllTransactions(config.email);
@@ -1002,7 +1005,8 @@ function runGmailMonitorCore(search, config) {
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,
-                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped, deferred: deferred }));
+                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped, deferred: deferred,
+                              rides: rides }));
 }
 
 /** v1.1.19 (E7): run summary text — pure, so tests/ can check it. */
@@ -1044,6 +1048,14 @@ function buildRunSummary(r) {
     if (inv.unparsed) lines.push("⚠️ Broker emails not read: " + inv.unparsed + " — left UNREAD; details in View > Executions");
   }
   if (inv && inv.warnings && inv.warnings.length) lines.push("⚠️ Holdings: " + inv.warnings.join(" · "));
+  const rd = r.rides;   // v1.1.67
+  if (rd && (rd.holds || rd.adjusted || rd.charged || rd.unmatched)) {
+    const parts = [rd.receipts + " trip receipt(s) checked"];
+    if (rd.holds) parts.push(rd.holds + " authorization(s) never charged left out (" + rd.currency + " " + rd.holdsTotal.toFixed(2) + ")");
+    if (rd.adjusted) parts.push(rd.adjusted + " amount(s) corrected");
+    if (rd.unmatched) parts.push(rd.unmatched + " ride alert(s) without a receipt kept");
+    lines.push("🚕 Uber: " + parts.join(" · "));
+  }
   if (s.reversals) lines.push("↩️ Reversals: " + s.reversals + " — saved as negative rows that cancel the original purchase");
   if (r.results.reversalsUnmatched) {
     lines.push("⚠️ Reversal without its original purchase: " + r.results.reversalsUnmatched +

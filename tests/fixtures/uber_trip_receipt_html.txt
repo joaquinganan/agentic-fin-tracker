@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+  .date { font-family: UberMoveTextMedium, Arial, sans-serif; } .mobile-content { display: none; }
+</style>
+</head>
+<body>
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;overflow:hidden">Oct 8, 2026 6:12 PM</div>
+<table class="header-table-row" border="0" cellpadding="0" cellspacing="0" role="presentation">
+  <tbody>
+    <tr>
+      <td class="desktop-content header-table-cell" style="width:70%"><img src="https://example.com/uber-logo.png" alt="Uber"></td>
+      <td class="desktop-content header-table-cell" style="width:30%;text-align:right" align="right"><div class="date">Oct 8, 2026</div><div class="date">6:12 PM</div></td>
+    </tr>
+  </tbody>
+</table>
+<table class="header-table-row" border="0" cellpadding="0" cellspacing="0" role="presentation">
+  <tbody>
+    <tr style="display:none" class="mobile-content"><td class="mobile-column header-table-cell-with-text">Oct 8, 2026 , 6:12 PM</td></tr>
+    <tr><td class="header-table-cell-with-text" style="font-size:36px;font-weight:700">Thanks for riding, Ana</td></tr>
+    <tr><td class="header-table-cell-with-text">We hope you enjoyed your ride this evening.</td></tr>
+  </tbody>
+</table>
+<div><table><tbody><tr><td><div><table><tbody><tr>
+  <td data-testid="total_fare_title">Total</td><td data-testid="total_fare_amount">DOP&nbsp;245.60</td>
+</tr></tbody></table></div>
+<div><table><tbody><tr><td><table><tbody><tr><td>&nbsp;</td></tr></tbody></table></td></tr></tbody></table></div>
+<table><tr><td><table><tr><td width=20px><img src="https://example.com/uber-one.png"></td><td><table><tr><td>DOP&nbsp;24.56</td></tr><tr><td>Uber One credits earned</td></tr></table></td></tr></table></td></tr></table>
+<div><div><table><tr><td data-testid="fare_line_item_label_trip_fare">Trip fare</td><td data-testid="fare_line_item_amount_trip_fare">DOP&nbsp;236.10</td></tr></table></div>
+<div><table><tr><td data-testid="fare_line_item_label_booking_fee">Booking Fee <a href="https://example.com/help"><img src="https://example.com/info.png"></a></td><td data-testid="fare_line_item_amount_booking_fee">DOP&nbsp;9.50</td></tr></table></div></div>
+<div><table><tbody><tr><td>Payments</td></tr><tr><td><div><table><tbody><tr><td><table><tbody><tr><td><img src="https://example.com/mastercard.png"></td><td><table><tbody>
+  <tr><td><table><tbody><tr><td data-testid="payments_0_Card.String">Mastercard &#8226;&#8226;&#8226;&#8226;1234 (LAFISE)</td><td data_testid="payments_0_AmountCharged"><font>DOP&nbsp;245.60</font></td></tr></tbody></table></td></tr>
+  <tr><td><table><tbody><tr><td data-testid="payments_0_date_time">10/8/26 6:41 PM</td><td data-testid="payments_0_Info"></td></tr></tbody></table></td></tr>
+</tbody></table></td></tr></tbody></table></td></tr></tbody></table></div></td></tr></tbody></table></div>
+<div><table><tbody><tr><td>Want to switch your payment method?</td><td><a href="https://example.com/switch">Switch</a></td></tr></tbody></table></div>
+<table><tbody><tr><td>Trip details</td></tr><tr><td>Moto Wait &amp; Save</td></tr><tr><td>7.40 kilometers, 24 minutes</td></tr>
+<tr><td>6:17 PM</td></tr><tr><td>Calle Ejemplo 100, Santo Domingo, Dominican Republic</td></tr>
+<tr><td>6:41 PM</td></tr><tr><td>Avenida Ejemplo 200, Santo Domingo, Dominican Republic</td></tr>
+<tr><td>You rode with Pedro</td></tr></tbody></table>
+</td></tr></tbody></table></div>
+<table><tbody><tr><td>Uber B.V.</td></tr><tr><td>Burgerweeshuispad 301</td></tr><tr><td>1076 HR Amsterdam</td></tr></tbody></table>
+</body>
+</html>

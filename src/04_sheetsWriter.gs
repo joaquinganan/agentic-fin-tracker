@@ -719,6 +719,7 @@ function computeRecategorization(row, rawCustomRules) {
   // v1.1.51: your own money. v1.1.66: sent, too — a transfer to your own account was Exclude when read (v1.1.63) and
   // lost it here at the end of the same run
   if ((type === 'Incoming' || type === 'Transfer') && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;
+  if (type === 'Transaction' && description.endsWith(RIDE_HOLD_SUFFIX)) category = EXCLUDE_CATEGORY;   // v1.1.67: never charged
   // v1.1.23: an unmatched reversal keeps whatever category it has (normally
   // blank) instead of being guessed from the placeholder text
   if (merchant === REVERSAL_UNMATCHED) category = row[TX_COL.CATEGORY] || '';
@@ -2012,4 +2013,95 @@ function importTypedTransferRows(sheetName, type, now) {
   }
   if (add.length || bad.length) Logger.log(sheetName + ' typed by hand: ' + add.length + ' saved, ' + bad.length + ' without a date or amount');
   return { added: add.length, rejected: bad.length, repaired: repaired };
+}
+
+/**
+ * v1.1.67: Uber ride alerts checked against Uber's trip receipts (matchRideReceipts, 03_gmailMonitor.gs). A hold — the
+ * estimate of a ride whose fare changed, or a request that never became a trip — is Exclude and says so in its
+ * Description; a ride charged below its alert gets the amount charged; a confirmed charge says "(Uber receipt)". Rides
+ * of the last RIDE_LOOKBACK_DAYS (or since `since`, a run's range) not settled yet; their alert times come from Gmail.
+ * Without receipts in Gmail nothing changes. A category you set on a hold is yours (Recategorize keeps it).
+ */
+const RIDE_LOOKBACK_DAYS = 35;
+const RIDE_HOLD_SUFFIX = ' (Uber hold, not charged)';
+const RIDE_RECEIPT_MARK = ' (Uber receipt';
+function rideRowState(description) {
+  const d = String(description || '');
+  if (d.endsWith(RIDE_HOLD_SUFFIX)) return 'hold';
+  return d.indexOf(RIDE_RECEIPT_MARK) !== -1 ? 'charged' : '';
+}
+
+function reconcileRideReceipts(now, since) {
+  now = now || new Date();
+  const out = { receipts: 0, charged: 0, holds: 0, adjusted: 0, unmatched: 0, holdsTotal: 0, currency: 'DOP' };
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const lookback = new Date(now.getFullYear(), now.getMonth(), now.getDate() - RIDE_LOOKBACK_DAYS, 12);
+  const from = since instanceof Date && since < lookback ? since : lookback;
+  const fromKey = normalizeDateForCompare(from);
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, TX_NUM_COLS).getValues();
+  const rides = [];
+  values.forEach((r, i) => {
+    if ((r[TX_COL.TYPE] || 'Transaction') !== 'Transaction' || !RIDE_MERCHANT_RE.test(String(r[TX_COL.MERCHANT] || ''))) return;
+    if (!r[TX_COL.DATE] || normalizeDateForCompare(r[TX_COL.DATE]) < fromKey) return;
+    const id = String(r[TX_COL.MESSAGE_ID] || '');
+    if (!id || /^manual:/.test(id)) return;   // typed by hand: no alert email to look up
+    rides.push({ i: i, gmailId: id.replace(/_\d+$/, ''), day: dayNumber(r[TX_COL.DATE]), state: rideRowState(r[TX_COL.DESCRIPTION]) });
+  });
+  const open = rides.filter(x => !x.state);
+  if (!open.length) return out;
+
+  const receipts = [];
+  const after = Utilities.formatDate(new Date(from.getTime() - 86400000), Session.getScriptTimeZone(), 'yyyy/MM/dd');
+  GmailApp.search(RIDE_RECEIPT_QUERY + ' after:' + after, 0, 200).forEach(thread => thread.getMessages().forEach(m => {
+    if (!/uber\.com/i.test(String(m.getFrom() || '')) || !RIDE_RECEIPT_SUBJECT.test(String(m.getSubject() || ''))) return;
+    let text = '';
+    try { text = typeof m.getBody === 'function' ? htmlToPlainText(m.getBody()) : ''; } catch (e) { text = ''; }
+    const parsed = parseUberTripReceipt(text || emailPlainText(m));
+    if (!parsed || !parsed.payments.length) return;
+    out.receipts++;
+    parsed.payments.forEach(p => receipts.push({ bank: p.bank, currency: p.currency, amount: p.amount,
+      requested: parsed.requested.getTime(), sent: m.getDate().getTime() }));
+  }));
+  if (!receipts.length) return out;
+
+  // the alert's own time (the sheet keeps only the day): rides on the days around an open one
+  const alerts = [];
+  rides.forEach(x => {
+    if (!open.some(o => Math.abs(o.day - x.day) <= 1)) return;
+    let at = null;
+    try { at = GmailApp.getMessageById(x.gmailId).getDate().getTime(); } catch (e) { at = null; }
+    if (at === null) return;
+    const r = values[x.i];
+    alerts.push({ id: String(x.i), bank: String(r[TX_COL.BANK] || ''), currency: String(r[TX_COL.CURRENCY] || 'DOP'),
+      amount: Math.abs(Number(r[TX_COL.AMOUNT]) || 0), at: at, state: x.state });
+  });
+  const result = matchRideReceipts(alerts, receipts);
+  Object.keys(result.decisions).forEach(k => {
+    const d = result.decisions[k], i = Number(k), r = values[i];
+    const desc = String(r[TX_COL.DESCRIPTION] || r[TX_COL.MERCHANT] || '');
+    const cur = String(r[TX_COL.CURRENCY] || 'DOP');
+    if (d.kind === 'hold') {
+      r[TX_COL.DESCRIPTION] = desc + RIDE_HOLD_SUFFIX;
+      r[TX_COL.CATEGORY] = EXCLUDE_CATEGORY;
+      r[TX_COL.AUTO_CATEGORY] = EXCLUDE_CATEGORY;
+      out.holds++;
+      out.holdsTotal += Math.abs(Number(r[TX_COL.AMOUNT]) || 0);
+      out.currency = cur;
+    } else if (d.kind === 'adjust') {
+      r[TX_COL.AMOUNT] = d.amount;
+      r[TX_COL.DESCRIPTION] = desc + RIDE_RECEIPT_MARK + ': ' + cur + ' ' + d.amount.toFixed(2) + ', the alert said ' + d.was.toFixed(2) + ')';
+      out.adjusted++;
+    } else {
+      r[TX_COL.DESCRIPTION] = desc + RIDE_RECEIPT_MARK + ')';
+      out.charged++;
+    }
+    sheet.getRange(i + 2, 1, 1, TX_NUM_COLS).setValues([r]);
+    Logger.log('Uber receipt | ' + d.kind + ' | row ' + (i + 2) + ' | ' + r[TX_COL.BANK] + ' ' + cur + ' ' + (d.was || r[TX_COL.AMOUNT]) +
+      (d.kind === 'adjust' ? ' → ' + d.amount : ''));
+  });
+  out.unmatched = result.unmatched.length;
+  out.holdsTotal = Math.round(out.holdsTotal * 100) / 100;
+  if (out.unmatched) Logger.log('Uber: ' + out.unmatched + ' ride alert(s) with no trip receipt near them — kept as charges');
+  return out;
 }

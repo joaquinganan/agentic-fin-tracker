@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.66 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.67 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.66"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.67"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -946,6 +946,7 @@ function runGmailMonitorCore(search, config) {
   let investments = null;   // v1.1.29
   let unrecognizedOpen = null;   // v1.1.35
   let stopped = null;            // v1.1.36
+  let rides = null;              // v1.1.67
   const deferred = [];           // v1.1.43
   const errors = [];
 
@@ -971,6 +972,8 @@ function runGmailMonitorCore(search, config) {
   } finally {
     const steps = [
       ["sort", () => sortAllDataSheets()],
+      // v1.1.67: Uber ride alerts checked against Uber's trip receipts — before Recategorize rebuilds the sheets
+      ["uber receipts", () => { rides = reconcileRideReceipts(new Date(), search.range ? search.range.start : null); }],
       ["recategorize", () => {
         safeToast("Recategorizing...", "📊 Financial Tracker", -1);
         recatChanged = recategorizeAllTransactions(config.email);
@@ -1015,7 +1018,8 @@ function runGmailMonitorCore(search, config) {
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,
-                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped, deferred: deferred }));
+                              investments: investments, unrecognizedOpen: unrecognizedOpen, stopped: stopped, deferred: deferred,
+                              rides: rides }));
 }
 
 /** v1.1.19 (E7): run summary text — pure, so tests/ can check it. */
@@ -1057,6 +1061,14 @@ function buildRunSummary(r) {
     if (inv.unparsed) lines.push("⚠️ Broker emails not read: " + inv.unparsed + " — left UNREAD; details in View > Executions");
   }
   if (inv && inv.warnings && inv.warnings.length) lines.push("⚠️ Holdings: " + inv.warnings.join(" · "));
+  const rd = r.rides;   // v1.1.67
+  if (rd && (rd.holds || rd.adjusted || rd.charged || rd.unmatched)) {
+    const parts = [rd.receipts + " trip receipt(s) checked"];
+    if (rd.holds) parts.push(rd.holds + " authorization(s) never charged left out (" + rd.currency + " " + rd.holdsTotal.toFixed(2) + ")");
+    if (rd.adjusted) parts.push(rd.adjusted + " amount(s) corrected");
+    if (rd.unmatched) parts.push(rd.unmatched + " ride alert(s) without a receipt kept");
+    lines.push("🚕 Uber: " + parts.join(" · "));
+  }
   if (s.reversals) lines.push("↩️ Reversals: " + s.reversals + " — saved as negative rows that cancel the original purchase");
   if (r.results.reversalsUnmatched) {
     lines.push("⚠️ Reversal without its original purchase: " + r.results.reversalsUnmatched +
@@ -3806,6 +3818,105 @@ function extractLAFISEAnyTransfer(text) {
   return notice.length ? notice : extractLAFISETransferTransactions(text);
 }
 
+/* ======================================================================
+ * UBER RIDES — v1.1.67 (real LAFISE alerts and Uber receipts, Sept–Oct 2026; fixtures with invented data)
+ * Uber authorizes an estimate on the card when a ride is requested. When the fare changes it authorizes the final
+ * amount and the estimate is released; when the final fare is lower it may charge it with no new alert. A request
+ * that never becomes a trip leaves an authorization too. The bank emails every authorization as a purchase, so a ride
+ * was saved twice (estimate + final), or at the estimate, and the card statement shows only what Uber charged.
+ * Uber's trip receipt ("Your <day> <time> trip with Uber") says what each card was charged and when the ride was
+ * requested: the ride alerts around it are checked against it (matchRideReceipts) and the sheet is corrected
+ * (reconcileRideReceipts, 04_sheetsWriter.gs). Uber Eats is charged once and is not touched.
+ * ====================================================================== */
+const RIDE_RECEIPT_QUERY = 'from:noreply@uber.com subject:"trip with Uber"';
+const RIDE_RECEIPT_SUBJECT = /trip with Uber/i;
+const RIDE_MERCHANT_RE = /\bUBER\s*\*?\s*(?:RIDES?|TRIP)\b|\bUBR\s*\*|PENDING\.UBER/i;
+const RECEIPT_MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+/**
+ * The receipt's text → { requested: Date (the time printed at its top, the rider's local time), payments: [{ last4,
+ * bank, currency, amount }] }, or null when it isn't a trip receipt. Only card payments whose bank (in parentheses,
+ * "Mastercard ••••1234 (LAFISE)") is one the tracker reads; Uber Cash, cash and other cards are left out. Works on the
+ * text by lines or flattened to one line. Pure — see tests/.
+ */
+function parseUberTripReceipt(text) {
+  const flat = String(text || '').replace(/[\u00a0\u202f]/g, ' ').replace(/\s+/g, ' ');
+  const when = /\b([A-Z][a-z]{2})[a-z]*\.? (\d{1,2}), (\d{4}) ,? ?(\d{1,2}):(\d{2}) ?([AP])\.? ?M\b/i.exec(flat);
+  if (!when || RECEIPT_MONTHS[when[1].toLowerCase()] === undefined) return null;
+  const hour = Number(when[4]) % 12 + (/p/i.test(when[6]) ? 12 : 0);
+  const requested = new Date(Number(when[3]), RECEIPT_MONTHS[when[1].toLowerCase()], Number(when[2]), hour, Number(when[5]));
+  const payments = [];
+  const re = /(?:•|\*){2,} ?(\d{4}) ?\(([^)]+)\) ?(RD\$|DOP|US\$|USD) ?([\d,]+\.\d{2})/gi;
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    const label = m[2].toUpperCase().replace(/\s+/g, '');
+    const bank = BANK_ORDER.find(b => label.indexOf(b) !== -1);
+    if (bank) payments.push({ last4: m[1], bank: bank, currency: moneyCurrency(m[3]), amount: moneyNumber(m[4]) });
+  }
+  return { requested: requested, payments: payments };
+}
+
+/**
+ * Ride alerts vs. trip receipts. alerts: [{ id, bank, currency, amount, at (ms, the alert email's time), state: ''
+ * | 'charged' | 'hold' (settled by an earlier run) }]; receipts: [{ bank, currency, amount (that card's charge),
+ * requested, sent (ms) }]. Returns { decisions: { id: { kind: 'charge' } | { kind: 'hold' } | { kind: 'adjust', amount,
+ * was } }, unmatched: [ids] } — decisions only for alerts not settled yet. Pure — see tests/.
+ *  1. the charge: an alert of the receipt's amount from the request (−2 min) to the receipt (+15 min), the one
+ *     closest to the receipt (the final authorization comes with it);
+ *  2. no alert of that amount: the ride's own authorization (the alert closest to the request) was charged at the
+ *     receipt's amount — corrected;
+ *  3. every other alert from 30 min before the request up to the charge: the estimate, or requests that never
+ *     became a trip — holds.
+ * An alert near no receipt is left as it is (unmatched): a missing receipt never removes a real charge.
+ */
+const RIDE_WINDOW = { beforeRequest: 2, afterReceipt: 15, attemptsBefore: 30 };   // minutes
+function matchRideReceipts(alerts, receipts) {
+  const M = 60000, used = {}, decisions = {};
+  const seen = {};
+  const list = receipts.filter(r => {   // Uber sends some receipts twice
+    const k = r.bank + '|' + r.currency + '|' + Math.round(r.amount * 100) + '|' + r.requested;
+    if (seen[k]) return false;
+    seen[k] = true;
+    return true;
+  }).sort((a, b) => a.requested - b.requested);
+  const fits = (a, r) => a.bank === r.bank && a.currency === r.currency &&
+    a.at >= r.requested - RIDE_WINDOW.beforeRequest * M && a.at <= r.sent + RIDE_WINDOW.afterReceipt * M;
+  const charge = [];
+  list.forEach((r, i) => {
+    let best = null;
+    alerts.forEach(a => {
+      if (used[a.id] || !fits(a, r) || Math.abs(a.amount - r.amount) >= 0.005) return;
+      if (!best || Math.abs(a.at - r.sent) < Math.abs(best.at - r.sent)) best = a;
+    });
+    if (!best) return;
+    used[best.id] = true;
+    charge[i] = best;
+    if (best.state !== 'charged') decisions[best.id] = { kind: 'charge' };
+  });
+  list.forEach((r, i) => {
+    if (charge[i]) return;
+    let best = null;
+    alerts.forEach(a => {
+      if (used[a.id] || a.state || !fits(a, r)) return;
+      if (!best || Math.abs(a.at - r.requested) < Math.abs(best.at - r.requested)) best = a;
+    });
+    if (!best) return;
+    used[best.id] = true;
+    charge[i] = best;
+    decisions[best.id] = { kind: 'adjust', amount: r.amount, was: best.amount };
+  });
+  list.forEach((r, i) => {
+    if (!charge[i]) return;
+    alerts.forEach(a => {
+      if (used[a.id] || a.bank !== r.bank || a.currency !== r.currency ||
+          a.at < r.requested - RIDE_WINDOW.attemptsBefore * M || a.at > charge[i].at) return;
+      used[a.id] = true;
+      if (a.state !== 'hold') decisions[a.id] = { kind: 'hold' };
+    });
+  });
+  return { decisions: decisions, unmatched: alerts.filter(a => !a.state && !used[a.id]).map(a => a.id) };
+}
+
 // ====================================================================================================
 // 04_sheetsWriter.gs
 // ====================================================================================================
@@ -4531,6 +4642,7 @@ function computeRecategorization(row, rawCustomRules) {
   // v1.1.51: your own money. v1.1.66: sent, too — a transfer to your own account was Exclude when read (v1.1.63) and
   // lost it here at the end of the same run
   if ((type === 'Incoming' || type === 'Transfer') && description.endsWith(OWN_ACCOUNT_SUFFIX)) category = EXCLUDE_CATEGORY;
+  if (type === 'Transaction' && description.endsWith(RIDE_HOLD_SUFFIX)) category = EXCLUDE_CATEGORY;   // v1.1.67: never charged
   // v1.1.23: an unmatched reversal keeps whatever category it has (normally
   // blank) instead of being guessed from the placeholder text
   if (merchant === REVERSAL_UNMATCHED) category = row[TX_COL.CATEGORY] || '';
@@ -5824,6 +5936,97 @@ function importTypedTransferRows(sheetName, type, now) {
   }
   if (add.length || bad.length) Logger.log(sheetName + ' typed by hand: ' + add.length + ' saved, ' + bad.length + ' without a date or amount');
   return { added: add.length, rejected: bad.length, repaired: repaired };
+}
+
+/**
+ * v1.1.67: Uber ride alerts checked against Uber's trip receipts (matchRideReceipts, 03_gmailMonitor.gs). A hold — the
+ * estimate of a ride whose fare changed, or a request that never became a trip — is Exclude and says so in its
+ * Description; a ride charged below its alert gets the amount charged; a confirmed charge says "(Uber receipt)". Rides
+ * of the last RIDE_LOOKBACK_DAYS (or since `since`, a run's range) not settled yet; their alert times come from Gmail.
+ * Without receipts in Gmail nothing changes. A category you set on a hold is yours (Recategorize keeps it).
+ */
+const RIDE_LOOKBACK_DAYS = 35;
+const RIDE_HOLD_SUFFIX = ' (Uber hold, not charged)';
+const RIDE_RECEIPT_MARK = ' (Uber receipt';
+function rideRowState(description) {
+  const d = String(description || '');
+  if (d.endsWith(RIDE_HOLD_SUFFIX)) return 'hold';
+  return d.indexOf(RIDE_RECEIPT_MARK) !== -1 ? 'charged' : '';
+}
+
+function reconcileRideReceipts(now, since) {
+  now = now || new Date();
+  const out = { receipts: 0, charged: 0, holds: 0, adjusted: 0, unmatched: 0, holdsTotal: 0, currency: 'DOP' };
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const lookback = new Date(now.getFullYear(), now.getMonth(), now.getDate() - RIDE_LOOKBACK_DAYS, 12);
+  const from = since instanceof Date && since < lookback ? since : lookback;
+  const fromKey = normalizeDateForCompare(from);
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, TX_NUM_COLS).getValues();
+  const rides = [];
+  values.forEach((r, i) => {
+    if ((r[TX_COL.TYPE] || 'Transaction') !== 'Transaction' || !RIDE_MERCHANT_RE.test(String(r[TX_COL.MERCHANT] || ''))) return;
+    if (!r[TX_COL.DATE] || normalizeDateForCompare(r[TX_COL.DATE]) < fromKey) return;
+    const id = String(r[TX_COL.MESSAGE_ID] || '');
+    if (!id || /^manual:/.test(id)) return;   // typed by hand: no alert email to look up
+    rides.push({ i: i, gmailId: id.replace(/_\d+$/, ''), day: dayNumber(r[TX_COL.DATE]), state: rideRowState(r[TX_COL.DESCRIPTION]) });
+  });
+  const open = rides.filter(x => !x.state);
+  if (!open.length) return out;
+
+  const receipts = [];
+  const after = Utilities.formatDate(new Date(from.getTime() - 86400000), Session.getScriptTimeZone(), 'yyyy/MM/dd');
+  GmailApp.search(RIDE_RECEIPT_QUERY + ' after:' + after, 0, 200).forEach(thread => thread.getMessages().forEach(m => {
+    if (!/uber\.com/i.test(String(m.getFrom() || '')) || !RIDE_RECEIPT_SUBJECT.test(String(m.getSubject() || ''))) return;
+    let text = '';
+    try { text = typeof m.getBody === 'function' ? htmlToPlainText(m.getBody()) : ''; } catch (e) { text = ''; }
+    const parsed = parseUberTripReceipt(text || emailPlainText(m));
+    if (!parsed || !parsed.payments.length) return;
+    out.receipts++;
+    parsed.payments.forEach(p => receipts.push({ bank: p.bank, currency: p.currency, amount: p.amount,
+      requested: parsed.requested.getTime(), sent: m.getDate().getTime() }));
+  }));
+  if (!receipts.length) return out;
+
+  // the alert's own time (the sheet keeps only the day): rides on the days around an open one
+  const alerts = [];
+  rides.forEach(x => {
+    if (!open.some(o => Math.abs(o.day - x.day) <= 1)) return;
+    let at = null;
+    try { at = GmailApp.getMessageById(x.gmailId).getDate().getTime(); } catch (e) { at = null; }
+    if (at === null) return;
+    const r = values[x.i];
+    alerts.push({ id: String(x.i), bank: String(r[TX_COL.BANK] || ''), currency: String(r[TX_COL.CURRENCY] || 'DOP'),
+      amount: Math.abs(Number(r[TX_COL.AMOUNT]) || 0), at: at, state: x.state });
+  });
+  const result = matchRideReceipts(alerts, receipts);
+  Object.keys(result.decisions).forEach(k => {
+    const d = result.decisions[k], i = Number(k), r = values[i];
+    const desc = String(r[TX_COL.DESCRIPTION] || r[TX_COL.MERCHANT] || '');
+    const cur = String(r[TX_COL.CURRENCY] || 'DOP');
+    if (d.kind === 'hold') {
+      r[TX_COL.DESCRIPTION] = desc + RIDE_HOLD_SUFFIX;
+      r[TX_COL.CATEGORY] = EXCLUDE_CATEGORY;
+      r[TX_COL.AUTO_CATEGORY] = EXCLUDE_CATEGORY;
+      out.holds++;
+      out.holdsTotal += Math.abs(Number(r[TX_COL.AMOUNT]) || 0);
+      out.currency = cur;
+    } else if (d.kind === 'adjust') {
+      r[TX_COL.AMOUNT] = d.amount;
+      r[TX_COL.DESCRIPTION] = desc + RIDE_RECEIPT_MARK + ': ' + cur + ' ' + d.amount.toFixed(2) + ', the alert said ' + d.was.toFixed(2) + ')';
+      out.adjusted++;
+    } else {
+      r[TX_COL.DESCRIPTION] = desc + RIDE_RECEIPT_MARK + ')';
+      out.charged++;
+    }
+    sheet.getRange(i + 2, 1, 1, TX_NUM_COLS).setValues([r]);
+    Logger.log('Uber receipt | ' + d.kind + ' | row ' + (i + 2) + ' | ' + r[TX_COL.BANK] + ' ' + cur + ' ' + (d.was || r[TX_COL.AMOUNT]) +
+      (d.kind === 'adjust' ? ' → ' + d.amount : ''));
+  });
+  out.unmatched = result.unmatched.length;
+  out.holdsTotal = Math.round(out.holdsTotal * 100) / 100;
+  if (out.unmatched) Logger.log('Uber: ' + out.unmatched + ' ride alert(s) with no trip receipt near them — kept as charges');
+  return out;
 }
 
 // ====================================================================================================
