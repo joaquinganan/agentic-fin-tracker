@@ -1,0 +1,39 @@
+¡Transacción realizada!
+Te notificamos que la siguiente transacción
+fue realizada desde una oficina comercial:
+Monto:
+USD 500.00
+Valores recibidos en:
+Efectivo
+USD 500.00
+Cheques: *0*
+USD 0.00
+Deposito a cuenta
+Transacción:
+021N - Dep de ahorros sin libreta
+Depositante:
+ANA PEREZ - ID ***1111
+Destino:
+ANA PEREZ,
+USD - ***2222
+Cuenta estándar:
+USD - DO00BRRD0***************2222
+Fecha de transacción:
+14 DE SEPTIEMBRE DEL 2026 - 9:10 A. M.
+Oficina de atención:
+100 - OFIC EJEMPLO
+Cajero:
+U00000
+Número de transacción:
+260914000000000001
+Comentario:
+Este depósito se recibe sujeto a las condiciones pactadas en el Contrato de Apertura Cuentas.
+El Depositante es responsable de verificar los datos registrados en el Depósito realizado.
+Este correo fue enviado a usuario@example.com
+Banreservas envía este correo electrónico porque tu perfil
+nos indica que esta información es relevante para ti.
+No respondas a este mensaje, has sido notificado de forma
+automática.
+De no reconocer esta transacción, favor contactarnos al
+(809) 960-4400
+Eliminar suscripción Código de mensaje:10000000000

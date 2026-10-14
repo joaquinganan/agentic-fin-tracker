@@ -1,0 +1,46 @@
+Tus Finanzas
+Estado de Cuenta Ahorros
+Septiembre 2026
+Información general
+N° de cuenta: 00000000000
+ANA MARIA PEÑA SOTO
+Estado: ACTIVA
+Cuenta regulatoria: DO00BANS00000000000000000000
+Moneda: DOP
+Tipo de cuenta: Cuenta De Ahorros
+Fecha de Corte:
+30/SEP/2026
+Fecha de apertura: 15/JUN/2026
+Resumen de tu cuenta
+RD$ RD$
+Balance mes anterior:
+80,000.00 Débitos del mes: 16,038.05
+Balance al corte:
+71,582.45 Créditos del mes: 7,620.50
+Impuestos del mes:
+26.00 Intereses acumulados al corte: 120.50
+Ley 288-04 Articulo 12
+Rango de tasas de interés
+RD$50,000.01 a RD$100,001.00 0.75%
+RD$100,001.01 a RD$500,001.00 2.50%
+Mayor a RD$500,001.01 5.00%
+Detalle de tus transacciones
+ANA MARIA PEÑA SOTO
+Moneda: RD$ Pesos Dominicanos
+Fecha transacción Descrip. de movimientos Débito Crédito Balance
+03/09/2026 Lbtr Pedro Gomez Ramirez RD$1,000.00 RD$79,000.00
+03/09/2026 Imp. Art. 12 Ley 288-04 RD$2.00 RD$78,998.00
+05/09/2026 Lbtr Ana Maria Pe A Soto RD$5,000.00 RD$83,998.00
+08/09/2026 Pago Tdc 0000Xxxxxx1111 RD$12,000.00 RD$71,998.00
+08/09/2026 Imp. Art. 12 Ley 288-04 RD$24.00 RD$71,974.00
+15/09/2026 Ach Ibanking RD$2,500.00 RD$74,474.00
+Banesco Banco Múltiple, S.A. / RNC: 0-00-00000-0 / Ave. Ejemplo No. 1, Santo Domingo, Rep. Dom. 000-000-0000
+www.banesco.com.do
+
+Fecha transacción Descrip. de movimientos Débito Crédito Balance
+21/09/2026 Adelanto 50 Trabajo Ejemplo RD$3,000.00 RD$71,474.00
+30/09/2026 Intereses RD$120.50 RD$71,594.50
+30/09/2026 Retencion De Intereses RD$12.05 RD$71,582.45
+Total transacciones en RD$ Pesos Dominicanos RD$16,038.05 RD$7,620.50 RD$71,582.45
+Banesco Banco Múltiple, S.A. / RNC: 0-00-00000-0 / Ave. Ejemplo No. 1, Santo Domingo, Rep. Dom. 000-000-0000
+www.banesco.com.do

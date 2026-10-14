@@ -2,6 +2,50 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.69 (Oct 9, 2026) — another user's Unrecognized sheet: Scotiabank transfers, BDI Online, Banreservas loans and deposits, BHD declines
+- **Reported:** 19 rows in Unrecognized, with real samples of each transactional format. Each sample replayed through
+  the whole reader, in memory; every other sample reads as before.
+- **Scotiabank transfers sent** ("Transferencias a terceros" / "Transferencias a cuentas propias") had no extractor
+  (Scotiabank is strict, so they went to Unrecognized). Now: to your own credit card, a Card Payment (Exclude); to a
+  loan, a loan installment (money out, no category); to another account of yours, Exclude; to a third party, a
+  Transfer (the email doesn't name who). An amount with no currency is DOP, as in Scotiabank's other alerts. The type
+  is read from the body, not the subject, so Recategorize keeps a card payment as one.
+- **BDI "BDI Online: Comprobante de Transacción"** is the card payment BDI already read since v1.1.62, laid out in
+  columns (every label, then every value), so neither the type nor the amount was found. Now the amount paid comes from
+  the second table, and the tax and commission are their own row, as before. The holder and the card number are not kept.
+- **Banreservas "Recibo de la transacción" — "Pago de Préstamo Propio"**: a loan installment from the app. Saved as a
+  Transfer named after the loan ("Pago de préstamo *1234"), no category, its tax a row of its own.
+- **Filtered, not Unrecognized:** a card cancelled (POPULAR), a contact form received (BDI), a service request received
+  or completed (Scotiabank).
+- **Banreservas "Notificación - Dep de ahorros sin libreta"**: cash or cheques deposited at a branch. Money in
+  ("Depósito en oficina: <depositor>"); Exclude when the depositor is the account holder (the same rule as the other
+  banks' transfers received), otherwise no category. The depositor's ID and the account are not kept.
+- **BHD "Denegada- Confirme Banco"**: three declined attempts in two minutes went to Unrecognized as "Amount not
+  found" — the row's status wasn't one BHD's reader knew, so the row wasn't recognized at all (the sheet's
+  300-character excerpt stopped right before the table; the `.eml` showed it). "Denegada"/"Denegado" are declined
+  statuses now, with the bank's note after a dash: the email is filtered as declined, nothing saved.
+- Tests: 284, on `src/` and on the single file (mutation-checked: 27 mutations, each caught). Fixtures: the real
+  structure with invented data.
+
+### v1.1.68 (Oct 9, 2026) — Banesco's new statement layout (RD$ before every amount)
+- **Reported:** the September 2026 Banesco savings statement went to Unrecognized: "Statement doesn't add up — nothing
+  taken from it: no transactions found; credits add up to 0.00, the statement says …". The PDF itself was read
+  fine; the bank changed the layout. Every amount now carries its currency ("RD$100.00 RD$253,675.36"), so no row
+  matched "<date> <description> <amount> <balance>"; and the holder's name moved (after the account number, and before
+  "Moneda:" in the transactions header).
+- **Now:** the currency signs before the amounts are dropped before reading the rows; the holder is found in either
+  place; the currency comes from "Moneda: DOP|USD" first, since the new layout lists RD$ rate ranges even on a statement
+  of another currency. The all-or-nothing check is unchanged: the rows must still add up to the statement's totals.
+  Checked in memory with the real statement: 30 rows, totals and closing balance match, the month's only credit (interest)
+  taken. The older layout reads as before.
+- Not verified: a USD statement in the new layout (no sample; `US# Changelog
+
+Every release, newest first. Each entry says what was wrong, how it was found and what changed.
+
+ before each amount is assumed and handled).
+- Tests: 276, on `src/` and on the single file (mutation-checked: the signs dropped, each holder position, the currency
+  from "Moneda:"). Fixture: the new layout with invented data.
+
 ### v1.1.67 (Oct 7, 2026) — Uber rides checked against Uber's trip receipts
 - **Reported:** Uber rides paid with a LAFISE card were counted more than once, while the card statement shows only
   the final fare. Uber authorizes an estimate when a ride is requested; when the fare changes it authorizes the final

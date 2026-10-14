@@ -1,0 +1,22 @@
+Comprobante de Pago - Banreservas
+¡Pago realizado!
+Te notificamos que el siguiente pago a tu préstamo fue realizado desde tu App Banreservas:
+Monto:
+DOP 3,200.50
+#concept#
+Transacción:
+Pago de Préstamo Propio
+Origen:
+ANA MARIA PEREZ , CuentaAhorro DOP ** - 1111
+Destino:
+Préstamo *3333
+Fecha de transacción:
+14 de Septiembre 2026 - 11:59 AM
+Impuestos:
+DOP 4.80
+Número de transacción:
+200000000001
+Recibido por los valores indicados en este comprobante.
+Este correo fue enviado a USUARIO@EXAMPLE.COM Banreservas envía este correo electrónico porque tu perfil nos indica que esta información es relevante para ti.
+No respondas a este mensaje, has sido notificado de forma automática.
+De no reconocer esta transacción, favor contactarnos al (809) 960-4400

@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.67 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.69 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.67"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.69"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -2045,8 +2045,10 @@ const BANK_PATTERNS = {
     // email none of these recognizes goes to Unrecognized instead of being guessed (see STRICT_BANK_NOTE)
     extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions, incoming: extractBDIIncomingTransactions,
       cardPayment: extractBDICardPaymentTransactions },
+    // v1.1.69: "BDI Online" lays the receipt out in columns (all labels, then all values), so the card payment is
+    // recognized anywhere in the text, not right after its label
     detectType: (subject, text) => /Interbancaria\s+Recibida/i.test(text) ? 'Incoming' :
-      /Tipo de Transacci[óo]n\s+Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' : null,   // v1.1.62
+      /Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' : null,   // v1.1.62
     // v1.1.62: "… Interbancaria - Completada" confirms a transfer already read from its "Comprobante" (same time)
     ignore: [/Transacci[óo]n Interbancaria\s*-\s*Completada/i],
     strict: true,
@@ -2058,8 +2060,13 @@ const BANK_PATTERNS = {
     name: 'SCOTIABANK',
     fromDomain: 'scotiabank.com',                        // alertas@scotiabank.com, and *.scotiabank.com.do
     searchQuery: 'from:alertas@scotiabank.com OR from:scotiabank.com.do',
-    extractors: { consumo: extractSCOTIABANKConsumoTransactions, incoming: extractSCOTIABANKIncomingTransactions },   // v1.1.61: incoming
-    detectType: (subject, text) => /recibido un cr[ée]dito a su cuenta/i.test(text) ? 'Incoming' : null,
+    extractors: { consumo: extractSCOTIABANKConsumoTransactions, incoming: extractSCOTIABANKIncomingTransactions,   // v1.1.61: incoming
+      transfer: extractSCOTIABANKTransferTransactions, cardPayment: extractSCOTIABANKTransferTransactions },          // v1.1.69
+    // v1.1.69: transfers ("Transferencias a terceros" / "a cuentas propias") by the body, not the subject: one to your
+    // own credit card is a Card Payment, and Recategorize keeps it only because no subject rule says Transfer
+    detectType: (subject, text) => /recibido un cr[ée]dito a su cuenta/i.test(text) ? 'Incoming' :
+      /Se realiz[óo] una transferencia\b.*?\bhasta Tarjeta de Cr[ée]dito/i.test(text) ? 'Card Payment' :
+      /Se realiz[óo] una transferencia\b/i.test(text) ? 'Transfer' : null,
     strict: true,                                        // v1.1.61
     keywords: ['SCOTIABANK', 'SCOTIA'],
     merchantPattern: /\ben\s+(.{3,50}?)\s+con su/i
@@ -2075,8 +2082,8 @@ const BANK_PATTERNS = {
     keywords: ['QIK'],
     merchantPattern: /\ben\s+(.{3,50}?)\s+con tu tarjeta/i
   },
-  // v1.1.61: from real samples. Two senders: the app's receipts ("Recibo de la transacción": transfers sent and
-  // TuEfectivo withdrawals) and notificaciones@ ("Notificaciones Banreservas": transfers received). Neither subject says
+  // v1.1.61: from real samples. Two senders: the app's receipts ("Recibo de la transacción": transfers sent, loan
+  // payments (v1.1.69) and TuEfectivo withdrawals) and notificaciones@ ("Notificaciones Banreservas": transfers received). Neither subject says
   // what happened, so the type is read from the body (detectType).
   BANRESERVAS: {
     name: 'BANRESERVAS',
@@ -2150,6 +2157,10 @@ const NON_TRANSACTIONAL_KEYWORDS = [
   'USUARIO DE BANCANET', 'TU USUARIO SE BLOQUEE', 'CONTRASEÑA TEMPORAL', 'CONTRASENA TEMPORAL', 'CONTRASEÑA EN BANCANET',
   'ALIAS DEL USUARIO', 'SESIÓN DUPLICADA', 'SESION DUPLICADA', 'DESBLOQUEO DE USUARIO', 'HACE TIEMPO QUE NO TE VEMOS',
   'SOLICITUD DE REGISTRO', 'CÓDIGO DE ACTIVACIÓN', 'CODIGO DE ACTIVACION', 'FIRMA DE CONTRATO', 'CLICK & SIGN',
+  // v1.1.69: a card cancelled (POPULAR), a contact form received (BDI), a service request received or completed
+  // (Scotiabank) — they went to Unrecognized
+  'CANCELACIÓN TARJETA', 'CANCELACION TARJETA', 'CANCELACIÓN DE SU TARJETA', 'CANCELACION DE SU TARJETA',
+  'HEMOS RECIBIDO TU MENSAJE', 'SOLICITUD DE CONTÁCTANOS', 'SOLICITUD DE CONTACTANOS', 'SOLICITUD RECIBIDA', 'SOLICITUD COMPLETADA',
   // v1.1.52: bank announcements (LAFISE's Pagos al Instante schedule comes from the incoming-transfers sender)
   'HORARIO TRANSFERENCIAS', 'HORARIOS TRANSFERENCIAS', 'HORARIO DE TRANSFERENCIAS', 'NOTA INFORMATIVA',
   // v1.1.23: incoming payroll deposit notices (POPULAR "Notificación Depósito de
@@ -2946,7 +2957,9 @@ function extractBANESCOTransferTransactions(text) {
  * previously-working real samples plus this new one — all three still
  * extract correctly.
  */
-const BHD_ROW_STATUSES = 'Aprobada|Rechazada|Declinada|Reversada|Reversado|Reverso';
+// v1.1.69: "Denegada- Confirme Banco" (real sample, another user's Unrecognized: three declined attempts in two minutes,
+// "Amount not found" because the status wasn't known) — a declined row, with a note after a dash
+const BHD_ROW_STATUSES = 'Aprobada|Rechazada|Declinada|Denegada|Denegado|Reversada|Reversado|Reverso';
 
 /**
  * v1.1.23: a REVERSAL row (real .eml, 06/05/2026: the same table row a few
@@ -2962,13 +2975,13 @@ const BHD_ROW_STATUSES = 'Aprobada|Rechazada|Declinada|Reversada|Reversado|Rever
 function extractBHDConsumoTransactions(text) {
   const merchant = `((?:(?!\\b(?:${BHD_ROW_STATUSES})\\b)[^\\n])+?)`;
   const re = new RegExp(`(\\d{2}\\/\\d{2}\\/\\d{4}[^\\n]*?)\\s+(RD|DOP|USD?|EUR|COP)\\s+\\$?\\s*([\\d,]+\\.?\\d*)` +
-                        `(?:\\s+${merchant})?\\s+(${BHD_ROW_STATUSES})\\s+(\\w+)`, 'gi');
+                        `(?:\\s+${merchant})?\\s+(${BHD_ROW_STATUSES})(?:\\s*-[^\\n]*?)?\\s+(\\w+)`, 'gi');
   const results = [];
   let m;
   while ((m = re.exec(text)) !== null) {
     const status = m[5];
     results.push({
-      declined: /RECHAZ|DECLIN/i.test(status), // v1.1.19: flagged, not dropped (M1)
+      declined: /RECHAZ|DECLIN|DENEG/i.test(status), // v1.1.19: flagged, not dropped (M1)
       reversal: /REVERS/i.test(status),
       timeKey: m[1].replace(/\s+/g, ' ').trim(),
       merchant: (m[4] || '').trim().substring(0, 50),
@@ -3424,14 +3437,20 @@ function statementPdfText(blob) {
  * isn't in the text). Everything must add up to the statement's own totals, or nothing is taken from it. Pure.
  */
 function parseBanescoSavingsStatement(text) {
-  const flat = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
+  const raw = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
+  // v1.1.68: the September 2026 layout writes every amount with its currency ("RD$100.00 RD$253,675.36") and has a
+  // "RD$… a RD$…" rate table, so the currency comes from "Moneda: DOP|USD" first and the signs go before reading.
+  const moneda = raw.match(/Moneda:\s*(DOP|USD)\b/i);
+  const currency = moneda ? moneda[1].toUpperCase() : (/US\$|D[óo]lares/i.test(raw) && !/RD\$/.test(raw) ? 'USD' : 'DOP');
+  const flat = raw.replace(/(?:RD|US)\$\s?(?=-?\d)/g, '');
   const num = s => Number(String(s).replace(/,/g, ''));
   const total = re => { const m = flat.match(re); return m ? num(m[1]) : null; };
-  const out = { holder: '', currency: /US\$|D[óo]lares|Moneda:\s*USD/i.test(flat) && !/RD\$/.test(flat) ? 'USD' : 'DOP', rows: [], incoming: [], problems: [] };
+  const out = { holder: '', currency: currency, rows: [], incoming: [], problems: [] };
   const opening = total(/Balance mes anterior:?\s*(-?[\d,]+\.\d{2})/i), closing = total(/Balance al corte:?\s*(-?[\d,]+\.\d{2})/i);
   const credits = total(/Cr[ée]ditos del mes:?\s*([\d,]+\.\d{2})/i), debits = total(/D[ée]bitos del mes:?\s*([\d,]+\.\d{2})/i);
   const holder = flat.match(/(?:Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Cuenta/i)
-    || flat.match(/Detalle de tus transacciones\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Transacciones en/i);
+    || flat.match(/Detalle de tus transacciones\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+(?:Transacciones en|Moneda:)/i)
+    || flat.match(/N° de cuenta:\s*\d+\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .]{4,}?)\s+Estado:/i);
   out.holder = holder ? holder[1].trim() : '';
   if (opening === null || closing === null || credits === null || debits === null) {
     out.problems.push('the statement\'s totals (balances, credits, debits) were not found');
@@ -3682,7 +3701,8 @@ function extractQIKConsumoTransactions(text) {
  *  "Transacción: Retiro …" a cash withdrawal. Anything else: not decided here (and, strict, not guessed). */
 function detectBANRESERVASType(subject, flat) {
   if (/Transferencia Recibida/i.test(flat)) return 'Incoming';
-  if (/Transacci[óo]n:\s*Transferencia/i.test(flat)) return 'Transfer';
+  if (BANRESERVAS_DEPOSIT_RE.test(flat)) return 'Incoming';   // v1.1.69: a deposit at a branch
+  if (/Transacci[óo]n:\s*(?:Transferencia|Pago de Pr[ée]stamo)/i.test(flat)) return 'Transfer';   // v1.1.69: loans
   if (/Transacci[óo]n:\s*Retiro/i.test(flat)) return 'Transaction';
   return null;
 }
@@ -3703,18 +3723,24 @@ function banreservasRef(flat) {
 }
 
 /** "Recibo de la transacción" with "Transacción: Transferencia a Tercero": the beneficiary (Destino, before the comma,
- *  without the "SR"/"SRA" the bank adds), and the tax and commission as their own row when not zero. */
+ *  without the "SR"/"SRA" the bank adds), and the tax and commission as their own row when not zero.
+ *  v1.1.69: or "Transacción: Pago de Préstamo Propio" (Destino: Préstamo *1234): a loan installment is money out, saved
+ *  as a Transfer named after the loan, with no category — it was never counted when the loan was received. */
 function extractBANRESERVASTransferTransactions(text) {
   const flat = flatText(text);
-  if (!/Transacci[óo]n:\s*Transferencia/i.test(flat)) return [];
+  const loan = /Transacci[óo]n:\s*Pago de Pr[ée]stamo/i.test(flat);
+  if (!loan && !/Transacci[óo]n:\s*Transferencia/i.test(flat)) return [];
   const amt = banreservasAmount(flat);
   if (!amt) return [];
-  const who = ((flat.match(/Destino:\s*([^,]+?)\s*,/i) || [])[1] || '').replace(/^(SR|SRA|SRTA)\.?\s+/i, '').trim();
   const kind = ((flat.match(/Transacci[óo]n:\s*(.+?)\s+Origen:/i) || [])[1] || 'Transferencia').trim();
+  const loanId = (flat.match(/Destino:\s*Pr[ée]stamo\s*\**\s*(\d{2,})/i) || [])[1];   // flatText drops the * before it
+  const who = loan ? 'Pago de préstamo' + (loanId ? ' *' + loanId : '') :
+    ((flat.match(/Destino:\s*([^,]+?)\s*,/i) || [])[1] || '').replace(/^(SR|SRA|SRTA)\.?\s+/i, '').trim();
   const ref = banreservasRef(flat);
   const out = [{ amount: amt.amount, currency: amt.currency, merchant: (who || kind).substring(0, 50), ref: ref, context: kind }];
   const fees = banreservasFees(flat);
-  if (fees > 0) out.push({ amount: fees, currency: amt.currency, merchant: 'Banreservas: impuesto y comisión de transferencia', context: 'transfer fees' });
+  if (fees > 0) out.push({ amount: fees, currency: amt.currency, merchant: 'Banreservas: impuesto y comisión de ' + (loan ? 'pago de préstamo' : 'transferencia'),
+    context: loan ? 'loan payment fees' : 'transfer fees' });
   return out;
 }
 
@@ -3736,12 +3762,31 @@ function extractBANRESERVASWithdrawalTransactions(text) {
  *  holder, so whether it's your own money is left to you (a Custom Rule with your name → Exclude). */
 function extractBANRESERVASIncomingTransactions(text) {
   const flat = flatText(text);
+  if (BANRESERVAS_DEPOSIT_RE.test(flat)) return extractBANRESERVASDeposit(flat);
   if (!/Transferencia Recibida/i.test(flat)) return [];
   const amt = banreservasAmount(flat);
   if (!amt) return [];
   const sender = ((flat.match(/Origen:\s*(.+?)\s+Banco Origen:/i) || [])[1] || '').trim();
   return [{ amount: amt.amount, currency: amt.currency, merchant: (sender || 'Transferencia recibida').substring(0, 50), own: false,
     context: 'incoming transfer' }];
+}
+
+/**
+ * v1.1.69: "Notificación - Dep de ahorros sin libreta" (real sample, Unrecognized): cash or cheques deposited at a
+ * branch — "Monto: USD 1,000.00 … Transacción: 021N - Dep de ahorros sin libreta Depositante: <NAME> - ID ***1234
+ * Destino: <HOLDER>, USD - ***5678". Money in; yours (Exclude) when the depositor is the account holder, as with the
+ * other banks' transfers received. The depositor's ID and the account are not kept.
+ */
+const BANRESERVAS_DEPOSIT_RE = /Transacci[óo]n:\s*(?:\w+\s*-\s*)?Dep(?:[óo]sito)?\b/i;
+
+function extractBANRESERVASDeposit(flat) {
+  const amt = banreservasAmount(flat);
+  if (!amt) return [];
+  const depositor = ((flat.match(/Depositante:\s*(.+?)\s*(?:-\s*ID\b|Destino:)/i) || [])[1] || '').trim();
+  const holder = ((flat.match(/Destino:\s*([^,]+?)\s*,/i) || [])[1] || '').trim();
+  const ref = banreservasRef(flat);
+  return [{ amount: amt.amount, currency: amt.currency, merchant: ('Depósito en oficina' + (depositor ? ': ' + depositor : '')).substring(0, 50),
+    own: !!(depositor && holder && sameHolder(depositor, holder)), ref: ref ? 'IN:' + ref : '', context: 'deposit' }];
 }
 
 /* ======================================================================
@@ -3757,7 +3802,7 @@ function extractBDICardPaymentTransactions(text) {
   const flat = flatText(text);
   if (!/Pago Tarjetas? de Cr[ée]dito/i.test(flat)) return [];
   const paid = flat.match(/Monto Transferido\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i) || flat.match(/\bMonto\s+(RD\$|US\$|DOP|USD)\s*([\d,]+\.\d{2})/i);
-  if (!paid) return [];
+  if (!paid) return extractBDIOnlineCardPayment(flat);
   const currency = moneyCurrency(paid[1]);
   const fee = re => { const f = flat.match(re); return f ? moneyNumber(f[1]) : 0; };
   const fees = +(fee(/Impuesto[^$]*?(?:RD|US)\$\s*([\d,]+\.\d{2})/i) + fee(/Comisi[óo]n\s+(?:RD|US)\$\s*([\d,]+\.\d{2})/i)).toFixed(2);
@@ -3766,6 +3811,50 @@ function extractBDICardPaymentTransactions(text) {
     context: 'card payment' }];
   if (fees > 0) out.push({ amount: fees, currency: currency, merchant: 'BDI: impuesto y comisión de pago de tarjeta', type: 'Transfer', context: 'payment fees' });
   return out;
+}
+
+/**
+ * v1.1.69: the same card payment from "BDI Online: Comprobante de Transacción" (real samples, Unrecognized). Two tables
+ * laid out in columns — every label first, then every value:
+ *   … Tipo de Transacción Fecha Transacción Impuesto 0.20 Monto <account> … Pago Tarjetas de Crédito dd/mm/yyyy hh:mm:ss
+ *   RD$<tax> RD$<total> No. Referencia Beneficiario No. Autorización Monto Tasa de Cambio Comisión <ref> <card / holder>
+ *   <auth> RD$<paid> 1.00 RD$<commission>
+ * The amount paid to the card is the second table's Monto (or, without it, the total less the tax); the tax and the
+ * commission are a row of their own, as above. The card number and the holder's name are not kept.
+ */
+function extractBDIOnlineCardPayment(flat) {
+  const head = flat.match(/Pago Tarjetas? de Cr[ée]dito\s+\d{2}\/\d{2}\/\d{4}\s+[\d:]+\s+(RD\$|US\$)\s*([\d,]+\.\d{2})\s+(RD\$|US\$)\s*([\d,]+\.\d{2})/i);
+  if (!head) return [];
+  const currency = moneyCurrency(head[3]);
+  const tail = flat.match(/Monto\s+Tasa de Cambio\s+Comisi[óo]n\s+(\d{4,})\b.*?(?:RD|US)\$\s*([\d,]+\.\d{2})\s+[\d.]+\s+(?:RD|US)\$\s*([\d,]+\.\d{2})/i);
+  const tax = moneyNumber(head[2]), commission = tail ? moneyNumber(tail[3]) : 0;
+  const paid = tail ? moneyNumber(tail[2]) : +(moneyNumber(head[4]) - tax).toFixed(2);
+  const out = [{ amount: paid, currency: currency, merchant: 'Pago Tarjetas de Crédito (BDI)', ref: tail ? 'PAY:' + tail[1] : '', context: 'card payment' }];
+  const fees = +(tax + commission).toFixed(2);
+  if (fees > 0) out.push({ amount: fees, currency: currency, merchant: 'BDI: impuesto y comisión de pago de tarjeta', type: 'Transfer', context: 'payment fees' });
+  return out;
+}
+
+/**
+ * v1.1.69: Scotiabank transfers sent (real samples, Unrecognized). Two templates, both naming only the accounts:
+ *   "Transferencias a terceros": "Se realizó una transferencia por una cantidad de $7,000.00 desde la cuenta ***1234 a las …"
+ *   "Transferencias a cuentas propias": "… por un monto de $300.00 DOP desde la cuenta terminada en ***1234 hasta
+ *     Tarjeta de Crédito ***5678 a las …" — or "hasta Préstamo ***9012".
+ * To your credit card: a Card Payment (typed by detectType, Exclude). To a loan: a loan installment, money out with no
+ * category. To another account of yours: Exclude. To a third party: who it was isn't in the email. An amount without a
+ * currency is DOP, as in Scotiabank's other alerts.
+ */
+function extractSCOTIABANKTransferTransactions(text) {
+  const flat = flatText(text);
+  const m = flat.match(/Se realiz[óo] una transferencia por (?:un monto|una cantidad) de\s+(RD\$|US\$|\$)?\s*([\d,]+\.\d{2})\s*(USD|DOP|EUR)?\s+desde la cuenta(?: terminada en)?\s+(\S+)(?:\s+hasta\s+(.+?))?\s+a las\b/i);
+  if (!m) return [];
+  const currency = m[3] ? moneyCurrency(m[3]) : (m[1] === 'US$' ? 'USD' : 'DOP');
+  const to = (m[5] || '').trim().replace(/\**(\d{3,})$/, '***$1');   // flatText drops the *** before the last digits
+  let merchant = 'Transferencia a terceros (Scotiabank)', own = false;
+  if (/^Tarjeta de Cr[ée]dito/i.test(to)) merchant = 'Pago de Tarjeta de Crédito ' + to.replace(/^Tarjeta de Cr[ée]dito\s*/i, '');
+  else if (/^Pr[ée]stamo/i.test(to)) merchant = 'Pago de préstamo ' + to.replace(/^Pr[ée]stamo\s*/i, '');
+  else if (to) { merchant = 'Transferencia a ' + to; own = true; }
+  return [{ amount: moneyNumber(m[2]), currency: currency, merchant: merchant.trim().substring(0, 50), own: own, context: to ? 'transfer to ' + to : 'transfer to a third party' }];
 }
 
 /**

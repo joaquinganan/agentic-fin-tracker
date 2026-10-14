@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.67** (7 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.69** (9 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.67)
+## 2. Estado actual (v1.1.69)
 
-- **272 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **284 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -54,13 +54,13 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 | Banco | Qué lee | Remitente |
 |---|---|---|
 | LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app —"¡Transferencia exitosa!", solo HTML; "entre tus cuentas", Exclude— y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com |
-| BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
-| BHD | Consumos (tabla con varias filas), transferencias | bhd.com.do |
+| BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66; formato de sept. 2026 con `RD$` en cada monto, v1.1.68) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
+| BHD | Consumos (tabla con varias filas; "Denegada- …" se filtra como rechazada, v1.1.69), transferencias | bhd.com.do |
 | POPULAR | Consumos, Código Cash | popularenlinea.com |
-| BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta | bdi.com.do |
-| SCOTIABANK | Autorizaciones con tarjeta, Pagos al Instante recibidos | alertas@scotiabank.com |
+| BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta (también el comprobante "BDI Online", en columnas, v1.1.69) | bdi.com.do |
+| SCOTIABANK | Autorizaciones con tarjeta, Pagos al Instante recibidos, transferencias enviadas (a terceros; a cuentas propias: a la tarjeta es pago de tarjeta, a un préstamo es gasto, a otra cuenta es Exclude; v1.1.69) | alertas@scotiabank.com |
 | QIK | Consumos con tarjeta de crédito, retiros con Código CASH | notificaciones@qik.do, no-reply-qik@qik.com.do |
-| BANRESERVAS | Transferencias enviadas (con impuesto aparte), retiros TuEfectivo, transferencias recibidas | NotificacionesTuBancoApp@banreservas.com, notificaciones@banreservas.com |
+| BANRESERVAS | Transferencias enviadas (con impuesto aparte), retiros TuEfectivo, transferencias recibidas, pagos de préstamo desde la app y depósitos en oficina ("Dep de ahorros sin libreta"; propio si el depositante es el titular) (v1.1.69) | NotificacionesTuBancoApp@banreservas.com, notificaciones@banreservas.com |
 | HAPI (inversiones) | Órdenes (mercado y límite), dividendos, avisos de depósito | hapi.trade |
 | Uber (recibos, no es banco) | Recibo de viaje ("… trip with Uber"): lo cobrado a cada tarjeta y la hora del pedido; corrige los avisos de viajes del banco (v1.1.67) | noreply@uber.com |
 
@@ -223,10 +223,15 @@ git push
   aviso se toma del correo (Gmail), no del cuerpo: el campo "Fecha y Hora" de LAFISE viene en UTC−6 (2 h atrás). Falta:
   recibos en español (hoy solo el formato en inglés), propinas añadidas después del viaje, Uber Eats (por ahora se
   cobra una vez y no se toca), viajes pedidos en otra zona horaria.
+- **Hoja Unrecognized, texto cortado a 300 caracteres** (`04_sheetsWriter.gs`): en BHD cortó justo antes de la tabla
+  y hizo falta el `.eml` para ver el estado "Denegada" (v1.1.69). Ampliarlo hace las filas más altas (la columna
+  ajusta el texto); si se hace, revisar cómo se ve en la hoja real.
+- **Pagos de préstamo (v1.1.69):** Scotiabank y Banreservas se guardan como Transfer sin categoría (es gasto: el préstamo
+  nunca se contó como ingreso). Si la cuota también está como deducción en el Setup Wizard, se cuenta dos veces.
 - **Sin muestra todavía:** el correo de bienvenida de BDI (hoy se filtra por palabras: "bienvenido/a", "primer
   depósito", "apertura de cuenta"; con su `.eml` se puede confirmar), consumos de Scotiabank en DOP, consumos con
   tarjeta de débito de Banreservas, otros recibos de la app de Banreservas (pagos de servicio, entre cuentas propias),
-  correos de BHD con varias transacciones agrupadas, acreditación de cashback.
+  correos de BHD con varias transacciones agrupadas, acreditación de cashback, estado de cuenta de Banesco en dólares con el formato de sept. 2026 (`US$` en cada monto se supone, v1.1.68).
 - **Cashback por categorías** (topes, mínimos, días): el catálogo solo guarda el cashback base y una nota.
 - **El formato del Dashboard** tarda ~80 s en hojas grandes; vigilar el límite de 6 minutos si crecen los datos.
 - **IBKR:** pendiente leer su reporte (Flex Query) cuando haya operaciones.

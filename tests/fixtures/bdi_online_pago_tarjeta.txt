@@ -1,0 +1,37 @@
+[image: logo_bank]
+BDI En Línea
+COMPROBANTE DE TRANSACCIÓN
+Cuenta Origen
+Tipo Cuenta
+Alias
+Tipo de Transacción
+Fecha Transacción
+Impuesto 0.20
+Monto
+4100000000
+4100000000
+Cuenta Digital
+Cuenta de Ahorro Digital
+Pago Tarjetas de Crédito
+14/09/2026 16:53:31
+RD$5.00
+RD$2,505.00
+No. Referencia
+Beneficiario
+No. Autorización
+Monto
+Tasa de Cambio
+Comisión
+4000001
+************1234 / PEREZ ., ANA MARIA /
+/
+/ 4000000000001234
+4000001
+RD$2,500.00
+1.00
+RD$0.00
+Descripción:
+Notas de Seguridad:
+Asegúrese que la dirección que aparece en su explorador sea igual a la siguiente y que sobre todo contiene https al inicio y que aparece un candado a la izquierda https://www.bdi.com.do/
+Recuerde que BDI nunca le pedirá su clave de acceso.
+Banco Múltiple BDI, S.A. 2026 | Todos los derechos reservados

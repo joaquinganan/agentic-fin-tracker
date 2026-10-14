@@ -1,0 +1,36 @@
+BHD Notificación de Transacciones
+Visa Internacional # 1111
+
+Detalle de Criterios
+Te notificamos la transacción realizada con tu Tarjeta Visa Internacional # 1111
+
+En caso de no reconocer esta transacción, por favor llama de inmediato al 809-243-5282.
+Detalle de Transacciones
+
+Fecha
+
+Moneda
+
+Monto
+
+Comercio
+
+Estado
+
+Tipo
+
+10/09/2026 10:55 pm
+
+US
+
+$7.50
+
+TIENDA EJEMPLO ONLINE
+
+Denegada- Confirme Banco
+
+Compra
+
+Ahora, tus Tarjetas BHD cuentan con un nuevo sistema de seguridad para tus compras por internet en comercios locales e internacionales. Conoce más visitando bhd.com.do en la sección Tarjetas.
+
+Recuerda que puedes realizar tus consultas y transacciones de forma rápida y confiable a través de Internet Banking BHD y Móvil Banking BHD.
