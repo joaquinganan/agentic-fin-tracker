@@ -102,7 +102,7 @@ test('recategorize repairs a mis-typed row and keeps Raw_ notes (C3, C5, M7)', (
   h.ctx.recategorizeAllTransactions(EMAIL);
   const fixed = tx().find(r => r[2] === 'CACHAREPA CHURCHILL');
   assert.equal(fixed[11], 'Transaction');
-  assert.equal(fixed[5], 'Unclassified');
+  assert.equal(fixed[5], 'Restaurants & cafés');   // v1.1.71: CACHAREPA is a keyword (Unclassified before)
   assert.equal(fixed[2], 'CACHAREPA CHURCHILL', 'merchant untouched');
   const rawRows = mock.ss.getSheetByName('Raw_BHD')._rows(8);
   assert.equal(rawRows.length, 2, 'CACHAREPA is back in Raw_BHD');

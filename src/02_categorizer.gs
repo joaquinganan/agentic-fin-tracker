@@ -14,7 +14,8 @@
  *  - each category says whether it is FIXED (a bill that comes every month) — the Dashboard, the daily and the monthly
  *    summary read it from here instead of two lists of their own that had drifted apart (Electricity was fixed in the
  *    summaries but not on the Dashboard).
- *  - 'Travel' and 'Payments to people' have no keywords: they are chosen by hand or with a Custom Rule.
+ *  - 'Payments to people' has no keywords: it is chosen by hand or with a Custom Rule ('Travel' too, until v1.1.71
+ *    gave it airlines, airports and lodging sites).
  * The keywords of each old category moved to the new one they belong to; categories saved with an old name are moved
  * by Recategorize (LEGACY_CATEGORIES below). Categories from before (v1.1.4 → v1.1.69): Rent, Gym + Calisthenics,
  * Telecommunications, Streaming & Subscriptions, Electricity, Groceries + Barbershop,
@@ -34,8 +35,10 @@ const DEFAULT_CATEGORIES = {
     // A landlord is matched by a Custom Rule (e.g. the landlord's name),
     // which is how real rent payments have been categorized all along.
     // v1.1.70: repairs are NOT here (a one-off in a fixed category inflates the month-end pace) — Shopping & home.
+    // v1.1.71: cooking gas for the home (Lusergas).
     group: 'Housing', fixed: true,
-    keywords: ['ALQUILER', 'ARRENDAMIENTO', 'CONDOMINIO'],
+    keywords: ['ALQUILER', 'ARRENDAMIENTO', 'CONDOMINIO',
+               'LUSERGAS'],
     icon: '🏠', color: ['#EDE9E4', '#57534E']
   },
   'Utilities': {
@@ -62,18 +65,25 @@ const DEFAULT_CATEGORIES = {
     keywords: ['SUPER', 'CARREFOUR', 'JUMBO', 'BRAVO', 'MERCADO', 'FRUTAS',
                'SUPERMERCADOS NACIONAL', 'SM NACIONAL', 'LA SIRENA', 'PLAZA LAMA', 'IBERIA',
                'APREZIO', 'LA FUENTE', 'PRICESMART', 'HIPER OLE', '365 EL CACIQUE', 'HOLA PLAZA', 'POLA',
-               'COLMADO', 'PANADERIA', 'MINIMARKET', 'MINI MARKET'],
+               'COLMADO', 'PANADERIA', 'MINIMARKET', 'MINI MARKET',
+               'SURTIDORA', 'ALMACENES', 'ALM UNIDOS', 'EXITO JUNIN', 'MARKET PASTEUR'],
     icon: '🛒', color: ['#FFF4E5', '#B45309']
   },
   'Restaurants & cafés': {
     // v1.1.15: 'BONJOUR' is matched before Fuel & vehicle (see CATEGORY_MATCH_ORDER) so "BONJOUR TOTAL ARENOSO" (the
     // convenience store) never reaches Fuel's bare 'TOTAL'.
     // v1.1.5: Krispy Kreme and IKEA Restaurant from real data ('IKEA REST' before Shopping's 'IKEA').
+    // v1.1.71: chains and cafés from reviewed Unclassified rows; 'TST' (whole word) is Toast, a restaurant-only
+    // payment system ("TST*<restaurant>"); 'PIZZER' — banks cut "PIZZERIA" short.
     group: 'Food', fixed: false,
     keywords: ['RESTAURANTE', 'RESTAURANT', 'PIZZERIA', 'BURGER', 'COMIDA', 'FOOD', 'CAFE', 'SUSHI', 'POLLO',
                'HELADOS BON', 'BONJOUR', 'MCDONALD', 'BURGER KING', 'KFC', 'PIZZA HUT', 'SUBWAY', 'POLLOS VICTORINA',
                'COMEDOR', 'WENDYS', 'JADE TERIYAKI', 'SWEETFROG', 'SWEET FROG', 'KRISPY KREME', 'IKEA REST',
-               'CAFETERIA', 'HELADERIA', 'STARBUCKS'],
+               'CAFETERIA', 'HELADERIA', 'STARBUCKS',
+               'MC DONALD', "WENDY'S", 'IN&OUT', 'TST', 'COFFEE', 'CAFFE', 'PIZZER', 'PARRILLA', 'CARNES PARR',
+               'EMPANADA', 'AREPA', 'PASTELITO', 'DESSERT', 'WAFFLE', 'HAAGEN', 'BASKIN', 'PRALINE', 'GRANIER',
+               'CACHAREPA', 'COLAITO', 'GOYURT', 'TRUFA', 'CALCALI', 'BARRA PAYAN', 'DEQUESON', 'PANCHOCHA',
+               'TODO FRESA', 'SABOR LLANERO', 'GO FRESH'],
     icon: '🍽️', color: ['#FFE4E6', '#BE123C']
   },
   'Delivery': {
@@ -89,13 +99,16 @@ const DEFAULT_CATEGORIES = {
     // v1.1.20: 'DIDI' — real POPULAR rows in COP ("DiDi CO Ride", "DL*DIDI RIDES", "DLO*Didi"). Whole word (4 letters).
     // v1.1.23: Uber rides billed through PayPal ("PAYPAL *UBERBV", "PAYPAL *UBER BV")
     group: 'Mobility', fixed: false,
-    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'MOTOCONCHO', 'UBERBV', 'UBER BV', 'CABIFY', 'INDRIVE'],
+    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'MOTOCONCHO', 'UBERBV', 'UBER BV', 'CABIFY', 'INDRIVE',
+               'APTPRA'],
     icon: '🚕', color: ['#EAF1FE', '#1D4ED8']
   },
   'Public transport & parking': {
     // v1.1.23: 'METRO' alone is transit; the Metro Plaza mall ("ALISS METRO PZA") is matched first by Shopping & home
+    // v1.1.71: 'PARKIN' — banks cut "PARKING" short; RD Vial (tolls); 'LASA' whole word (an airport parking operator)
     group: 'Mobility', fixed: false,
-    keywords: ['BUS', 'METRO', 'PARKING', 'PARQUEO', 'GUAGUA', 'TELEFERICO', 'OMSA'],
+    keywords: ['BUS', 'METRO', 'PARKING', 'PARQUEO', 'GUAGUA', 'TELEFERICO', 'OMSA',
+               'PARKIN', 'RDVIAL', 'LASA'],
     icon: '🚇', color: ['#E0F2FE', '#075985']
   },
   'Fuel & vehicle': {
@@ -103,17 +116,21 @@ const DEFAULT_CATEGORIES = {
     // LINCOLN" from POPULAR). 'TOTAL' is safe because Restaurants & cafés ('BONJOUR') is matched first.
     group: 'Mobility', fixed: false,
     keywords: ['SHELL', 'HESS', 'PUMA', 'TEXACO', 'GASOLINA', 'COMBUSTIBLE', 'FUEL',
-               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN', 'GASOLINERA', 'PEAJE', 'PASO RAPIDO'],
+               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN', 'GASOLINERA', 'PEAJE', 'PASO RAPIDO',
+               'GRUPO COMETA'],
     icon: '⛽', color: ['#E2E8F0', '#334155']
   },
   // ---- Health & care
   'Health & pharmacy': {
     // v1.1.23: 'FARMA' (FARMA VALUE…), 'FARM' whole word (FARM CAROL…), labs and clinics (ANALISA, CTRO ESPEC MED)
+    // v1.1.71: 'DROGUERIA' (a pharmacy in Colombia); 'POPULAR CAROL' — Farmacia Carol through Banco Popular's
+    // terminal ("BANCO POPULAR CAROL AV. I"); 'CAROL' alone is still not a pharmacy.
     group: 'Health & care', fixed: false,
     keywords: ['FARMACIA', 'FCIA', 'DOCTOR', 'MEDICO', 'HOSPITAL', 'CLINICA', 'SALUD',
                'MEDICINAS', 'MEDICAR', 'GBC', 'LOS HIDALGOS',
                'FARMAX', 'FARMAXTRA', 'CRUZ VERDE', 'FARMATODO', 'FARMAVALUE', 'FARMA', 'FARM', 'ANALISA', 'LABORATORIO',
-               'ESPEC MED', 'ODONTO', 'DENTAL', 'OPTICA'],
+               'ESPEC MED', 'ODONTO', 'DENTAL', 'OPTICA',
+               'DROGUERIA', 'CLINICORP', 'POPULAR CAROL'],
     icon: '🏥', color: ['#E8F5E9', '#2E7D32']
   },
   'Personal care': {
@@ -125,14 +142,16 @@ const DEFAULT_CATEGORIES = {
     // v1.1.18: 'LA CASITA DE' (a vet clinic) — POPULAR cuts the name short, so the shorter keyword covers every bank.
     // Matched before Health & pharmacy, so "CLINICA VETERINARIA" is a vet, not a clinic.
     group: 'Health & care', fixed: false,
-    keywords: ['VETERINARIA', 'VET', 'LA CASITA DE', 'PET SHOP', 'PETSHOP', 'MASCOTA'],
+    keywords: ['VETERINARIA', 'VET', 'LA CASITA DE', 'PET SHOP', 'PETSHOP', 'MASCOTA',
+               'ARENA DE GATOS'],
     icon: '🐾', color: ['#ECFCCB', '#3F6212']
   },
   'Gym': {
     // v1.1.70: the membership and the trainer only — sports gear is Shopping & home (a one-off in a fixed category
     // inflates the month-end pace of the daily summary)
     group: 'Health & care', fixed: true,
-    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR'],
+    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR',
+               'FITNES'],
     icon: '💪', color: ['#CCFBF1', '#0F766E']
   },
   // ---- Lifestyle
@@ -141,7 +160,8 @@ const DEFAULT_CATEGORIES = {
     // v1.1.23: 'GOOGLE' — real POPULAR USD rows "Google" / "GOOGLE *Google" (Google One/Play)
     group: 'Lifestyle', fixed: true,
     keywords: ['NETFLIX', 'SPOTIFY', 'DISNEY', 'HBO', 'AMAZON PRIME', 'PRIME VIDEO', 'SUSCRIPCION',
-               'YOUTUBE PREMIUM', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI', 'GOOGLE', 'ICLOUD', 'APPLE.COM/BILL', 'PARAMOUNT'],
+               'YOUTUBE PREMIUM', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI', 'GOOGLE', 'ICLOUD', 'APPLE.COM/BILL', 'PARAMOUNT',
+               'LINKEDIN', 'PORKBUN', 'VOCAL STAR'],
     icon: '🎬', color: ['#E0E7FF', '#3730A3']
   },
   'Shopping & home': {
@@ -150,13 +170,17 @@ const DEFAULT_CATEGORIES = {
     group: 'Lifestyle', fixed: false,
     keywords: ['AMAZON', 'ROPA', 'ZAPATOS', 'ADIDAS', 'NIKE', 'PUMA STORE', 'ZARA', 'FASHION', 'BOUTIQUE', 'TIENDA',
                'ALISS', 'METRO PZA', 'METRO PLZA', 'METRO PLAZA', 'IKEA', 'H&M', 'SHEIN', 'TEMU', 'ALIEXPRESS', 'EBAY',
-               'FERRETERIA', 'CORRIPIO', 'LAVANDERIA', 'DEPORTES'],
+               'FERRETERIA', 'CORRIPIO', 'LAVANDERIA', 'DEPORTES',
+               'MINISO', 'DOLLARCITY', 'BERSHKA', 'NAPPA', 'CECOMSA', 'DOWNTOWN CENTER', 'INSTRUMENTOS', 'AMOROSSA',
+               'PRINTERIA', 'PARTY FIESTA'],
     icon: '🛍️', color: ['#FDF2F8', '#9D174D']
   },
   'Leisure & going out': {
+    // v1.1.71: game stores (ENEBA — also "PAYPAL *ENEBA" —, Driffle, Eldorado.gg) and Smart Ticket
     group: 'Lifestyle', fixed: false,
     keywords: ['CINE', 'CINEMA', 'PELICULAS', 'CONCIERTO', 'ENTRETENIMIENTO', 'BAR', 'PUB', 'TEATRO', 'DISCOTECA',
-               'CERVECERIA', 'BREWERY', 'TICKETMASTER'],
+               'CERVECERIA', 'BREWERY', 'TICKETMASTER',
+               'SMART TICKET', 'DAVE BUSTERS', 'DAVE & BUSTER', 'ENEBA', 'DRIFFLE', 'ELDORADO'],
     icon: '🎉', color: ['#EDE9FE', '#5B21B6']
   },
   'Education & books': {
@@ -169,8 +193,11 @@ const DEFAULT_CATEGORIES = {
   // ---- Travel
   'Travel': {
     // v1.1.70: chosen by hand or with a Custom Rule (agreed): a trip's purchases keep the category of what they are.
+    // v1.1.71: what is only a trip — airlines, airports ('AIRPOR': cut short), lodging sites — is recognized. Tried
+    // after Restaurants, Shopping and Public transport, so a meal or the parking at an airport keeps its own category.
     group: 'Travel', fixed: false,
-    keywords: [],
+    keywords: ['ARAJET', 'JETBLUE', 'AVIANCA', 'COPA AIR', 'AMERICAN AIR', 'DELTA AIR', 'UNITED AIR', 'SPIRIT AIR',
+               'AIRBNB', 'BOOKING.COM', 'EXPEDIA', 'AIRPOR'],
     icon: '✈️', color: ['#ECFEFF', '#155E75']
   },
   // ---- Bank & debt
@@ -201,7 +228,8 @@ const DEFAULT_CATEGORIES = {
   },
   'Government & procedures': {
     group: 'Other', fixed: false,
-    keywords: ['DGII', 'JCE', 'PASAPORTE', 'INTRANT', 'MIGRACION', 'MINISTERIO', 'AYUNTAMIENTO', 'MARBETE', 'EMBAJADA'],
+    keywords: ['DGII', 'JCE', 'PASAPORTE', 'INTRANT', 'MIGRACION', 'MINISTERIO', 'AYUNTAMIENTO', 'MARBETE', 'EMBAJADA',
+               'PROCURADURIA'],
     icon: '🏛️', color: ['#F5F5F4', '#44403C']
   },
   'Payments to people': {
@@ -231,7 +259,7 @@ const DEFAULT_CATEGORIES = {
  */
 const CATEGORY_MATCH_ORDER = ['Rent & housing', 'Gym', 'Phone & internet', 'Subscriptions', 'Utilities', 'Groceries',
   'Personal care', 'Delivery', 'Restaurants & cafés', 'Leisure & going out', 'Shopping & home', 'Fuel & vehicle', 'Pets',
-  'Health & pharmacy', 'Ride apps & taxis', 'Public transport & parking', 'Education & books', 'Insurance',
+  'Health & pharmacy', 'Ride apps & taxis', 'Public transport & parking', 'Travel', 'Education & books', 'Insurance',
   'Government & procedures', 'Cash', 'Bank fees & taxes'];
 
 const FALLBACK_CATEGORY = 'Unclassified';

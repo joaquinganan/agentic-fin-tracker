@@ -88,7 +88,7 @@ que esas líneas no aparezcan: los correos ya leídos se saltan, así que cada v
   | Mobility | Ride apps & taxis · Public transport & parking · Fuel & vehicle |
   | Health & care | Health & pharmacy · Personal care · Pets · Gym ★ |
   | Lifestyle | Subscriptions ★ · Shopping & home · Leisure & going out · Education & books |
-  | Travel | Travel (se elige a mano o con una Custom Rule) |
+  | Travel | Travel (aerolíneas, aeropuertos y sitios de hospedaje; lo demás de un viaje, a mano o con una Custom Rule) |
   | Bank & debt | Bank fees & taxes · Loan payments ★ · Insurance ★ |
   | Other | Cash · Government & procedures · Payments to people · Unclassified |
 

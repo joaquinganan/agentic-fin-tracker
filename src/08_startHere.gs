@@ -12,7 +12,7 @@ const START_HERE_STALE_RUN_HOURS = 36;
 // the only functions the sidebar's buttons may call, and the only tabs it may open
 const START_HERE_ACTIONS = ['openSetupWizard', 'openDateRangeDialog', 'openValuationDialog', 'refreshInvestmentsNow', 'openSheetByName',
   'openPortfolioPasteDialog'];
-const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
+const START_HERE_SHEETS = ['Unrecognized', 'Transactions', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
 
 function openStartHere() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(startHereHtml()).setTitle('📘 Start here'));
@@ -123,6 +123,22 @@ function startHereStatus(now) {
         'These names were split into several categories: ' + old.map(c => '"' + c + '" → ' +
           LEGACY_CATEGORIES[c].within.join(' or ')).join('; ') + '. Pick the new one in the Category column of each rule.',
         open('Open Custom Rules', 'Custom Rules'));
+    }
+  }
+
+  // v1.1.71: POPULAR purchases saved before v1.1.71 with the email's text as merchant ("1234. A continuación le
+  // informamos…"). The row doesn't keep the email's text, so only reading the email again fixes it: a deleted row is
+  // read again by the next run (v1.1.49).
+  if (tx && tx.getLastRow() > 1) {
+    const bad = tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues()
+      .filter(r => r[TX_COL.DATE] && r[TX_COL.BANK] === 'POPULAR' && POPULAR_TEXT_AS_MERCHANT_RE.test(String(r[TX_COL.MERCHANT] || '')));
+    if (bad.length) {
+      const dates = bad.map(r => normalizeDateForCompare(r[TX_COL.DATE])).sort();
+      add('Your data', 'popularMerchant', bad.length + ' POPULAR purchase(s) saved without their merchant', 'warn',
+        'Saved before v1.1.71 with "… A continuación le informamos …" as the merchant (between ' + dates[0] + ' and ' +
+        dates[dates.length - 1] + '). Delete those rows in Transactions (filter the Merchant column by "A continuación") ' +
+        'and run 📊 Tracker › 📅 Monitor by Date Range for those dates: they come back with the merchant\'s name.',
+        open('Open Transactions', TRANSACTIONS_SHEET));
     }
   }
 

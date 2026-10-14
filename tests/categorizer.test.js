@@ -58,7 +58,8 @@ test('categorization: regressions from earlier releases still hold', () => {
     ['SM POLA INDEPENDENCIA', 'Groceries'],
     ['FARMA VALUE FD05', 'Health & pharmacy'],
     ['FARM CAROL ENRIQUILLO', 'Health & pharmacy'],
-    ['BANCO POPULAR CAROL AV. I', 'Unclassified'],                    // 'CAROL' alone is not a pharmacy
+    ['BANCO POPULAR CAROL AV. I', 'Health & pharmacy'],               // v1.1.71: a Farmacia Carol branch (reviewed row)
+    ['CAROL MARTINEZ', 'Unclassified'],                               // 'CAROL' alone is still not a pharmacy
     ['PAYPAL *UBERBV', 'Ride apps & taxis'],
     ['PAYPAL *UBER BV', 'Ride apps & taxis'],
     ['Google', 'Subscriptions'],

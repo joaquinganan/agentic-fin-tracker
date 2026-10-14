@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.70 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.71 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.70"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.71"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1574,7 +1574,8 @@ function describeMoneyLines(list) {
  *  - each category says whether it is FIXED (a bill that comes every month) — the Dashboard, the daily and the monthly
  *    summary read it from here instead of two lists of their own that had drifted apart (Electricity was fixed in the
  *    summaries but not on the Dashboard).
- *  - 'Travel' and 'Payments to people' have no keywords: they are chosen by hand or with a Custom Rule.
+ *  - 'Payments to people' has no keywords: it is chosen by hand or with a Custom Rule ('Travel' too, until v1.1.71
+ *    gave it airlines, airports and lodging sites).
  * The keywords of each old category moved to the new one they belong to; categories saved with an old name are moved
  * by Recategorize (LEGACY_CATEGORIES below). Categories from before (v1.1.4 → v1.1.69): Rent, Gym + Calisthenics,
  * Telecommunications, Streaming & Subscriptions, Electricity, Groceries + Barbershop,
@@ -1594,8 +1595,10 @@ const DEFAULT_CATEGORIES = {
     // A landlord is matched by a Custom Rule (e.g. the landlord's name),
     // which is how real rent payments have been categorized all along.
     // v1.1.70: repairs are NOT here (a one-off in a fixed category inflates the month-end pace) — Shopping & home.
+    // v1.1.71: cooking gas for the home (Lusergas).
     group: 'Housing', fixed: true,
-    keywords: ['ALQUILER', 'ARRENDAMIENTO', 'CONDOMINIO'],
+    keywords: ['ALQUILER', 'ARRENDAMIENTO', 'CONDOMINIO',
+               'LUSERGAS'],
     icon: '🏠', color: ['#EDE9E4', '#57534E']
   },
   'Utilities': {
@@ -1622,18 +1625,25 @@ const DEFAULT_CATEGORIES = {
     keywords: ['SUPER', 'CARREFOUR', 'JUMBO', 'BRAVO', 'MERCADO', 'FRUTAS',
                'SUPERMERCADOS NACIONAL', 'SM NACIONAL', 'LA SIRENA', 'PLAZA LAMA', 'IBERIA',
                'APREZIO', 'LA FUENTE', 'PRICESMART', 'HIPER OLE', '365 EL CACIQUE', 'HOLA PLAZA', 'POLA',
-               'COLMADO', 'PANADERIA', 'MINIMARKET', 'MINI MARKET'],
+               'COLMADO', 'PANADERIA', 'MINIMARKET', 'MINI MARKET',
+               'SURTIDORA', 'ALMACENES', 'ALM UNIDOS', 'EXITO JUNIN', 'MARKET PASTEUR'],
     icon: '🛒', color: ['#FFF4E5', '#B45309']
   },
   'Restaurants & cafés': {
     // v1.1.15: 'BONJOUR' is matched before Fuel & vehicle (see CATEGORY_MATCH_ORDER) so "BONJOUR TOTAL ARENOSO" (the
     // convenience store) never reaches Fuel's bare 'TOTAL'.
     // v1.1.5: Krispy Kreme and IKEA Restaurant from real data ('IKEA REST' before Shopping's 'IKEA').
+    // v1.1.71: chains and cafés from reviewed Unclassified rows; 'TST' (whole word) is Toast, a restaurant-only
+    // payment system ("TST*<restaurant>"); 'PIZZER' — banks cut "PIZZERIA" short.
     group: 'Food', fixed: false,
     keywords: ['RESTAURANTE', 'RESTAURANT', 'PIZZERIA', 'BURGER', 'COMIDA', 'FOOD', 'CAFE', 'SUSHI', 'POLLO',
                'HELADOS BON', 'BONJOUR', 'MCDONALD', 'BURGER KING', 'KFC', 'PIZZA HUT', 'SUBWAY', 'POLLOS VICTORINA',
                'COMEDOR', 'WENDYS', 'JADE TERIYAKI', 'SWEETFROG', 'SWEET FROG', 'KRISPY KREME', 'IKEA REST',
-               'CAFETERIA', 'HELADERIA', 'STARBUCKS'],
+               'CAFETERIA', 'HELADERIA', 'STARBUCKS',
+               'MC DONALD', "WENDY'S", 'IN&OUT', 'TST', 'COFFEE', 'CAFFE', 'PIZZER', 'PARRILLA', 'CARNES PARR',
+               'EMPANADA', 'AREPA', 'PASTELITO', 'DESSERT', 'WAFFLE', 'HAAGEN', 'BASKIN', 'PRALINE', 'GRANIER',
+               'CACHAREPA', 'COLAITO', 'GOYURT', 'TRUFA', 'CALCALI', 'BARRA PAYAN', 'DEQUESON', 'PANCHOCHA',
+               'TODO FRESA', 'SABOR LLANERO', 'GO FRESH'],
     icon: '🍽️', color: ['#FFE4E6', '#BE123C']
   },
   'Delivery': {
@@ -1649,13 +1659,16 @@ const DEFAULT_CATEGORIES = {
     // v1.1.20: 'DIDI' — real POPULAR rows in COP ("DiDi CO Ride", "DL*DIDI RIDES", "DLO*Didi"). Whole word (4 letters).
     // v1.1.23: Uber rides billed through PayPal ("PAYPAL *UBERBV", "PAYPAL *UBER BV")
     group: 'Mobility', fixed: false,
-    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'MOTOCONCHO', 'UBERBV', 'UBER BV', 'CABIFY', 'INDRIVE'],
+    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'MOTOCONCHO', 'UBERBV', 'UBER BV', 'CABIFY', 'INDRIVE',
+               'APTPRA'],
     icon: '🚕', color: ['#EAF1FE', '#1D4ED8']
   },
   'Public transport & parking': {
     // v1.1.23: 'METRO' alone is transit; the Metro Plaza mall ("ALISS METRO PZA") is matched first by Shopping & home
+    // v1.1.71: 'PARKIN' — banks cut "PARKING" short; RD Vial (tolls); 'LASA' whole word (an airport parking operator)
     group: 'Mobility', fixed: false,
-    keywords: ['BUS', 'METRO', 'PARKING', 'PARQUEO', 'GUAGUA', 'TELEFERICO', 'OMSA'],
+    keywords: ['BUS', 'METRO', 'PARKING', 'PARQUEO', 'GUAGUA', 'TELEFERICO', 'OMSA',
+               'PARKIN', 'RDVIAL', 'LASA'],
     icon: '🚇', color: ['#E0F2FE', '#075985']
   },
   'Fuel & vehicle': {
@@ -1663,17 +1676,21 @@ const DEFAULT_CATEGORIES = {
     // LINCOLN" from POPULAR). 'TOTAL' is safe because Restaurants & cafés ('BONJOUR') is matched first.
     group: 'Mobility', fixed: false,
     keywords: ['SHELL', 'HESS', 'PUMA', 'TEXACO', 'GASOLINA', 'COMBUSTIBLE', 'FUEL',
-               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN', 'GASOLINERA', 'PEAJE', 'PASO RAPIDO'],
+               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN', 'GASOLINERA', 'PEAJE', 'PASO RAPIDO',
+               'GRUPO COMETA'],
     icon: '⛽', color: ['#E2E8F0', '#334155']
   },
   // ---- Health & care
   'Health & pharmacy': {
     // v1.1.23: 'FARMA' (FARMA VALUE…), 'FARM' whole word (FARM CAROL…), labs and clinics (ANALISA, CTRO ESPEC MED)
+    // v1.1.71: 'DROGUERIA' (a pharmacy in Colombia); 'POPULAR CAROL' — Farmacia Carol through Banco Popular's
+    // terminal ("BANCO POPULAR CAROL AV. I"); 'CAROL' alone is still not a pharmacy.
     group: 'Health & care', fixed: false,
     keywords: ['FARMACIA', 'FCIA', 'DOCTOR', 'MEDICO', 'HOSPITAL', 'CLINICA', 'SALUD',
                'MEDICINAS', 'MEDICAR', 'GBC', 'LOS HIDALGOS',
                'FARMAX', 'FARMAXTRA', 'CRUZ VERDE', 'FARMATODO', 'FARMAVALUE', 'FARMA', 'FARM', 'ANALISA', 'LABORATORIO',
-               'ESPEC MED', 'ODONTO', 'DENTAL', 'OPTICA'],
+               'ESPEC MED', 'ODONTO', 'DENTAL', 'OPTICA',
+               'DROGUERIA', 'CLINICORP', 'POPULAR CAROL'],
     icon: '🏥', color: ['#E8F5E9', '#2E7D32']
   },
   'Personal care': {
@@ -1685,14 +1702,16 @@ const DEFAULT_CATEGORIES = {
     // v1.1.18: 'LA CASITA DE' (a vet clinic) — POPULAR cuts the name short, so the shorter keyword covers every bank.
     // Matched before Health & pharmacy, so "CLINICA VETERINARIA" is a vet, not a clinic.
     group: 'Health & care', fixed: false,
-    keywords: ['VETERINARIA', 'VET', 'LA CASITA DE', 'PET SHOP', 'PETSHOP', 'MASCOTA'],
+    keywords: ['VETERINARIA', 'VET', 'LA CASITA DE', 'PET SHOP', 'PETSHOP', 'MASCOTA',
+               'ARENA DE GATOS'],
     icon: '🐾', color: ['#ECFCCB', '#3F6212']
   },
   'Gym': {
     // v1.1.70: the membership and the trainer only — sports gear is Shopping & home (a one-off in a fixed category
     // inflates the month-end pace of the daily summary)
     group: 'Health & care', fixed: true,
-    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR'],
+    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR',
+               'FITNES'],
     icon: '💪', color: ['#CCFBF1', '#0F766E']
   },
   // ---- Lifestyle
@@ -1701,7 +1720,8 @@ const DEFAULT_CATEGORIES = {
     // v1.1.23: 'GOOGLE' — real POPULAR USD rows "Google" / "GOOGLE *Google" (Google One/Play)
     group: 'Lifestyle', fixed: true,
     keywords: ['NETFLIX', 'SPOTIFY', 'DISNEY', 'HBO', 'AMAZON PRIME', 'PRIME VIDEO', 'SUSCRIPCION',
-               'YOUTUBE PREMIUM', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI', 'GOOGLE', 'ICLOUD', 'APPLE.COM/BILL', 'PARAMOUNT'],
+               'YOUTUBE PREMIUM', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI', 'GOOGLE', 'ICLOUD', 'APPLE.COM/BILL', 'PARAMOUNT',
+               'LINKEDIN', 'PORKBUN', 'VOCAL STAR'],
     icon: '🎬', color: ['#E0E7FF', '#3730A3']
   },
   'Shopping & home': {
@@ -1710,13 +1730,17 @@ const DEFAULT_CATEGORIES = {
     group: 'Lifestyle', fixed: false,
     keywords: ['AMAZON', 'ROPA', 'ZAPATOS', 'ADIDAS', 'NIKE', 'PUMA STORE', 'ZARA', 'FASHION', 'BOUTIQUE', 'TIENDA',
                'ALISS', 'METRO PZA', 'METRO PLZA', 'METRO PLAZA', 'IKEA', 'H&M', 'SHEIN', 'TEMU', 'ALIEXPRESS', 'EBAY',
-               'FERRETERIA', 'CORRIPIO', 'LAVANDERIA', 'DEPORTES'],
+               'FERRETERIA', 'CORRIPIO', 'LAVANDERIA', 'DEPORTES',
+               'MINISO', 'DOLLARCITY', 'BERSHKA', 'NAPPA', 'CECOMSA', 'DOWNTOWN CENTER', 'INSTRUMENTOS', 'AMOROSSA',
+               'PRINTERIA', 'PARTY FIESTA'],
     icon: '🛍️', color: ['#FDF2F8', '#9D174D']
   },
   'Leisure & going out': {
+    // v1.1.71: game stores (ENEBA — also "PAYPAL *ENEBA" —, Driffle, Eldorado.gg) and Smart Ticket
     group: 'Lifestyle', fixed: false,
     keywords: ['CINE', 'CINEMA', 'PELICULAS', 'CONCIERTO', 'ENTRETENIMIENTO', 'BAR', 'PUB', 'TEATRO', 'DISCOTECA',
-               'CERVECERIA', 'BREWERY', 'TICKETMASTER'],
+               'CERVECERIA', 'BREWERY', 'TICKETMASTER',
+               'SMART TICKET', 'DAVE BUSTERS', 'DAVE & BUSTER', 'ENEBA', 'DRIFFLE', 'ELDORADO'],
     icon: '🎉', color: ['#EDE9FE', '#5B21B6']
   },
   'Education & books': {
@@ -1729,8 +1753,11 @@ const DEFAULT_CATEGORIES = {
   // ---- Travel
   'Travel': {
     // v1.1.70: chosen by hand or with a Custom Rule (agreed): a trip's purchases keep the category of what they are.
+    // v1.1.71: what is only a trip — airlines, airports ('AIRPOR': cut short), lodging sites — is recognized. Tried
+    // after Restaurants, Shopping and Public transport, so a meal or the parking at an airport keeps its own category.
     group: 'Travel', fixed: false,
-    keywords: [],
+    keywords: ['ARAJET', 'JETBLUE', 'AVIANCA', 'COPA AIR', 'AMERICAN AIR', 'DELTA AIR', 'UNITED AIR', 'SPIRIT AIR',
+               'AIRBNB', 'BOOKING.COM', 'EXPEDIA', 'AIRPOR'],
     icon: '✈️', color: ['#ECFEFF', '#155E75']
   },
   // ---- Bank & debt
@@ -1761,7 +1788,8 @@ const DEFAULT_CATEGORIES = {
   },
   'Government & procedures': {
     group: 'Other', fixed: false,
-    keywords: ['DGII', 'JCE', 'PASAPORTE', 'INTRANT', 'MIGRACION', 'MINISTERIO', 'AYUNTAMIENTO', 'MARBETE', 'EMBAJADA'],
+    keywords: ['DGII', 'JCE', 'PASAPORTE', 'INTRANT', 'MIGRACION', 'MINISTERIO', 'AYUNTAMIENTO', 'MARBETE', 'EMBAJADA',
+               'PROCURADURIA'],
     icon: '🏛️', color: ['#F5F5F4', '#44403C']
   },
   'Payments to people': {
@@ -1791,7 +1819,7 @@ const DEFAULT_CATEGORIES = {
  */
 const CATEGORY_MATCH_ORDER = ['Rent & housing', 'Gym', 'Phone & internet', 'Subscriptions', 'Utilities', 'Groceries',
   'Personal care', 'Delivery', 'Restaurants & cafés', 'Leisure & going out', 'Shopping & home', 'Fuel & vehicle', 'Pets',
-  'Health & pharmacy', 'Ride apps & taxis', 'Public transport & parking', 'Education & books', 'Insurance',
+  'Health & pharmacy', 'Ride apps & taxis', 'Public transport & parking', 'Travel', 'Education & books', 'Insurance',
   'Government & procedures', 'Cash', 'Bank fees & taxes'];
 
 const FALLBACK_CATEGORY = 'Unclassified';
@@ -3359,16 +3387,26 @@ function extractBHDTransferTransactions(text) {
  * a thread not being returned" — the COP-denominated messages in a thread
  * were failing outright while DOP/USD ones in the same thread succeeded.
  * Added EUR/COP to match the same 4-currency set used everywhere else.
+ * v1.1.71: the merchant on the NEXT line. The real text part is cut at ~76 columns, so a row like
+ * "RD$1,250.00 [tab] Peso dominicano [tab] 15/03/2026 [newline] PedidosYa*Comercio Sa [tab] Aprobada" never matched
+ * (the merchant was searched on the date's line only): the email fell to the generic reader, whose merchant was the
+ * text after "terminada en" ("1234. A continuación le informamos el detalle de"). Now the merchant is everything
+ * between the date and a known status word, across lines and spaces (flattened text too); the one-line form is still
+ * read when the status is a word not in that list.
  */
+// (the email's HTML read as text — one cell per line, the status in bold, "*Aprobada*" — works the same way)
+const POPULAR_ROW_BY_STATUS_RE = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\d]{0,40}?\d{2}\/\d{2}\/\d{4}\s+([^\s*][^\t]{1,80}?)\s+\*?(Aprobad[ao]|Rechazad[ao]|Declinad[ao]|Denegad[ao]|Reversad[ao]|Anulad[ao]|Pendiente)\b/gi;
+// what the generic reader saved as merchant for those emails (📘 Start here asks to read them again)
+const POPULAR_TEXT_AS_MERCHANT_RE = /^\d{4}\.?\s+A continuaci/i;
+const POPULAR_ROW_ONE_LINE_RE = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\n]*?\d{2}\/\d{2}\/\d{4}[^\n]*?[\t ]([A-ZÁÉÍÓÚÑ][^\t\n]{2,40}?)\s*[\t\n]+\s*(\w+)/gi;
 function extractPOPULARTransactions(text) {
-  const re = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\n]*?\d{2}\/\d{2}\/\d{4}[^\n]*?[\t ]([A-ZÁÉÍÓÚÑ][^\t\n]{2,40}?)\s*[\t\n]+\s*(\w+)/gi;
-  const results = [];
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const declined = /RECHAZ|DECLIN/i.test(m[3]); // v1.1.19: flagged, not dropped (M1)
-    results.push({ declined: declined, merchant: m[2].trim().substring(0, 50), amount: parseFloat(m[1].replace(/,/g, '')), currency: detectCurrencyFromMatch(m[0]), context: m[0].replace(/\s+/g, ' ').trim() });
-  }
-  return results;
+  const matchAll = re => { const out = []; let m; re.lastIndex = 0; while ((m = re.exec(text)) !== null) out.push(m); return out; };
+  let rows = matchAll(POPULAR_ROW_BY_STATUS_RE);
+  if (!rows.length) rows = matchAll(POPULAR_ROW_ONE_LINE_RE);
+  return rows.map(m => ({
+    declined: /RECHAZ|DECLIN|DENEG/i.test(m[3]), // v1.1.19: flagged, not dropped (M1)
+    merchant: m[2].replace(/\s+/g, ' ').trim().substring(0, 50), amount: parseFloat(m[1].replace(/,/g, '')),
+    currency: detectCurrencyFromMatch(m[0]), context: m[0].replace(/\s+/g, ' ').trim() }));
 }
 
 /**
@@ -9286,7 +9324,7 @@ const START_HERE_STALE_RUN_HOURS = 36;
 // the only functions the sidebar's buttons may call, and the only tabs it may open
 const START_HERE_ACTIONS = ['openSetupWizard', 'openDateRangeDialog', 'openValuationDialog', 'refreshInvestmentsNow', 'openSheetByName',
   'openPortfolioPasteDialog'];
-const START_HERE_SHEETS = ['Unrecognized', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
+const START_HERE_SHEETS = ['Unrecognized', 'Transactions', 'Bank Transfers', 'Incoming Transfers', 'Investment Ledger', 'Holdings', 'Custom Rules', 'Dashboard'];
 
 function openStartHere() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(startHereHtml()).setTitle('📘 Start here'));
@@ -9397,6 +9435,22 @@ function startHereStatus(now) {
         'These names were split into several categories: ' + old.map(c => '"' + c + '" → ' +
           LEGACY_CATEGORIES[c].within.join(' or ')).join('; ') + '. Pick the new one in the Category column of each rule.',
         open('Open Custom Rules', 'Custom Rules'));
+    }
+  }
+
+  // v1.1.71: POPULAR purchases saved before v1.1.71 with the email's text as merchant ("1234. A continuación le
+  // informamos…"). The row doesn't keep the email's text, so only reading the email again fixes it: a deleted row is
+  // read again by the next run (v1.1.49).
+  if (tx && tx.getLastRow() > 1) {
+    const bad = tx.getRange(2, 1, tx.getLastRow() - 1, TX_NUM_COLS).getValues()
+      .filter(r => r[TX_COL.DATE] && r[TX_COL.BANK] === 'POPULAR' && POPULAR_TEXT_AS_MERCHANT_RE.test(String(r[TX_COL.MERCHANT] || '')));
+    if (bad.length) {
+      const dates = bad.map(r => normalizeDateForCompare(r[TX_COL.DATE])).sort();
+      add('Your data', 'popularMerchant', bad.length + ' POPULAR purchase(s) saved without their merchant', 'warn',
+        'Saved before v1.1.71 with "… A continuación le informamos …" as the merchant (between ' + dates[0] + ' and ' +
+        dates[dates.length - 1] + '). Delete those rows in Transactions (filter the Merchant column by "A continuación") ' +
+        'and run 📊 Tracker › 📅 Monitor by Date Range for those dates: they come back with the merchant\'s name.',
+        open('Open Transactions', TRANSACTIONS_SHEET));
     }
   }
 

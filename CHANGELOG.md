@@ -2,6 +2,42 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.71 (Oct 14, 2026) — POPULAR purchases keep their merchant; merchants left in Unclassified recognized for every user
+- **POPULAR "Notificación de Consumo" saved without its merchant** (reported with a real `.eml`): the
+  email's text part is cut at ~76 columns, so the merchant lands on the line after the date ("RD$… [tab] Peso dominicano
+  [tab] 15/03/2026 ⏎ PedidosYa*… [tab] Aprobada"). The extractor looked for it on the date's line only (the one sample
+  it was written from, synthetic, had the whole row on one line), found nothing, and the email fell to the generic
+  reader, which saved the text after "terminada en" — "1234. A continuación le informamos el detalle de" — as the
+  merchant, in Unclassified. Now the merchant is everything between the date and a known status word (Aprobada,
+  Rechazada, Declinada, Denegada, Reversada, Anulada, Pendiente) across lines; the same email read from its HTML (one
+  cell per line, the status in bold) and flattened to one line give the same row. A status outside that list still
+  uses the one-line form. "Denegada" is flagged as declined too.
+- **Rows already saved** can't be fixed from the sheet (a row doesn't keep the email's text): 📘 Start here counts the
+  POPULAR rows with that merchant, gives their dates, and says to delete them and run *Monitor by Date Range* for those
+  dates (a deleted row is read again, v1.1.49). It can open Transactions now.
+- Fixture `popular_consumo_wrapped.txt`: the real email's lines and tabs, data made up.
+- **Why:** after v1.1.70, a review of one sheet's *Unclassified* rows found ~80 rows of public businesses (chains,
+  cafés, stores, airlines, a gym, government offices) that any user would put in the same category. They belong in the
+  keywords, not in each user's Custom Rules.
+- **New keywords** (`02_categorizer.gs`): restaurants and cafés (McDonald's written "MC DONALDS", "WENDY'S", In&Out,
+  Häagen-Dazs, Baskin Robbins, Granier, Cacharepa, Colaito, Goyurt…, plus `COFFEE`, `CAFFE`, `AREPA`, `EMPANADA`,
+  `PARRILLA`, `DESSERT`, `PIZZER` — banks cut "PIZZERIA" short — and `TST`, Toast's restaurant-only terminal, as a
+  whole word); groceries (Surtidora, Almacenes Unidos, Éxito); parking (`PARKIN`, RD Vial, LASA); shopping (Miniso,
+  Dollarcity, Bershka, Nappa, Cecomsa, Downtown Center…); leisure (Smart Ticket, Dave & Buster's, the game stores
+  ENEBA, Driffle and Eldorado.gg — "PAYPAL *ENEBA" too); subscriptions (LinkedIn, Porkbun, Vocal Star); pharmacies
+  (Droguería, Clinicorp, Farmacia Carol through Banco Popular's terminal); Procuraduría; gyms (`FITNES`, cut short);
+  Lusergas (cooking gas, Rent & housing); a pet store; a taxi stand.
+- **Travel gets keywords:** airlines (Arajet, JetBlue, Avianca, Copa, American, Delta, United, Spirit), airports
+  (`AIRPOR`, cut short) and lodging sites (Airbnb, Booking.com, Expedia). It is tried after Restaurants, Shopping and
+  Public transport, so a meal or the parking at an airport keeps its own category (v1.1.70 left Travel by hand only).
+- **Left out on purpose:** names too generic to be safe for everyone ("OPERADORA DE", "D VICTOR", "DOS POR PREMIUM",
+  "BOLD*<name>" — Bold is a payment processor, not a kind of business) stay a Custom Rule. A bare `EXITO` would catch
+  "TRANSFERENCIA EXITOSA", so only `EXITO JUNIN` and `ALMACENES` are keywords. `UBR*` is not made Delivery: the bank
+  prints it for an Uber ride's estimate (v1.1.67, real alert), so it stays a ride.
+- **Tests changed on purpose (keywords):** "CACHAREPA CHURCHILL" was the suite's example of an unknown merchant; it is now a
+  restaurant (an unknown name takes its place), and "BANCO POPULAR CAROL AV. I" is a pharmacy (bare "CAROL" still is
+  not). `tests/v171.test.js`: every reviewed descriptor, the Travel order, false positives, a Custom Rule still wins.
+
 ### v1.1.70 (Oct 14, 2026) — new spending categories: 25 in 8 groups, Unclassified as the fallback, money that isn't spent named apart
 - **Why:** a year of one user's rows showed most of what was logged as spending in two buckets that explained nothing. "Dining/Delivery + Entertainment + Other" was the fallback (since v1.1.5), so every
   merchant the tracker didn't know landed there, next to restaurants — half of all spending, including shopping, a whole

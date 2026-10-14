@@ -17,7 +17,7 @@
         "amount": 642,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Unclassified"
+        "category": "Restaurants & cafés"
       }
     ]
   },
@@ -207,6 +207,28 @@
         "currency": "DOP",
         "type": "Transaction",
         "category": "Pets"
+      }
+    ]
+  },
+  {
+    "name": "popular_consumo_wrapped",
+    "synthetic": false,
+    "subject": "Notificación de Consumo",
+    "from": "<notificaciones@popularenlinea.com>",
+    "date": [
+      2026,
+      3,
+      15,
+      16,
+      52
+    ],
+    "expected": [
+      {
+        "merchant": "PedidosYa*Pizza Ejemplo Sa",
+        "amount": 1250,
+        "currency": "DOP",
+        "type": "Transaction",
+        "category": "Delivery"
       }
     ]
   },

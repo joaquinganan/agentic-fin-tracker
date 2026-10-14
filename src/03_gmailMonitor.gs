@@ -1241,16 +1241,26 @@ function extractBHDTransferTransactions(text) {
  * a thread not being returned" — the COP-denominated messages in a thread
  * were failing outright while DOP/USD ones in the same thread succeeded.
  * Added EUR/COP to match the same 4-currency set used everywhere else.
+ * v1.1.71: the merchant on the NEXT line. The real text part is cut at ~76 columns, so a row like
+ * "RD$1,250.00 [tab] Peso dominicano [tab] 15/03/2026 [newline] PedidosYa*Comercio Sa [tab] Aprobada" never matched
+ * (the merchant was searched on the date's line only): the email fell to the generic reader, whose merchant was the
+ * text after "terminada en" ("1234. A continuación le informamos el detalle de"). Now the merchant is everything
+ * between the date and a known status word, across lines and spaces (flattened text too); the one-line form is still
+ * read when the status is a word not in that list.
  */
+// (the email's HTML read as text — one cell per line, the status in bold, "*Aprobada*" — works the same way)
+const POPULAR_ROW_BY_STATUS_RE = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\d]{0,40}?\d{2}\/\d{2}\/\d{4}\s+([^\s*][^\t]{1,80}?)\s+\*?(Aprobad[ao]|Rechazad[ao]|Declinad[ao]|Denegad[ao]|Reversad[ao]|Anulad[ao]|Pendiente)\b/gi;
+// what the generic reader saved as merchant for those emails (📘 Start here asks to read them again)
+const POPULAR_TEXT_AS_MERCHANT_RE = /^\d{4}\.?\s+A continuaci/i;
+const POPULAR_ROW_ONE_LINE_RE = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\n]*?\d{2}\/\d{2}\/\d{4}[^\n]*?[\t ]([A-ZÁÉÍÓÚÑ][^\t\n]{2,40}?)\s*[\t\n]+\s*(\w+)/gi;
 function extractPOPULARTransactions(text) {
-  const re = /(?:RD|DOP|USD|US\$|EUR|COP)\s*\$?\s*([\d,]+\.?\d*)[^\n]*?\d{2}\/\d{2}\/\d{4}[^\n]*?[\t ]([A-ZÁÉÍÓÚÑ][^\t\n]{2,40}?)\s*[\t\n]+\s*(\w+)/gi;
-  const results = [];
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const declined = /RECHAZ|DECLIN/i.test(m[3]); // v1.1.19: flagged, not dropped (M1)
-    results.push({ declined: declined, merchant: m[2].trim().substring(0, 50), amount: parseFloat(m[1].replace(/,/g, '')), currency: detectCurrencyFromMatch(m[0]), context: m[0].replace(/\s+/g, ' ').trim() });
-  }
-  return results;
+  const matchAll = re => { const out = []; let m; re.lastIndex = 0; while ((m = re.exec(text)) !== null) out.push(m); return out; };
+  let rows = matchAll(POPULAR_ROW_BY_STATUS_RE);
+  if (!rows.length) rows = matchAll(POPULAR_ROW_ONE_LINE_RE);
+  return rows.map(m => ({
+    declined: /RECHAZ|DECLIN|DENEG/i.test(m[3]), // v1.1.19: flagged, not dropped (M1)
+    merchant: m[2].replace(/\s+/g, ' ').trim().substring(0, 50), amount: parseFloat(m[1].replace(/,/g, '')),
+    currency: detectCurrencyFromMatch(m[0]), context: m[0].replace(/\s+/g, ' ').trim() }));
 }
 
 /**

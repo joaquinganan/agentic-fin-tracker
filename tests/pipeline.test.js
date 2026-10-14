@@ -70,7 +70,7 @@ test('recategorize repairs the CACHAREPA row and never touches the merchant (C3,
     DESCRIPTION: 'CACHAREPA CHURCHILL', TYPE: 'Transfer', CATEGORY: '', CURRENCY: 'DOP', IS_CREDIT: 'NO' });
   const r1 = h.plain(h.ctx.computeRecategorization(cacharepa, {}));
   assert.equal(r1.type, 'Transaction');
-  assert.equal(r1.category, 'Unclassified');
+  assert.equal(r1.category, 'Restaurants & cafés');   // v1.1.71: CACHAREPA is a keyword
   assert.equal('merchant' in r1, false, 'recategorize has no way to rewrite the merchant any more');
 
   const bdi = mkRow({ SUBJECT: 'Aviso BDI', MERCHANT: 'X', TYPE: 'Transfer', CURRENCY: 'DOP' });

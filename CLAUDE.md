@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.70** (14 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.71** (14 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.70)
+## 2. Estado actual (v1.1.71)
 
-- **295 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **303 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -56,7 +56,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 | LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app —"¡Transferencia exitosa!", solo HTML; "entre tus cuentas", Exclude— y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com |
 | BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66; formato de sept. 2026 con `RD$` en cada monto, v1.1.68) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
 | BHD | Consumos (tabla con varias filas; "Denegada- …" se filtra como rechazada, v1.1.69), transferencias | bhd.com.do |
-| POPULAR | Consumos, Código Cash | popularenlinea.com |
+| POPULAR | Consumos (el comercio puede caer en la línea siguiente a la fecha: el texto se corta a ~76 columnas; v1.1.71), Código Cash | popularenlinea.com |
 | BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta (también el comprobante "BDI Online", en columnas, v1.1.69), transferencia a otra cuenta BDI ("BDI Digital: Comprobante de Transacción", a menudo un cambio de moneda; v1.1.70) | bdi.com.do |
 | SCOTIABANK | Autorizaciones con tarjeta, Pagos al Instante recibidos, transferencias enviadas (a terceros; a cuentas propias: a la tarjeta es pago de tarjeta, a un préstamo es gasto, a otra cuenta es Exclude; v1.1.69) | alertas@scotiabank.com |
 | QIK | Consumos con tarjeta de crédito, retiros con Código CASH | notificaciones@qik.do, no-reply-qik@qik.com.do |
@@ -242,7 +242,17 @@ git push
   después de actualizar (la propuesta estimó 2% clasificando a mano; con palabras clave será más, sobre todo compras en
   el extranjero y PayPal sin comercio): lo que se repita va a una Custom Rule o, si es un comercio público, a las palabras
   clave. Una transferencia fija a una persona (alquiler, por ejemplo) se resuelve con una Custom Rule a su categoría,
-  no con una categoría nueva. *Travel* no tiene palabras clave a propósito (se elige a mano o con Custom Rule).
+  no con una categoría nueva. Desde v1.1.71, *Travel* reconoce aerolíneas, aeropuertos y sitios de hospedaje (se prueba
+  después de Restaurants, Shopping y Public transport); lo demás de un viaje, a mano o con Custom Rule.
+- **Revisión de Unclassified (v1.1.71):** un comercio público que cualquiera pondría en la misma categoría va a las
+  palabras clave, no a una Custom Rule. Antes de agregarlo, probar que no atrape otra cosa: una palabra de más de 4
+  letras coincide *dentro* de otras ("EXITO" estaba en "TRANSFERENCIA EXITOSA"); los nombres genéricos ("OPERADORA
+  DE", "BOLD*…", un procesador de pagos) se quedan en Custom Rules. "UBR*" es el aviso de un viaje de Uber (v1.1.67),
+  no de Uber Eats.
+- **Consumos de POPULAR guardados sin comercio antes de v1.1.71** (comercio "1234. A continuación le informamos…"): la
+  fila no guarda el texto del correo, así que solo se corrigen leyendo el correo otra vez. 📘 Start here los cuenta;
+  borrar esas filas y correr *Monitor by Date Range* en sus fechas los trae con el nombre. Si se ve otro estado que no
+  sea Aprobada/Rechazada/Declinada/Denegada/Reversada/Anulada/Pendiente, agregarlo a `POPULAR_ROW_BY_STATUS_RE`.
 - **Retenciones de Uber anteriores a v1.1.67:** la conciliación con los recibos solo mira 35 días hacia atrás en la
   corrida diaria; para el histórico, correr *Monitor by Date Range* mes por mes (la búsqueda de recibos trae hasta 200
   hilos por corrida).

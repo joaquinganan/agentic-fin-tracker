@@ -45,7 +45,7 @@ test('the table: 25 categories in 8 groups, each keyword list tried once, in an 
   assert.deepEqual([...match].sort(), [...withKeywords].sort());
   assert.equal(new Set(match).size, match.length);
   assert.deepEqual(Object.keys(cats).filter(c => !cats[c].keywords.length),
-    ['Travel', 'Loan payments', 'Payments to people', 'Unclassified'], 'chosen by hand, a Custom Rule, or by the tracker itself');
+    ['Loan payments', 'Payments to people', 'Unclassified'], 'chosen by hand, a Custom Rule, or by the tracker itself (Travel has keywords since v1.1.71)');
   assert.equal(h.get('FALLBACK_CATEGORY'), 'Unclassified');
   assert.deepEqual(h.plain(h.ctx.fixedCategoryNames()),
     ['Rent & housing', 'Utilities', 'Phone & internet', 'Gym', 'Subscriptions', 'Loan payments', 'Insurance']);
@@ -162,6 +162,7 @@ test('Recategorize moves old category names: one-to-one as they are, merged ones
     row(h, 'ALGUIEN', 'Dining/Delivery + Entertainment + Other', 'Transfer', '(none)'),   // set by hand on a transfer
     row(h, 'UBER*RIDES', 'Transportation', 'Transaction', 'Transportation'),              // the tracker's own: recomputed
     row(h, 'CACHAREPA CHURCHILL', 'Dining/Delivery + Entertainment + Other', 'Transaction', 'Dining/Delivery + Entertainment + Other'),
+    row(h, 'COMERCIO DESCONOCIDO', 'Dining/Delivery + Entertainment + Other', 'Transaction', 'Dining/Delivery + Entertainment + Other'),
     row(h, 'OUROSR CAPITAL', 'Exclude', 'Transfer', '(none)'),                             // your Exclude on a broker deposit
     row(h, 'MARIA GOMEZ', 'Exclude', 'Transfer', '(none)')]);                              // your Exclude elsewhere: kept
   h.ctx.recategorizeAllTransactions(EMAIL);
@@ -171,7 +172,8 @@ test('Recategorize moves old category names: one-to-one as they are, merged ones
   assert.equal(by['TIENDA NUEVA'], 'Health & pharmacy', 'no keyword in its family: the main one');
   assert.equal(by['ALGUIEN'], 'Unclassified');
   assert.equal(by['UBER*RIDES'], 'Ride apps & taxis');
-  assert.equal(by['CACHAREPA CHURCHILL'], 'Unclassified', 'no keyword knows it — visible now');
+  assert.equal(by['CACHAREPA CHURCHILL'], 'Restaurants & cafés', 'a keyword of its family (v1.1.71)');
+  assert.equal(by['COMERCIO DESCONOCIDO'], 'Unclassified', 'no keyword knows it — visible now');
   assert.equal(by['OUROSR CAPITAL'], 'Investments & savings');
   assert.equal(by['MARIA GOMEZ'], 'Exclude');
   // Custom Rules: one-to-one names renamed in the sheet, a merged one left for you to choose
@@ -243,7 +245,8 @@ test('Categories sheet: each category with its group and type; Exclude and Inves
   const by = Object.fromEntries(rows.filter(r => r[1]).map(r => [r[1], r]));
   assert.deepEqual(by['Utilities'].slice(2, 4), ['Housing', 'Fixed']);
   assert.deepEqual(by['Delivery'].slice(2, 4), ['Food', 'Variable']);
-  assert.match(by['Travel'][4], /chosen by hand or with a Custom Rule/);
+  assert.match(by['Payments to people'][4], /chosen by hand or with a Custom Rule/);
+  assert.match(by['Travel'][4], /ARAJET/, 'Travel has keywords since v1.1.71');
   assert.match(by['Unclassified'][4], /Anything no keyword/);
   assert.deepEqual(by['Investments & savings'].slice(2, 4), ['—', 'Not spending']);
   assert.deepEqual(by['Kids'].slice(2, 4), ['Other', 'Variable']);

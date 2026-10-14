@@ -114,7 +114,7 @@ that transaction's own text).
 | Mobility | Ride apps & taxis · Public transport & parking · Fuel & vehicle |
 | Health & care | Health & pharmacy · Personal care · Pets · Gym ★ |
 | Lifestyle | Subscriptions ★ · Shopping & home · Leisure & going out · Education & books |
-| Travel | Travel (by hand or a Custom Rule) |
+| Travel | Travel (airlines, airports and lodging sites; the rest of a trip by hand or a Custom Rule) |
 | Bank & debt | Bank fees & taxes · Loan payments ★ · Insurance ★ |
 | Other | Cash · Government & procedures · Payments to people · **Unclassified** (the fallback) |
 
