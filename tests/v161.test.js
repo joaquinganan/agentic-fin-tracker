@@ -100,7 +100,7 @@ test('Banreservas: a transfer sent (and its tax as its own row), a TuEfectivo wi
   const t = parse(h, EMAILS.brTransfer);
   assert.equal(t.status, 'ok');
   assert.deepEqual(t.items.map(row), [['BANRESERVAS', 'Transfer', 'DOP', 750, 'JUAN PEREZ', ''],
-    ['BANRESERVAS', 'Transfer', 'DOP', 1.13, 'Banreservas: impuesto y comisión de transferencia', '']]);
+    ['BANRESERVAS', 'Transfer', 'DOP', 1.13, 'Banreservas: impuesto y comisión de transferencia', 'Bank fees & taxes']]);   // v1.1.70: the tax row has its category
   assert.equal(t.items[0].txRef, 'BANRESERVAS:100000000001');
   const c = parse(h, EMAILS.brCash);
   assert.deepEqual(c.items.map(x => row(x).slice(0, 5)), [['BANRESERVAS', 'Transaction', 'DOP', 1000, 'Retiro TuEfectivo (cash withdrawal)']],

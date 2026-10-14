@@ -8,14 +8,14 @@ const { makeServices } = require('./sheets_mock');
 // Raw_POPULAR row whose merchant was saved as "Aprobada").
 const CODIGO_CASH = 'Notificación de retiro Código Cash\nMonto\tMoneda\tFecha\tEstatus\nRD$400.00\tRD\t06/05/2026\tAprobada\nGracias por preferirnos\n';
 
-test('Código Cash: the status word is never saved as the merchant; category Dining/Other', () => {
+test('Código Cash: the status word is never saved as the merchant; category Cash (v1.1.70; Dining/Other before)', () => {
   const h = load();
   const msg = h.fakeMessage({ subject: 'Notificación de retiro Código Cash', from: 'notificaciones@popularenlinea.com',
     body: CODIGO_CASH, date: h.date(2026, 5, 6, 10), id: 'cc1' });
   const r = h.plain(h.ctx.parseEmailMessage(msg, {}, h.ctx.newParseStats()));
   assert.equal(r.items.length, 1);
   assert.deepEqual([r.items[0].merchant, r.items[0].amount, r.items[0].category],
-    ['Código Cash (cash withdrawal)', 400, 'Dining/Delivery + Entertainment + Other']);
+    ['Código Cash (cash withdrawal)', 400, 'Cash']);
   assert.equal(h.ctx.fixStatusAsMerchant('Aprobada', 'Alerta de Consumo', ''), h.get('GARBLED_PLACEHOLDER'), 'any other status-only row is flagged, not invented');
   assert.equal(h.ctx.fixStatusAsMerchant('APROBADO FOODS SRL', 'Notificación de retiro Código Cash', ''), 'APROBADO FOODS SRL', 'only an exact status word');
 });
@@ -29,13 +29,13 @@ test('Código Cash: rows already saved as "Aprobada" are repaired by recategoriz
   h.ctx.initializeTransactionsSheet();
   mock.ss.insertSheet('Custom Rules').appendRow(['UserEmail', 'Category', 'Keyword', 'Timestamp']);
   const row = (merchant, subject) => { const x = new Array(14).fill(''); x[0] = h.date(2026, 5, 6); x[1] = 'POPULAR'; x[2] = merchant;
-    x[3] = 400; x[4] = 'DOP'; x[5] = 'Groceries + Barbershop'; x[6] = merchant; x[7] = subject; x[9] = 'NO'; x[11] = 'Transaction'; x[12] = 'm-' + merchant; return x; };
+    x[3] = 400; x[4] = 'DOP'; x[5] = 'Groceries'; x[6] = merchant; x[7] = subject; x[9] = 'NO'; x[11] = 'Transaction'; x[12] = 'm-' + merchant; return x; };
   mock.ss.getSheetByName('Transactions').getRange(2, 1, 2, 14).setValues([row('Aprobada', 'Notificación de retiro Código Cash'),
     row('SUPERMERCADO NACIONAL', 'Notificación de Consumo')]);
   h.ctx.recategorizeAllTransactions();
   const rows = mock.ss.getSheetByName('Transactions')._rows(14);
   const cc = rows.find(r => r[7] === 'Notificación de retiro Código Cash');
-  assert.deepEqual([cc[2], cc[6], cc[5]], ['Código Cash (cash withdrawal)', 'Código Cash (cash withdrawal)', 'Dining/Delivery + Entertainment + Other']);
+  assert.deepEqual([cc[2], cc[6], cc[5]], ['Código Cash (cash withdrawal)', 'Código Cash (cash withdrawal)', 'Cash']);
   assert.equal(rows.find(r => r[7] === 'Notificación de Consumo')[2], 'SUPERMERCADO NACIONAL');
 });
 

@@ -6,7 +6,7 @@
  * link to the spreadsheet. Each section can be turned on or off in the wizard.
  *
  * Numbers follow the Dashboard's rules exactly: spending = Transaction and
- * Transfer rows that have a category other than "Exclude" (Card Payment and
+ * Transfer rows that have a category other than "Exclude" or Investments & savings (Card Payment and
  * Cashback never count; reversals are negative rows and subtract), converted
  * to DOP-equivalent at the Dashboard's exchange rates. Transfers without a
  * category are listed on their own. Recommendations are fixed rules — no
@@ -21,8 +21,9 @@ const SUMMARY_SECTIONS_DEFAULT = { totals: true, vsAverage: true, transfers: tru
 const SUMMARY_MIN_HISTORY_DAYS = 7;
 // v1.1.26: bills and fixed costs are left out of "day-to-day" comparisons — a rent
 // or electricity payment would otherwise make any day look like an alarming spike.
-const SUMMARY_BILL_CATEGORIES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions', 'Electricity'];
-function isBillCategory(cat) { return SUMMARY_BILL_CATEGORIES.indexOf(cat) !== -1; }
+// v1.1.70: the fixed categories of DEFAULT_CATEGORIES (02_categorizer.gs) — one list with the Dashboard's, which had
+// drifted from this one (Electricity was a bill here but variable there)
+function isBillCategory(cat) { return isFixedCategory(cat); }
 const SUMMARY_ABOVE_USUAL = 1.05;   // v1.1.26: only flag a category once it's 5%+ over its usual month
 // v1.1.64: yesterday is compared with a "typical day" — the median of the day-to-day totals of the last 60 days (days
 // with nothing spent count as RD$0) — instead of the 30-day average, which one tank of fuel or one big purchase turned
@@ -140,7 +141,7 @@ function computeDailySummary(values, opts) {
     const cat = String(r[TX_COL.CATEGORY] || '');
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     // v1.1.51: money received with a category reduces that category (its amount is negative)
-    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && isSpendingCategory(cat);   // v1.1.70
     const open = type === 'Transfer' && cat === '';
     const month = key.slice(0, 7);
     const item = { merchant: String(r[TX_COL.MERCHANT] || ''), bank: String(r[TX_COL.BANK] || ''), category: cat, amount: amt, type: type };
@@ -195,7 +196,7 @@ function computeDailySummary(values, opts) {
   // left (a rent paid on day 1 made day 5 project the month at 6.2 rents). Bills of a usual month not paid yet are
   // added, so the pace is not low before rent day. Only day-to-day spending is extrapolated.
   s.mtdDayToDay = s.mtd - s.mtdFixed;
-  s.pendingFixed = SUMMARY_BILL_CATEGORIES
+  s.pendingFixed = fixedCategoryNames()
     .reduce((sum, c) => sum + Math.max(0, (s.usualByCategory[c] || 0) - (s.mtdByCategory[c] || 0)), 0);
   s.projected = s.dayOfMonth ? s.mtdFixed + s.pendingFixed + s.mtdDayToDay / s.dayOfMonth * s.daysInMonth : 0;
   s.mtdPct = s.netIncomeDop > 0 ? s.mtd / s.netIncomeDop : null;

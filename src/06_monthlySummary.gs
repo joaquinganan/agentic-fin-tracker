@@ -8,12 +8,12 @@
  * so the month's last day is included.
  *
  * Same rules as the Dashboard and the daily email: spending = Transaction and
- * Transfer rows with a category other than "Exclude", in DOP-equivalent at
+ * Transfer rows with a category other than "Exclude" (or Investments & savings, v1.1.70), in DOP-equivalent at
  * the Dashboard's rates. Uses the email kit in 05_dailySummary.gs.
  *
  * Menu "🗓️ Send Monthly Summary Now" sends the last complete month on demand.
  */
-const SUMMARY_SUBSCRIPTIONS_CATEGORY = 'Streaming & Subscriptions';
+const SUMMARY_SUBSCRIPTIONS_CATEGORY = 'Subscriptions';   // v1.1.70 (was 'Streaming & Subscriptions')
 
 /** Everything the monthly email needs. Pure — see tests/. opts as computeDailySummary() plus optional `month` (a Date in it). */
 function computeMonthlySummary(values, opts) {
@@ -53,7 +53,7 @@ function computeMonthlySummary(values, opts) {
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     const merchant = String(r[TX_COL.MERCHANT] || '');
     const bank = String(r[TX_COL.BANK] || '');
-    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;   // v1.1.51
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && isSpendingCategory(cat);   // v1.1.51; v1.1.70: nor Investments & savings
     if (spend) m.monthTotals[mk] = (m.monthTotals[mk] || 0) + amt;
 
     if (mk === monthKey) {
@@ -65,7 +65,7 @@ function computeMonthlySummary(values, opts) {
         m.byBank[bank] = (m.byBank[bank] || 0) + amt;
         const g = m.merchants[merchant] || (m.merchants[merchant] = { merchant: merchant, total: 0, count: 0 });
         g.total += amt; g.count++;
-        if (FIXED_CATEGORY_NAMES.indexOf(cat) !== -1) m.fixed += amt; else m.variable += amt;
+        if (isFixedCategory(cat)) m.fixed += amt; else m.variable += amt;   // v1.1.70: one list of fixed categories
         if (amt > 0 && type === 'Transaction') {
           m.purchases++;
           if (!m.biggest || amt > m.biggest.amount) m.biggest = { merchant: merchant, amount: amt, bank: bank, date: key };
@@ -86,7 +86,7 @@ function computeMonthlySummary(values, opts) {
           }
         }
       }
-      if (type === 'Transfer' && cat !== EXCLUDE_CATEGORY) { m.transfersOut += amt; m.transfersCount++; }
+      if (type === 'Transfer' && !isReservedCategory(cat)) { m.transfersOut += amt; m.transfersCount++; }
       if (type === 'Transfer' && cat === '') { m.openCount++; m.openTotal += amt; }
       if (merchant === GARBLED_PLACEHOLDER) m.placeholders++;
       if (merchant === REVERSAL_UNMATCHED) m.unmatchedReversals++;
@@ -112,7 +112,7 @@ function computeMonthlySummary(values, opts) {
   m.categories = Object.keys(m.byCategory).map(c => ({
     cat: c, amount: m.byCategory[c], share: m.spent > 0 ? m.byCategory[c] / m.spent : 0,
     prev: m.prevByCategory[c] || 0, usual: m.usualMonths ? (m.usualCatSums[c] || 0) / m.usualMonths : 0,
-    fixed: FIXED_CATEGORY_NAMES.indexOf(c) !== -1
+    fixed: isFixedCategory(c)
   })).sort((a, b) => b.amount - a.amount);
   m.topMerchants = Object.keys(m.merchants).map(k => m.merchants[k]).sort((a, b) => b.total - a.total).slice(0, 8);
   m.subscriptions = Object.keys(m.subs).map(k => Object.assign({ recurring: !!m.prevSubs[k] }, m.subs[k]))

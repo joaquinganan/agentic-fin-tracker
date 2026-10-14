@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.69 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.70 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.69"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.70"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -1564,155 +1564,260 @@ function describeMoneyLines(list) {
  */
 
 /**
- * v1.1.5: further category consolidation, per direct request:
- * - 'Housing' → 'Rent' (clearer/shorter).
- * - 'Internet' + 'Mobile Data' merged into one 'Telecommunications' category
- *   (both keyword lists combined).
- * - 'Clothing' and 'Other' removed as separate categories — everything that
- *   would have landed in either now falls into
- *   'Dining/Delivery + Entertainment + Other' instead (Clothing's keywords
- *   were folded in, and the categorizeTransaction() fallback below now
- *   returns that label instead of 'Other'). Note the side effect: a
- *   genuinely unmatched merchant will now show as Dining rather than a
- *   distinct "uncategorized" bucket — that's the tradeoff of this merge.
- * - Added real merchants seen in live data that were falling through to the
- *   old 'Other' bucket: PedidosYa (a delivery app — every PedidosYa* order
- *   is food), Krispy Kreme, IKEA Restaurant.
- * Now 11 categories total (was 13).
+ * v1.1.70: the categories were rebuilt — 25 categories in 8 groups (CATEGORY_GROUPS), agreed by both users after
+ * looking at a year of real rows. Why:
+ *  - 'Dining/Delivery + Entertainment + Other' was the fallback (v1.1.5), so every merchant the tracker didn't know
+ *    landed there, next to restaurants: in one user's file it held half of all spending (shopping, a whole trip,
+ *    delivery, bars…). The fallback is now 'Unclassified', so what isn't recognized stays visible.
+ *  - the combined categories are split where they hid different decisions: food (groceries · restaurants · delivery),
+ *    mobility (ride apps · public transport · fuel), care (health · personal care · pets · gym) and lifestyle.
+ *  - each category says whether it is FIXED (a bill that comes every month) — the Dashboard, the daily and the monthly
+ *    summary read it from here instead of two lists of their own that had drifted apart (Electricity was fixed in the
+ *    summaries but not on the Dashboard).
+ *  - 'Travel' and 'Payments to people' have no keywords: they are chosen by hand or with a Custom Rule.
+ * The keywords of each old category moved to the new one they belong to; categories saved with an old name are moved
+ * by Recategorize (LEGACY_CATEGORIES below). Categories from before (v1.1.4 → v1.1.69): Rent, Gym + Calisthenics,
+ * Telecommunications, Streaming & Subscriptions, Electricity, Groceries + Barbershop,
+ * Dining/Delivery + Entertainment + Other, Vehicle Gas, Health + Vet + Pharmacy, Transportation.
+ *
+ * Names are in English (v1.1.4); keywords stay in Spanish — they match Spanish bank-email text.
+ * Each category: group, fixed, keywords, icon, color = chip [background, text] in the data sheets (v1.1.28).
+ * DEFAULT_CATEGORIES is in DISPLAY order (by group); the order keywords are tried in is CATEGORY_MATCH_ORDER.
  */
+const CATEGORY_GROUPS = ['Housing', 'Food', 'Mobility', 'Health & care', 'Lifestyle', 'Travel', 'Bank & debt', 'Other'];
 
-/**
- * v1.1.4: category names translated to English (were the only Spanish-named
- * part of an otherwise-English system, e.g. "Vivienda" next to an English
- * "Category" header). Keywords themselves stay in Spanish — they're
- * matching against Spanish bank-email text, which didn't change.
- */
 const DEFAULT_CATEGORIES = {
-  'Rent': {
+  // ---- Housing
+  'Rent & housing': {
     // v1.1.19: removed bare 'RENT' and 'RENTA' — substring matches sent
     // "AUTO RENT A CAR" (verified) and similar to Rent, a FIXED category.
     // A landlord is matched by a Custom Rule (e.g. the landlord's name),
     // which is how real rent payments have been categorized all along.
-    keywords: ['ALQUILER', 'ARRENDAMIENTO'],
-    icon: '🏠',
-    color: ['#EDE9E4', '#57534E']   // v1.1.28: chip [background, text] in the data sheets
+    // v1.1.70: repairs are NOT here (a one-off in a fixed category inflates the month-end pace) — Shopping & home.
+    group: 'Housing', fixed: true,
+    keywords: ['ALQUILER', 'ARRENDAMIENTO', 'CONDOMINIO'],
+    icon: '🏠', color: ['#EDE9E4', '#57534E']
   },
-  'Gym + Calisthenics': {
-    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR'],
-    icon: '💪',
-    color: ['#CCFBF1', '#0F766E']   // v1.1.28: chip [background, text] in the data sheets
+  'Utilities': {
+    // v1.1.19: removed bare 'LUZ' — "LUZ DE LUNA CAFE" landed here
+    // (verified). The three distributors below cover every real bill.
+    // v1.1.70: water too (CAASD, CORAASAN, INAPA — public utilities). Laundry is not a bill: Shopping & home.
+    group: 'Housing', fixed: true,
+    keywords: ['EDESUR', 'EDENORTE', 'EDEESTE', 'ELECTRICIDAD', 'CAASD', 'CORAASAN', 'INAPA'],
+    icon: '💡', color: ['#FEF9C3', '#854D0E']
   },
-  'Telecommunications': {
+  'Phone & internet': {
     // v1.1.5: merged Internet + Mobile Data. 'CLARO' bare (not just
     // 'CLARO MOVIL') so "CLARO P REC" (Claro Prepago Recarga, a real
     // merchant descriptor) matches too.
+    group: 'Housing', fixed: true,
     keywords: ['INTERNET', 'WIFI', 'BANDA ANCHA', 'CLARO INTERNET',
-               'DATOS MOVILES', 'RECARGA', 'PLAN MOVIL', 'CLARO MOVIL', 'CLARO', 'PREPAGO'],
-    icon: '📶',
-    color: ['#F3E8FF', '#7E22CE']   // v1.1.28: chip [background, text] in the data sheets
+               'DATOS MOVILES', 'RECARGA', 'PLAN MOVIL', 'CLARO MOVIL', 'CLARO', 'PREPAGO', 'ALTICE'],
+    icon: '📶', color: ['#F3E8FF', '#7E22CE']
   },
-  'Streaming & Subscriptions': {
-    // v1.1.15: BUG FIX — bare 'AMAZON' here caught EVERY Amazon purchase
-    // (Amazon.com retail orders, Amazon Marketplace), not just the Prime
-    // subscription itself. Narrowed to 'AMAZON PRIME' only; general Amazon
-    // purchases now fall through to Dining's bare 'AMAZON' keyword instead
-    // (Streaming is checked first, so 'AMAZON PRIME' still correctly
-    // intercepts the subscription case before Dining's broader keyword
-    // would otherwise catch it too).
-    // v1.1.23: 'GOOGLE' — real POPULAR USD rows "Google" / "GOOGLE *Google" (Google One/Play)
-    keywords: ['NETFLIX', 'SPOTIFY', 'DISNEY', 'HBO', 'AMAZON PRIME', 'SUSCRIPCION',
-               'YOUTUBE PREMIUM', 'OPENAI', 'GOOGLE'],
-    icon: '🎬',
-    color: ['#E0E7FF', '#3730A3']   // v1.1.28: chip [background, text] in the data sheets
-  },
-  'Electricity': {
-    // v1.1.19: removed bare 'LUZ' — "LUZ DE LUNA CAFE" landed here
-    // (verified). The three distributors below cover every real bill.
-    keywords: ['EDESUR', 'EDENORTE', 'EDEESTE', 'ELECTRICIDAD'],
-    icon: '💡',
-    color: ['#FEF9C3', '#854D0E']   // v1.1.28: chip [background, text] in the data sheets
-  },
-  'Groceries + Barbershop': {
+  // ---- Food
+  'Groceries': {
     // v1.1.23: 'POLA' — Supermercados Pola ("SM POLA INDEPENDENCIA"); whole word
-    keywords: ['SUPER', 'CARREFOUR', 'JUMBO', 'BRAVO', 'MERCADO', 'FRUTAS', 'BARBERIA', 'SALON',
+    group: 'Food', fixed: false,
+    keywords: ['SUPER', 'CARREFOUR', 'JUMBO', 'BRAVO', 'MERCADO', 'FRUTAS',
                'SUPERMERCADOS NACIONAL', 'SM NACIONAL', 'LA SIRENA', 'PLAZA LAMA', 'IBERIA',
-               'APREZIO', 'LA FUENTE', 'PRICESMART', 'HIPER OLE', '365 EL CACIQUE', 'HOLA PLAZA', 'POLA'],
-    icon: '🛒',
-    color: ['#FFF4E5', '#B45309']   // v1.1.28: chip [background, text] in the data sheets
+               'APREZIO', 'LA FUENTE', 'PRICESMART', 'HIPER OLE', '365 EL CACIQUE', 'HOLA PLAZA', 'POLA',
+               'COLMADO', 'PANADERIA', 'MINIMARKET', 'MINI MARKET'],
+    icon: '🛒', color: ['#FFF4E5', '#B45309']
   },
-  'Dining/Delivery + Entertainment + Other': {
-    // v1.1.5: absorbed Clothing's keywords and the old 'Other' fallback role
-    // (see header comment), plus PedidosYa/Krispy Kreme/IKEA Restaurant from
-    // real transaction data.
-    // v1.1.17: added bare 'UBER EATS' (space, no asterisk) — a real
-    // merchant descriptor "UBER EATS-W*UBER EATS- SANTO DOMINGO DOM" didn't
-    // match 'UBER*EATS' or 'UBEREATS' and fell through all the way to
-    // Transportation's bare 'UBER' keyword instead.
-    // v1.1.15: added bare 'AMAZON' (see Streaming & Subscriptions note
-    // above — general Amazon purchases live here now, only 'AMAZON PRIME'
-    // stays under Streaming).
-    // v1.1.15: this category is now checked BEFORE Vehicle Gas (see the
-    // reordering note on Vehicle Gas below) specifically so 'BONJOUR' here
-    // intercepts "BONJOUR TOTAL ARENOSO" before Vehicle Gas's bare 'TOTAL'
-    // keyword ever gets a chance to wrongly match it.
-    // v1.1.23: ALISS and the Metro Plaza mall ("ALISS METRO PZA") — 'METRO' alone is Transportation, checked later
-    keywords: ['RESTAURANTE', 'PIZZERIA', 'BURGER', 'COMIDA', 'FOOD', 'CAFE', 'DELIVERY',
-               'UBER*EATS', 'UBEREATS', 'UBER EATS', 'CINE', 'CINEMA', 'PELICULAS', 'CONCIERTO',
-               'ENTRETENIMIENTO', 'BAR', 'SUSHI', 'POLLO', 'HELADOS BON', 'BONJOUR',
-               'MCDONALD', 'BURGER KING', 'KFC', 'PIZZA HUT', 'SUBWAY', 'POLLOS VICTORINA',
-               'COMEDOR', 'WENDYS', 'JADE TERIYAKI', 'SWEETFROG', 'SWEET FROG',
-               'PEDIDOSYA', 'KRISPY KREME', 'IKEA REST', 'AMAZON',
-               'ROPA', 'ZAPATOS', 'ADIDAS', 'NIKE', 'PUMA STORE', 'ZARA', 'FASHION', 'BOUTIQUE', 'TIENDA', 'ALISS', 'METRO PZA', 'METRO PLZA', 'METRO PLAZA'],
-    icon: '🍽️',
-    color: ['#FFE4E6', '#BE123C']   // v1.1.28: chip [background, text] in the data sheets
+  'Restaurants & cafés': {
+    // v1.1.15: 'BONJOUR' is matched before Fuel & vehicle (see CATEGORY_MATCH_ORDER) so "BONJOUR TOTAL ARENOSO" (the
+    // convenience store) never reaches Fuel's bare 'TOTAL'.
+    // v1.1.5: Krispy Kreme and IKEA Restaurant from real data ('IKEA REST' before Shopping's 'IKEA').
+    group: 'Food', fixed: false,
+    keywords: ['RESTAURANTE', 'RESTAURANT', 'PIZZERIA', 'BURGER', 'COMIDA', 'FOOD', 'CAFE', 'SUSHI', 'POLLO',
+               'HELADOS BON', 'BONJOUR', 'MCDONALD', 'BURGER KING', 'KFC', 'PIZZA HUT', 'SUBWAY', 'POLLOS VICTORINA',
+               'COMEDOR', 'WENDYS', 'JADE TERIYAKI', 'SWEETFROG', 'SWEET FROG', 'KRISPY KREME', 'IKEA REST',
+               'CAFETERIA', 'HELADERIA', 'STARBUCKS'],
+    icon: '🍽️', color: ['#FFE4E6', '#BE123C']
   },
-  'Vehicle Gas': {
-    // v1.1.15: BUG FIX/CHANGE — added bare 'TOTAL' and 'NEXT LINCOLN' (a
-    // real gas-station brand, confirmed as "NEXT LINCOLN GASOPOLIS" from
-    // LAFISE and bare "NEXT LINCOLN" from POPULAR — same business, two
-    // different card-descriptor truncations). Bare 'TOTAL' was deliberately
-    // left OUT before specifically because "BONJOUR TOTAL ARENOSO" (the
-    // convenience-store purchase, → Dining) also contains "TOTAL" as a
-    // separate word — now safe to add because Dining/Delivery + ... (with
-    // 'BONJOUR') is checked BEFORE this category (see its reordering note),
-    // so the Bonjour case is intercepted there first, before ever reaching
-    // this keyword. 'TOTALENERGIES' kept too, redundant with bare 'TOTAL'
-    // now but harmless.
-    keywords: ['SHELL', 'HESS', 'PUMA', 'TEXACO', 'GASOLINA', 'COMBUSTIBLE', 'FUEL',
-               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN'],
-    icon: '⛽',
-    color: ['#E2E8F0', '#334155']   // v1.1.28: chip [background, text] in the data sheets
+  'Delivery': {
+    // v1.1.17: bare 'UBER EATS' (space, no asterisk) — "UBER EATS-W*UBER EATS- SANTO DOMINGO DOM" matched neither
+    // 'UBER*EATS' nor 'UBEREATS' and fell through to the rides' bare 'UBER'. Delivery is matched before the rides.
+    // v1.1.5: every PedidosYa* order is food. v1.1.70: 'DIDI FOOD' here (it went to Dining through 'FOOD' before).
+    group: 'Food', fixed: false,
+    keywords: ['UBER*EATS', 'UBEREATS', 'UBER EATS', 'PEDIDOSYA', 'DIDI FOOD', 'GLOVO', 'DELIVERY'],
+    icon: '🛵', color: ['#FFEDD5', '#9A3412']
   },
-  'Health + Vet + Pharmacy': {
-    // v1.1.18: was 'LA CASITA DE BOB' — narrowed to 'LA CASITA DE' (the
-    // vet clinic) because POPULAR truncates the merchant name to just "LA
-    // CASITA DE" (no "BOB-EP" suffix), which didn't match the longer
-    // keyword and fell through to the Dining fallback. The shorter keyword
-    // is a substring of the longer one, so it still matches LAFISE/BHD's
-    // full "LA CASITA DE BOB-EP..." too — one keyword now covers both.
-    // v1.1.23: 'FARMA' (FARMA VALUE…), 'FARM' whole word (FARM CAROL…), labs and clinics (ANALISA, CTRO ESPEC MED)
-    keywords: ['FARMACIA', 'FCIA', 'DOCTOR', 'MEDICO', 'HOSPITAL', 'CLINICA', 'SALUD',
-               'MEDICINAS', 'VETERINARIA', 'VET', 'MEDICAR', 'GBC', 'LOS HIDALGOS',
-               'FARMAX', 'FARMAXTRA', 'CRUZ VERDE', 'FARMATODO', 'FARMAVALUE', 'LA CASITA DE', 'FARMA', 'FARM', 'ANALISA', 'LABORATORIO', 'ESPEC MED'],
-    icon: '🏥',
-    color: ['#E8F5E9', '#2E7D32']   // v1.1.28: chip [background, text] in the data sheets
-  },
-  // v1.1.24: 'Education' removed — not in use. Those purchases now fall to the
-  // Dining/Other fallback; a Custom Rule with Category "Education" brings it
-  // back as its own Dashboard row (custom-only categories get one automatically).
-  'Transportation': {
-    // v1.1.20: added 'DIDI' — real POPULAR rows in COP ("DiDi CO Ride",
-    // "DL*DIDI RIDES", "DLO*Didi") were falling through to the Dining
-    // fallback. Whole-word match (4 letters), so the '*' variants match;
-    // "DIDI FOOD" still goes to Dining via 'FOOD', which is checked first.
+  // ---- Mobility
+  'Ride apps & taxis': {
+    // v1.1.20: 'DIDI' — real POPULAR rows in COP ("DiDi CO Ride", "DL*DIDI RIDES", "DLO*Didi"). Whole word (4 letters).
     // v1.1.23: Uber rides billed through PayPal ("PAYPAL *UBERBV", "PAYPAL *UBER BV")
-    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'BUS', 'METRO', 'PARKING', 'GUAGUA', 'MOTOCONCHO', 'UBERBV', 'UBER BV'],
-    icon: '🚗',
-    color: ['#EAF1FE', '#1D4ED8']   // v1.1.28: chip [background, text] in the data sheets
+    group: 'Mobility', fixed: false,
+    keywords: ['UBER', 'UBER*RIDES', 'UBER*TRIP', 'DIDI', 'TAXI', 'MOTOCONCHO', 'UBERBV', 'UBER BV', 'CABIFY', 'INDRIVE'],
+    icon: '🚕', color: ['#EAF1FE', '#1D4ED8']
+  },
+  'Public transport & parking': {
+    // v1.1.23: 'METRO' alone is transit; the Metro Plaza mall ("ALISS METRO PZA") is matched first by Shopping & home
+    group: 'Mobility', fixed: false,
+    keywords: ['BUS', 'METRO', 'PARKING', 'PARQUEO', 'GUAGUA', 'TELEFERICO', 'OMSA'],
+    icon: '🚇', color: ['#E0F2FE', '#075985']
+  },
+  'Fuel & vehicle': {
+    // v1.1.15: bare 'TOTAL' and 'NEXT LINCOLN' (a gas-station brand, "NEXT LINCOLN GASOPOLIS" from LAFISE, bare "NEXT
+    // LINCOLN" from POPULAR). 'TOTAL' is safe because Restaurants & cafés ('BONJOUR') is matched first.
+    group: 'Mobility', fixed: false,
+    keywords: ['SHELL', 'HESS', 'PUMA', 'TEXACO', 'GASOLINA', 'COMBUSTIBLE', 'FUEL',
+               'TOTALENERGIES', 'TOTAL', 'NEXT LINCOLN', 'GASOLINERA', 'PEAJE', 'PASO RAPIDO'],
+    icon: '⛽', color: ['#E2E8F0', '#334155']
+  },
+  // ---- Health & care
+  'Health & pharmacy': {
+    // v1.1.23: 'FARMA' (FARMA VALUE…), 'FARM' whole word (FARM CAROL…), labs and clinics (ANALISA, CTRO ESPEC MED)
+    group: 'Health & care', fixed: false,
+    keywords: ['FARMACIA', 'FCIA', 'DOCTOR', 'MEDICO', 'HOSPITAL', 'CLINICA', 'SALUD',
+               'MEDICINAS', 'MEDICAR', 'GBC', 'LOS HIDALGOS',
+               'FARMAX', 'FARMAXTRA', 'CRUZ VERDE', 'FARMATODO', 'FARMAVALUE', 'FARMA', 'FARM', 'ANALISA', 'LABORATORIO',
+               'ESPEC MED', 'ODONTO', 'DENTAL', 'OPTICA'],
+    icon: '🏥', color: ['#E8F5E9', '#2E7D32']
+  },
+  'Personal care': {
+    group: 'Health & care', fixed: false,
+    keywords: ['BARBERIA', 'BARBER', 'SALON', 'PELUQUERIA', 'SPA'],
+    icon: '💈', color: ['#FDF4FF', '#86198F']
+  },
+  'Pets': {
+    // v1.1.18: 'LA CASITA DE' (a vet clinic) — POPULAR cuts the name short, so the shorter keyword covers every bank.
+    // Matched before Health & pharmacy, so "CLINICA VETERINARIA" is a vet, not a clinic.
+    group: 'Health & care', fixed: false,
+    keywords: ['VETERINARIA', 'VET', 'LA CASITA DE', 'PET SHOP', 'PETSHOP', 'MASCOTA'],
+    icon: '🐾', color: ['#ECFCCB', '#3F6212']
+  },
+  'Gym': {
+    // v1.1.70: the membership and the trainer only — sports gear is Shopping & home (a one-off in a fixed category
+    // inflates the month-end pace of the daily summary)
+    group: 'Health & care', fixed: true,
+    keywords: ['GYM', 'GIMNASIO', 'CALISTENIA', 'FITNESS', 'CROSSFIT', 'PILATES', 'YOGA', 'ENTRENADOR'],
+    icon: '💪', color: ['#CCFBF1', '#0F766E']
+  },
+  // ---- Lifestyle
+  'Subscriptions': {
+    // v1.1.15: 'AMAZON PRIME' only — bare 'AMAZON' is a purchase (Shopping & home), matched after this.
+    // v1.1.23: 'GOOGLE' — real POPULAR USD rows "Google" / "GOOGLE *Google" (Google One/Play)
+    group: 'Lifestyle', fixed: true,
+    keywords: ['NETFLIX', 'SPOTIFY', 'DISNEY', 'HBO', 'AMAZON PRIME', 'PRIME VIDEO', 'SUSCRIPCION',
+               'YOUTUBE PREMIUM', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI', 'GOOGLE', 'ICLOUD', 'APPLE.COM/BILL', 'PARAMOUNT'],
+    icon: '🎬', color: ['#E0E7FF', '#3730A3']
+  },
+  'Shopping & home': {
+    // v1.1.5 (Clothing's keywords), v1.1.15 (bare 'AMAZON'), v1.1.23 (ALISS and the Metro Plaza mall — matched before
+    // Public transport's 'METRO'). v1.1.70: home and hardware stores too; repairs and sports gear belong here.
+    group: 'Lifestyle', fixed: false,
+    keywords: ['AMAZON', 'ROPA', 'ZAPATOS', 'ADIDAS', 'NIKE', 'PUMA STORE', 'ZARA', 'FASHION', 'BOUTIQUE', 'TIENDA',
+               'ALISS', 'METRO PZA', 'METRO PLZA', 'METRO PLAZA', 'IKEA', 'H&M', 'SHEIN', 'TEMU', 'ALIEXPRESS', 'EBAY',
+               'FERRETERIA', 'CORRIPIO', 'LAVANDERIA', 'DEPORTES'],
+    icon: '🛍️', color: ['#FDF2F8', '#9D174D']
+  },
+  'Leisure & going out': {
+    group: 'Lifestyle', fixed: false,
+    keywords: ['CINE', 'CINEMA', 'PELICULAS', 'CONCIERTO', 'ENTRETENIMIENTO', 'BAR', 'PUB', 'TEATRO', 'DISCOTECA',
+               'CERVECERIA', 'BREWERY', 'TICKETMASTER'],
+    icon: '🎉', color: ['#EDE9FE', '#5B21B6']
+  },
+  'Education & books': {
+    // v1.1.24 removed 'Education' (unused then); v1.1.70 brings it back as a default. A Custom Rule named "Education"
+    // is moved to this name by Recategorize.
+    group: 'Lifestyle', fixed: false,
+    keywords: ['COURSERA', 'UDEMY', 'EDX', 'DUOLINGO', 'LIBRERIA', 'BOOKSTORE', 'UNIVERSIDAD', 'COLEGIO', 'ACADEMIA'],
+    icon: '📚', color: ['#F0FDFA', '#115E59']
+  },
+  // ---- Travel
+  'Travel': {
+    // v1.1.70: chosen by hand or with a Custom Rule (agreed): a trip's purchases keep the category of what they are.
+    group: 'Travel', fixed: false,
+    keywords: [],
+    icon: '✈️', color: ['#ECFEFF', '#155E75']
+  },
+  // ---- Bank & debt
+  'Bank fees & taxes': {
+    // v1.1.70: a transfer's own tax-and-commission row ("BDI — impuesto y comisión de transferencia") lands here by
+    // itself (autoTransferCategory); these keywords are for card charges
+    group: 'Bank & debt', fixed: false,
+    keywords: ['COMISION', 'IMPUESTO', 'CARGO POR', 'INTERESES', 'MEMBRESIA ANUAL', 'CARGO ANUAL'],
+    icon: '🏦', color: ['#F1F5F9', '#475569']
+  },
+  'Loan payments': {
+    // v1.1.70: "Pago de préstamo …" transfers (Scotiabank, Banreservas — v1.1.69) land here by themselves
+    group: 'Bank & debt', fixed: true,
+    keywords: [],
+    icon: '📄', color: ['#FEE2E2', '#991B1B']
+  },
+  'Insurance': {
+    group: 'Bank & debt', fixed: true,
+    keywords: ['SEGURO', 'ASEGURADORA', 'POLIZA'],
+    icon: '🛡️', color: ['#EEF2FF', '#4338CA']
+  },
+  // ---- Other
+  'Cash': {
+    // v1.1.70: its own category (agreed); a Custom Rule moves it for whoever prefers Leisure & going out
+    group: 'Other', fixed: false,
+    keywords: ['CASH WITHDRAWAL', 'CODIGO CASH', 'CÓDIGO CASH', 'CAJERO', 'ATM'],
+    icon: '💵', color: ['#DCFCE7', '#166534']
+  },
+  'Government & procedures': {
+    group: 'Other', fixed: false,
+    keywords: ['DGII', 'JCE', 'PASAPORTE', 'INTRANT', 'MIGRACION', 'MINISTERIO', 'AYUNTAMIENTO', 'MARBETE', 'EMBAJADA'],
+    icon: '🏛️', color: ['#F5F5F4', '#44403C']
+  },
+  'Payments to people': {
+    // v1.1.70: a transfer to a person that fits no other category — chosen by hand or with a Custom Rule on the name.
+    // Transfers are never put here by themselves: one without a category stays in "Transfers to review".
+    group: 'Other', fixed: false,
+    keywords: [],
+    icon: '🤝', color: ['#F0FDF4', '#15803D']
+  },
+  'Unclassified': {
+    // v1.1.70: the fallback — a merchant no keyword knows. Add a Custom Rule (or pick a category) to move it.
+    group: 'Other', fixed: false,
+    keywords: [],
+    icon: '❓', color: ['#FEF2F2', '#B91C1C']
   }
 };
 
-const FALLBACK_CATEGORY = 'Dining/Delivery + Entertainment + Other';
+/**
+ * v1.1.70: the order keywords are tried in — first match wins. It is NOT the display order: several past fixes depend
+ * on one category being tried before another, and those pairs now sit in different groups:
+ *   Delivery ('UBER EATS', 'DIDI FOOD') before Ride apps ('UBER', 'DIDI');
+ *   Restaurants ('BONJOUR' — a store inside a gas station) before Fuel ('TOTAL');
+ *   Shopping ('METRO PLAZA' — a mall) before Public transport ('METRO');
+ *   Subscriptions ('AMAZON PRIME') before Shopping ('AMAZON');  Restaurants ('IKEA REST') before Shopping ('IKEA');
+ *   Pets ('VETERINARIA') before Health ('CLINICA');  Shopping ('PUMA STORE') before Fuel ('PUMA').
+ * The rest keeps the relative order the old categories had. Every category with keywords is listed once (tested).
+ */
+const CATEGORY_MATCH_ORDER = ['Rent & housing', 'Gym', 'Phone & internet', 'Subscriptions', 'Utilities', 'Groceries',
+  'Personal care', 'Delivery', 'Restaurants & cafés', 'Leisure & going out', 'Shopping & home', 'Fuel & vehicle', 'Pets',
+  'Health & pharmacy', 'Ride apps & taxis', 'Public transport & parking', 'Education & books', 'Insurance',
+  'Government & procedures', 'Cash', 'Bank fees & taxes'];
+
+const FALLBACK_CATEGORY = 'Unclassified';
+// v1.1.70: money that moves but isn't spent, apart from Exclude: deposits to a broker (Investment Accounts' deposit
+// keyword). Like Exclude, it is never a spending row; the Dashboard shows it among the movements.
+const INVESTMENT_CATEGORY = 'Investments & savings';
+
+/**
+ * v1.1.70: categories saved before this version → the new ones. A one-to-one name moves as it is. A name that merged
+ * several kinds of spending moves to the new category the keywords find, when that is one of its own (`within`), or
+ * else to its main one (`to`): a hand-set "Groceries + Barbershop" on a barbershop stays a barbershop.
+ */
+const LEGACY_CATEGORIES = {
+  'Rent': { to: 'Rent & housing' },
+  'Gym + Calisthenics': { to: 'Gym' },
+  'Telecommunications': { to: 'Phone & internet' },
+  'Streaming & Subscriptions': { to: 'Subscriptions' },
+  'Electricity': { to: 'Utilities' },
+  'Vehicle Gas': { to: 'Fuel & vehicle' },
+  'Education': { to: 'Education & books' },
+  'Groceries + Barbershop': { to: 'Groceries', within: ['Groceries', 'Personal care'] },
+  'Health + Vet + Pharmacy': { to: 'Health & pharmacy', within: ['Health & pharmacy', 'Pets'] },
+  'Transportation': { to: 'Ride apps & taxis', within: ['Ride apps & taxis', 'Public transport & parking', 'Fuel & vehicle'] },
+  'Dining/Delivery + Entertainment + Other': { to: 'Unclassified',
+    within: ['Restaurants & cafés', 'Delivery', 'Leisure & going out', 'Shopping & home'] }
+};
 
 /**
  * v1.1.19: SHARED KEYWORD ENGINE — used by categorization, Custom Rules,
@@ -1770,8 +1875,8 @@ function findMatchingKeyword(upperText, keywords) {
 
 /**
  * Main categorization function — DEFAULT_CATEGORIES only, evaluated in
- * declaration order (order matters, see the category notes above).
- * v1.1.5: fallback changed from 'Other' to FALLBACK_CATEGORY.
+ * CATEGORY_MATCH_ORDER (v1.1.70; declaration order before — order matters, see the notes above it).
+ * v1.1.5: fallback changed from 'Other' to FALLBACK_CATEGORY ('Unclassified' since v1.1.70).
  * v1.1.19: the old `customRules` (merged defaults + Custom Rules) parameter
  * is gone. Every caller already runs findCustomRuleOverride() FIRST, so the
  * merged rules could only ever be reached when no custom rule matched — at
@@ -1781,12 +1886,28 @@ function findMatchingKeyword(upperText, keywords) {
 function categorizeTransaction(text) {
   if (!text) return FALLBACK_CATEGORY;
   const upperText = normalizeKeyword(text);
-  for (let category in DEFAULT_CATEGORIES) {
+  for (const category of CATEGORY_MATCH_ORDER) {
     if (findMatchingKeyword(upperText, DEFAULT_CATEGORIES[category].keywords)) {
       return category;
     }
   }
   return FALLBACK_CATEGORY;
+}
+
+/**
+ * v1.1.70: a category for a Transfer the tracker can name by itself (transfers otherwise only get one from a Custom
+ * Rule or by hand): a bank's own tax-and-commission row, a loan installment, or a deposit to a broker listed in
+ * Investment Accounts (`investmentKeywords`: their deposit keywords). '' when it is none of them.
+ */
+const TRANSFER_FEE_RE = /\bimpuestos?\s+y\s+comisi[óo]n/i;
+const LOAN_PAYMENT_RE = /^\s*pago de pr[ée]stamo\b/i;
+function autoTransferCategory(text, investmentKeywords) {
+  const t = String(text || '');
+  const upper = t.toUpperCase();
+  if ((investmentKeywords || []).some(k => k && upper.indexOf(String(k).toUpperCase()) !== -1)) return INVESTMENT_CATEGORY;
+  if (TRANSFER_FEE_RE.test(t)) return 'Bank fees & taxes';
+  if (LOAN_PAYMENT_RE.test(t)) return 'Loan payments';
+  return '';
 }
 
 /**
@@ -1814,6 +1935,45 @@ function findCustomRuleOverride(text, rawCustomRules) {
  */
 function getCategories() {
   return Object.keys(DEFAULT_CATEGORIES);
+}
+
+/** v1.1.70: the group a category is shown under — a category of your own goes under 'Other'. */
+function categoryGroup(category) {
+  const c = DEFAULT_CATEGORIES[category];
+  return c ? c.group : 'Other';
+}
+
+/** v1.1.70: fixed categories (a bill every month), read by the Dashboard and both summaries — one list, from here. */
+function fixedCategoryNames() {
+  return getCategories().filter(c => DEFAULT_CATEGORIES[c].fixed);
+}
+function isFixedCategory(category) {
+  return !!(DEFAULT_CATEGORIES[category] && DEFAULT_CATEGORIES[category].fixed);
+}
+
+/** v1.1.70: categories that are never spending: Exclude and Investments & savings (case and spaces ignored). */
+function isReservedCategory(category) {
+  const c = String(category === null || category === undefined ? '' : category).trim().toUpperCase();
+  return c === EXCLUDE_CATEGORY.toUpperCase() || c === INVESTMENT_CATEGORY.toUpperCase();
+}
+/** v1.1.70: a row with this category counts as spending (given a spending Type): set, and not a reserved one. */
+function isSpendingCategory(category) {
+  return String(category === null || category === undefined ? '' : category).trim() !== '' && !isReservedCategory(category);
+}
+
+/**
+ * v1.1.70: the category a saved row gets for a name from before v1.1.70 (LEGACY_CATEGORIES). `computed` is what the
+ * keywords give the row now. Returns '' for a name that isn't an old one.
+ */
+function legacyCategoryFor(name, computed) {
+  const old = LEGACY_CATEGORIES[String(name === null || name === undefined ? '' : name).trim()];
+  if (!old) return '';
+  return old.within && old.within.indexOf(computed) !== -1 ? computed : old.to;
+}
+/** v1.1.70: old names that merged several kinds of spending — a Custom Rule with one needs a decision (Start here). */
+function isMergedLegacyCategory(name) {
+  const old = LEGACY_CATEGORIES[String(name === null || name === undefined ? '' : name).trim()];
+  return !!(old && old.within);
 }
 
 /**
@@ -1868,9 +2028,13 @@ function getUserCustomRules(userEmail) {
         // that one rule captured every transaction; a numeric keyword (1111)
         // threw inside every parse and every recategorize, silently dropping
         // every email of the run. Incomplete rows are now skipped.
-        const category = String(data[i][1] === null || data[i][1] === undefined ? '' : data[i][1]).trim();
+        let category = String(data[i][1] === null || data[i][1] === undefined ? '' : data[i][1]).trim();
         const keyword = normalizeKeyword(data[i][2]);
         if (!category || !keyword) continue;
+        // v1.1.70: a rule still on an old one-to-one name (Rent, Electricity…) works with the new name. Recategorize
+        // also renames it in the sheet; an old name that merged several categories is kept until you choose.
+        const renamed = LEGACY_CATEGORIES[category] && !LEGACY_CATEGORIES[category].within ? LEGACY_CATEGORIES[category].to : '';
+        if (renamed) category = renamed;
 
         if (!customRules[category]) {
           customRules[category] = [];
@@ -1886,6 +2050,29 @@ function getUserCustomRules(userEmail) {
   }
 }
 
+/**
+ * v1.1.70: Custom Rules whose category is an old one-to-one name (Rent → Rent & housing…) get the new name in the
+ * sheet, so what you read there is what applies. An old name that merged several categories is left as it is: it
+ * keeps working as a category of your own, and 📘 Start here asks you to choose its new one. Returns how many changed.
+ */
+function renameLegacyCustomRules() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CUSTOM_RULES_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const range = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1);
+  let changed = 0;
+  const values = range.getValues().map(r => {
+    const old = LEGACY_CATEGORIES[String(r[0] === null || r[0] === undefined ? '' : r[0]).trim()];
+    if (!old || old.within) return [r[0]];
+    changed++;
+    return [old.to];
+  });
+  if (changed) {
+    range.setValues(values);
+    Logger.log('🏷️ Custom Rules moved to the v1.1.70 category names: ' + changed);
+  }
+  return changed;
+}
+
 const EXCLUDE_CATEGORY = 'Exclude';
 
 /**
@@ -1894,15 +2081,17 @@ const EXCLUDE_CATEGORY = 'Exclude';
  * categories, which take the next colour of this rotation in order.
  */
 const EXCLUDE_COLOR = ['#F3F4F6', '#4B5563'];   // #6B7280 was 4.39:1 — below WCAG AA (caught by v128 test)
+const INVESTMENT_COLOR = ['#ECFDF5', '#065F46'];   // v1.1.70
 const CUSTOM_CATEGORY_COLORS = [
   ['#CFFAFE', '#0E7490'], ['#FAE8FF', '#A21CAF'], ['#D1FAE5', '#047857'], ['#FEF3C7', '#92400E'], ['#FCE7F3', '#9D174D']
 ];
 
-/** Every category with its chip colours, in display order: defaults, Exclude, then custom ones. */
+/** Every category with its chip colours, in display order: defaults, Exclude, Investments & savings, then custom ones. */
 function categoryPalette(customNames) {
   const list = getCategories().map(name => ({ name: name, bg: DEFAULT_CATEGORIES[name].color[0], fg: DEFAULT_CATEGORIES[name].color[1] }));
   list.push({ name: EXCLUDE_CATEGORY, bg: EXCLUDE_COLOR[0], fg: EXCLUDE_COLOR[1] });
-  (customNames || []).filter(n => n && !DEFAULT_CATEGORIES[n] && n.toUpperCase() !== EXCLUDE_CATEGORY.toUpperCase())
+  list.push({ name: INVESTMENT_CATEGORY, bg: INVESTMENT_COLOR[0], fg: INVESTMENT_COLOR[1] });   // v1.1.70
+  (customNames || []).filter(n => n && !DEFAULT_CATEGORIES[n] && !isReservedCategory(n))
     .forEach((name, i) => {
       const c = CUSTOM_CATEGORY_COLORS[i % CUSTOM_CATEGORY_COLORS.length];
       list.push({ name: name, bg: c[0], fg: c[1] });
@@ -1914,14 +2103,13 @@ function categoryPalette(customNames) {
  * v1.1.19: categories that exist ONLY in Custom Rules (not in
  * DEFAULT_CATEGORIES, and not the reserved "Exclude"). The Dashboard grid
  * used to be built from the defaults alone, so spend in a custom category
- * (say "Pets") never reached any row or the TOTAL — see
+ * (say "Kids") never reached any row or the TOTAL — see
  * buildOrRefreshDashboard(). getMergedCategoryRules() was removed in this
  * version (see categorizeTransaction()).
  */
 function getCustomCategoryNames(userEmail) {
   const custom = getUserCustomRules(userEmail);
-  return Object.keys(custom).filter(c =>
-    !DEFAULT_CATEGORIES[c] && c.toUpperCase() !== EXCLUDE_CATEGORY.toUpperCase());
+  return Object.keys(custom).filter(c => !DEFAULT_CATEGORIES[c] && !isReservedCategory(c));   // v1.1.70: reserved ones
 }
 
 // ====================================================================================================
@@ -2043,12 +2231,14 @@ const BANK_PATTERNS = {
     // v1.1.60: real samples — card purchases ("Notificacion de Consumos") and interbank transfers sent
     // v1.1.61: interbank transfers RECEIVED (same subject as the ones sent; the body says "Recibida"), and strict: an
     // email none of these recognizes goes to Unrecognized instead of being guessed (see STRICT_BANK_NOTE)
-    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions, incoming: extractBDIIncomingTransactions,
+    // v1.1.70: transfer = interbank, or to another BDI account ("Comprobante de Transacción", Tipo: Transferencias)
+    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDIAnyTransferTransactions, incoming: extractBDIIncomingTransactions,
       cardPayment: extractBDICardPaymentTransactions },
     // v1.1.69: "BDI Online" lays the receipt out in columns (all labels, then all values), so the card payment is
     // recognized anywhere in the text, not right after its label
     detectType: (subject, text) => /Interbancaria\s+Recibida/i.test(text) ? 'Incoming' :
-      /Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' : null,   // v1.1.62
+      /Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' :   // v1.1.62
+      /Tipo de Transacci[óo]n\s+Transferencias?\b/i.test(text) ? 'Transfer' : null,   // v1.1.70
     // v1.1.62: "… Interbancaria - Completada" confirms a transfer already read from its "Comprobante" (same time)
     ignore: [/Transacci[óo]n Interbancaria\s*-\s*Completada/i],
     strict: true,
@@ -2713,6 +2903,9 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       if (!category && type === 'Transaction' && !isReversal) {   // a reversal takes its original's category
         category = categorizeTransaction(merchant);
       }
+      // v1.1.70: a bank's tax-and-commission row, a loan installment (broker deposits: at the run's Recategorize, which
+      // reads Investment Accounts)
+      if (!category && type === 'Transfer') category = autoTransferCategory(merchant, []);
       // v1.1.51: money received is saved NEGATIVE, like a reversal — given a category (a Custom Rule, or by hand) it
       // reduces what you spent there; money from your own account is Exclude
       const isIncoming = type === 'Incoming';
@@ -3043,7 +3236,7 @@ const REVERSAL_UNMATCHED = 'Reversal (original purchase not found)'; // v1.1.23
  * v1.1.34: a POPULAR "Código Cash" withdrawal has no merchant column (Monto | Moneda | Fecha | Estatus), so the
  * status word after the date — "Aprobada" — was saved as the merchant (seen in a live Raw_POPULAR). A status word is
  * never a merchant: a Código Cash email gets a clear label, anything else the unreadable-merchant placeholder.
- * The category stays the fallback, Dining/Delivery + Entertainment + Other.
+ * The category was the fallback, Dining/Delivery + Entertainment + Other; since v1.1.70 it is Cash.
  */
 const STATUS_WORD_MERCHANT = /^(APROBAD[AO]|RECHAZAD[AO]|DECLINAD[AO]|REVERSAD[AO]|REVERSO)$/i;
 const CODIGO_CASH_MERCHANT = 'Código Cash (cash withdrawal)';
@@ -3585,6 +3778,43 @@ function extractBDITransferTransactions(text) {
     merchant: (who || 'Transferencia interbancaria').trim().substring(0, 50), context: (bank ? 'to ' + bank.trim() : 'interbank transfer') }];
   if (fees > 0) out.push({ amount: +fees.toFixed(2), currency: currency, merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' });
   return out;
+}
+
+/**
+ * v1.1.70: BDI Digital "Comprobante de Transacción" for a transfer to another BDI account ("Tipo de Transacción
+ * Transferencias", no "[Salida]"), often a currency exchange between two accounts:
+ *   Monto Transferido US$50.00 · … Impuesto 0.20% RD$0.00 Monto RD$3,050.00 … Beneficiario <NAME> <account> …
+ *   Monto US$50.00 Tasa de Cambio 61.00 Comisión US$0.00
+ * The money out is the FIRST "Monto" (in the source account's currency); what arrived is in the context. The email
+ * does not say whether the account is yours: a Custom Rule on your name (→ Exclude) does. Tax and commission: a row
+ * per currency, when not zero.
+ */
+function extractBDIInternalTransferTransactions(text) {
+  const flat = flatText(text);
+  if (/\[\s*Salida\s*\]|Interbancaria/i.test(flat) || !/Tipo de Transacci[óo]n\s+Transferencias?\b/i.test(flat)) return [];
+  const out = flat.match(/Impuesto[^$]*?(?:RD|US)\$\s*[\d,]+\.\d{2}\s+Monto\s+(RD\$|US\$)\s*([\d,]+\.\d{2})/i);
+  if (!out) return [];
+  const currency = moneyCurrency(out[1]);
+  const who = ((flat.match(/Beneficiario\s+(.+?)\s+\d{6,}/i) || [])[1] || '').trim();
+  const acct = (flat.match(/Beneficiario\s+.+?\s+(\d{6,})/i) || [])[1];
+  const got = flat.match(/No\. Autorizaci[óo]n\s+\S+\s+Monto\s+(RD\$|US\$)\s*([\d,]+\.\d{2})\s+Tasa de Cambio\s+([\d.,]+)/i);
+  const items = [{ amount: moneyNumber(out[2]), currency: currency, merchant: (who || 'Transferencia BDI').substring(0, 50),
+    context: 'to BDI account' + (acct ? ' ***' + acct.slice(-4) : '') +
+      (got && moneyCurrency(got[1]) !== currency ? ' (' + got[1] + got[2] + ' at ' + got[3] + ')' : '') }];
+  const fees = {};
+  [/Impuesto[^$]*?(RD|US)\$\s*([\d,]+\.\d{2})/i, /Comisi[óo]n\s+(RD|US)\$\s*([\d,]+\.\d{2})/i].forEach(re => {
+    const f = flat.match(re);
+    if (f && moneyNumber(f[2]) > 0) { const c = moneyCurrency(f[1] + '$'); fees[c] = (fees[c] || 0) + moneyNumber(f[2]); }
+  });
+  Object.keys(fees).forEach(c => items.push({ amount: +fees[c].toFixed(2), currency: c,
+    merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' }));
+  return items;
+}
+
+/** v1.1.70: BDI transfers sent — interbank ("[Salida]") or to another BDI account. */
+function extractBDIAnyTransferTransactions(text) {
+  const interbank = extractBDITransferTransactions(text);
+  return interbank.length ? interbank : extractBDIInternalTransferTransactions(text);
 }
 
 /** Scotiabank "Autorización …": "por un monto de $25.50 USD en <merchant> con su Tarjeta de Crédito Scotiabank ***1234". */
@@ -4283,7 +4513,8 @@ function styleCustomRulesSheet(sheet, palette) {
   const cat = sheet.getRange(2, 2, rows, 1);
   cat.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(palette.map(p => p.name), true).setAllowInvalid(true)
-    .setHelpText('Pick a category — or type a new name to create your own. "Exclude" leaves matches out of every total.')
+    .setHelpText('Pick a category — or type a new name to create your own. "Exclude" leaves matches out of every total; ' +
+      '"Investments & savings" too, for money you put aside.')
     .build());
   const rules = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=LEFT($A2,8)="(example"')
     .setFontColor(SHEET_THEME.example).setItalic(true).setRanges([sheet.getRange(2, 1, rows, 4)]).build()];
@@ -4713,7 +4944,7 @@ const VALID_CURRENCIES = new Set(['DOP', 'USD', 'EUR', 'COP']);
  *    Type=Transaction only — same rule as at parse time, on the same text.
  *  - IsCredit/IsCashback follow the Type for Card Payment/Cashback.
  */
-function computeRecategorization(row, rawCustomRules) {
+function computeRecategorization(row, rawCustomRules, investmentKeywords) {
   const subject = String(row[TX_COL.SUBJECT] || '');
   const merchant = String(row[TX_COL.MERCHANT] || '');
   const description = String(row[TX_COL.DESCRIPTION] || '') || merchant;
@@ -4726,6 +4957,12 @@ function computeRecategorization(row, rawCustomRules) {
 
   let category = findCustomRuleOverride(description, rawCustomRules);
   if (!category && type === 'Transaction') category = categorizeTransaction(description);
+  // v1.1.70: a bank's tax-and-commission row and a loan installment get their category by themselves; a deposit to a
+  // broker (Investment Accounts' deposit keyword) is Investments & savings — money kept, not spent — even over a rule
+  if (type === 'Transfer') {
+    const auto = autoTransferCategory(description, investmentKeywords);
+    if (auto === INVESTMENT_CATEGORY || (auto && !category)) category = auto;
+  }
   // v1.1.23: paying the card is never spending — explicit "Exclude"
   if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
   // v1.1.51: your own money. v1.1.66: sent, too — a transfer to your own account was Exclude when read (v1.1.63) and
@@ -4768,8 +5005,12 @@ function computeRecategorization(row, rawCustomRules) {
  */
 function recategorizeAllTransactions(userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // v1.1.70: Custom Rules on an old one-to-one category name are renamed in the sheet first
+  try { renameLegacyCustomRules(); } catch (error) { Logger.log('Could not rename old categories in Custom Rules: ' + error); }
   const rawCustomRules = getUserCustomRules(userEmail);
-  let totalChanged = 0;
+  let investmentKeywords = [];
+  try { investmentKeywords = investmentDepositKeywords(); } catch (error) { Logger.log('Could not read Investment Accounts: ' + error); }
+  let totalChanged = 0, renamed = 0;
   // v1.1.54: rows typed by hand in Incoming Transfers are saved before that sheet is rebuilt below
   try { importTypedIncomingRows(); } catch (error) { Logger.log('Could not save the rows typed in Incoming Transfers: ' + error); }
   try { importTypedTransferRows('Bank Transfers', 'Transfer'); } catch (error) { Logger.log('Could not save the rows typed in Bank Transfers: ' + error); }   // v1.1.57
@@ -4803,10 +5044,18 @@ function recategorizeAllTransactions(userEmail) {
         changedCols.add(TX_COL.MERCHANT);
         totalChanged++;
       }
-      const r = computeRecategorization(row, rawCustomRules);
+      const r = computeRecategorization(row, rawCustomRules, investmentKeywords);
       // v1.1.39: a category you set by hand is kept; the tracker's own category is recorded either way
       const manual = isManualCategory(row, r.category);
-      if (manual) keptManual++;
+      if (manual) {
+        keptManual++;
+        // v1.1.70: one set by hand with a name from before v1.1.70 moves to its new name (LEGACY_CATEGORIES); an
+        // Exclude on a deposit to your broker becomes Investments & savings (also left out of spending, now named)
+        const moved = legacyCategoryFor(row[TX_COL.CATEGORY], r.category) ||
+          (r.category === INVESTMENT_CATEGORY && String(row[TX_COL.CATEGORY]).trim().toUpperCase() === EXCLUDE_CATEGORY.toUpperCase()
+            ? INVESTMENT_CATEGORY : '');
+        if (moved) { row[TX_COL.CATEGORY] = moved; changedCols.add(TX_COL.CATEGORY); totalChanged++; renamed++; }
+      }
       const auto = r.category || AUTO_NONE;
       if (asText(row[TX_COL.AUTO_CATEGORY]) !== auto) { row[TX_COL.AUTO_CATEGORY] = auto; changedCols.add(TX_COL.AUTO_CATEGORY); }
       [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, manual ? row[TX_COL.CATEGORY] : r.category], [TX_COL.CURRENCY, r.currency],
@@ -4824,6 +5073,7 @@ function recategorizeAllTransactions(userEmail) {
       txSheet.getRange(2, c + 1, numRows, 1).setValues(values.map(row => [row[c]]));
     });
     if (keptManual) Logger.log('✍️ Categories you set by hand, kept: ' + keptManual);
+    if (renamed) Logger.log('🏷️ Categories set by hand moved to their v1.1.70 names: ' + renamed);
   }
 
   const rebuildCounts = rebuildDerivedSheets();
@@ -4974,7 +5224,6 @@ function rebuildDerivedSheets() {
 
   return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length + " | Incoming=" + incoming.length;
 }
-const FIXED_CATEGORY_NAMES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions'];
 
 /**
  * v1.1.19 (E3): named ranges for the Configuration values the Dashboard
@@ -5182,26 +5431,26 @@ function upgradeCardNotes(cards) {
  * Mi País product page (a summary — the full terms may add caps or minimums).
  * Reference only; nothing is computed from it yet. "≥" means the whole
  * category earns nothing that cycle below that amount (LAFISE all-or-nothing).
- * [spending, MCC, LAFISE, BANESCO, BHD, best per the terms]
+ * [spending, MCC, LAFISE, BANESCO, BHD, best per the terms, the tracker's category for it (v1.1.70)]
  */
 const CASHBACK_MATRIX = [
-  ['Supermarkets', '5411', '—', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'BANESCO'],
-  ['Pharmacies', '—', '—', '—', '5%', 'BHD'],
-  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO'],
-  ['Restaurants', '5812', '10% if ≥ RD$5,000 · cap RD$1,000', '—', '5%', 'LAFISE once the cycle reaches RD$5,000; otherwise BHD'],
-  ['Fast food', '5814', '10% if ≥ RD$2,000 · cap RD$1,000', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$2,000; otherwise BANESCO'],
-  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)'],
-  ['Telecommunications', '4814, 4899', '10% if ≥ RD$3,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)'],
-  ['Taxi apps (Uber, DiDi)', '4121', '10% if ≥ RD$3,000 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)'],
-  ['Salons & barbershops', '7230', '10% if ≥ RD$1,500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$1,500; otherwise BANESCO'],
-  ['Gyms', '7997', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (only if the gym takes cards)'],
-  ['Streaming', '5815, 5968', '10% if ≥ US$10 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Couriers', '4215', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO'],
-  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO'],
-  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD'],
-  ['Everything else (vet, clothing, Amazon…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)']
+  ['Supermarkets', '5411', '—', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Pharmacies', '—', '—', '—', '5%', 'BHD', 'Health & pharmacy'],
+  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO', 'Utilities'],
+  ['Restaurants', '5812', '10% if ≥ RD$5,000 · cap RD$1,000', '—', '5%', 'LAFISE once the cycle reaches RD$5,000; otherwise BHD', 'Restaurants & cafés'],
+  ['Fast food', '5814', '10% if ≥ RD$2,000 · cap RD$1,000', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$2,000; otherwise BANESCO', 'Restaurants & cafés'],
+  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)', 'Fuel & vehicle'],
+  ['Telecommunications', '4814, 4899', '10% if ≥ RD$3,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)', 'Phone & internet'],
+  ['Taxi apps (Uber, DiDi)', '4121', '10% if ≥ RD$3,000 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)', 'Ride apps & taxis'],
+  ['Salons & barbershops', '7230', '10% if ≥ RD$1,500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$1,500; otherwise BANESCO', 'Personal care'],
+  ['Gyms', '7997', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (only if the gym takes cards)', 'Gym'],
+  ['Streaming', '5815, 5968', '10% if ≥ US$10 · cap RD$500', '—', 'Stars', 'LAFISE', 'Subscriptions'],
+  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Leisure & going out'],
+  ['Couriers', '4215', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Shopping & home'],
+  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO', 'Personal care'],
+  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD', 'Shopping & home'],
+  ['Everything else (vet, clothing, Amazon…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)', 'Pets, Shopping & home and the rest']
 ];
 const CASHBACK_NOTES = [
   'LAFISE 10/10 — all or nothing per category: below the minimum in a billing cycle that category earns RD$0. ' +
@@ -5212,6 +5461,18 @@ const CASHBACK_NOTES = [
     'Only purchases with the credit card count (the Visa Débito Intl earns nothing).',
   'All three programs pay by the merchant\'s MCC, which bank emails don\'t include — the tracker\'s categories are an approximation. ' +
     'Cashback arrives as a statement credit, never by email.'
+];
+
+/**
+ * v1.1.70: "Money that moves but isn't spent" — what the Dashboard leaves out of spending, by kind, for the month.
+ * [label, SUMIFS criteria on Transactions (L = Type, F = Category), note]. Amounts shown as positive.
+ */
+const DASH_MOVEMENTS = [
+  ['💳 Credit card payments', 'Transactions!$L:$L,"Card Payment"', 'each purchase already counted'],
+  ['🔁 Between your accounts', 'Transactions!$L:$L,"Transfer",Transactions!$F:$F,"' + EXCLUDE_CATEGORY + '"', 'sent to yourself'],
+  ['📈 Investments & savings', 'Transactions!$F:$F,"' + INVESTMENT_CATEGORY + '"', 'deposits to your broker'],
+  ['📥 Money received', 'Transactions!$L:$L,"Incoming",Transactions!$F:$F,"<>' + EXCLUDE_CATEGORY + '"', 'from others'],
+  ['🚫 Purchases left out', 'Transactions!$L:$L,"Transaction",Transactions!$F:$F,"' + EXCLUDE_CATEGORY + '"', 'Uber holds, Exclude by hand']
 ];
 
 const DASH_THEME = {
@@ -5285,13 +5546,35 @@ function resetDashboardSheet(sheet) {
 function categoriesOnlyInTransactions(named) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  const known = new Set(named.map(c => String(c).trim().toUpperCase()).concat([EXCLUDE_CATEGORY.toUpperCase()]));
+  const known = new Set(named.map(c => String(c).trim().toUpperCase())
+    .concat([EXCLUDE_CATEGORY.toUpperCase(), INVESTMENT_CATEGORY.toUpperCase()]));   // v1.1.70: never spending rows
   const out = [];
   sheet.getDataRange().getValues().slice(1).forEach(r => {
     const c = String(r[TX_COL.CATEGORY] === null || r[TX_COL.CATEGORY] === undefined ? '' : r[TX_COL.CATEGORY]).trim();
     if (c && !known.has(c.toUpperCase())) { known.add(c.toUpperCase()); out.push(c); }
   });
   return out.sort();
+}
+
+/**
+ * v1.1.70: the Dashboard's category rows, by group — each group's row (the subtotal of its categories) followed by its
+ * categories: [{group, cats}] and [{category, group}]. A category of your own goes under Other, before Unclassified.
+ * A group with no category is left out. Pure.
+ */
+function dashboardLines(categories) {
+  const byGroup = {};
+  categories.forEach(c => { const g = categoryGroup(c); (byGroup[g] = byGroup[g] || []).push(c); });
+  if (byGroup.Other && byGroup.Other.indexOf(FALLBACK_CATEGORY) !== -1) {
+    byGroup.Other = byGroup.Other.filter(c => c !== FALLBACK_CATEGORY).concat([FALLBACK_CATEGORY]);
+  }
+  const lines = [];
+  CATEGORY_GROUPS.forEach(g => {
+    const cats = byGroup[g] || [];
+    if (!cats.length) return;
+    lines.push({ group: g, cats: cats.length });
+    cats.forEach(c => lines.push({ category: c, group: g }));
+  });
+  return lines;
 }
 
 function buildOrRefreshDashboard() {
@@ -5317,7 +5600,8 @@ function buildOrRefreshDashboard() {
   const named = getCategories().concat(userEmail ? getCustomCategoryNames(userEmail) : []);
   const categories = named.concat(categoriesOnlyInTransactions(named));   // v1.1.62
   const banks = Object.keys(BANK_PATTERNS).filter(b => !(config && config.banksToTrack) || config.banksToTrack[b]);
-  const n = categories.length;
+  const lines = dashboardLines(categories);                         // v1.1.70: groups, each followed by its categories
+  const n = lines.length;
   const put = (range, v) => (typeof v === 'string' && v.charAt(0) === '=') ? range.setFormula(v) : range.setValue(v);
   const border = SpreadsheetApp.BorderStyle;
 
@@ -5329,7 +5613,9 @@ function buildOrRefreshDashboard() {
   R.income = 12; R.netDop = 19;                                   // right block: 12..19 (v1.1.59: + other deductions)
   R.fvHead = 21; R.fvFirst = 22;                                  // 22..24
   R.bankHead = 26; R.bankFirst = 27; R.bankLast = R.bankFirst + banks.length - 1;
-  R.monthsHead = Math.max(R.total, R.bankLast) + 2;
+  R.moveHead = Math.max(R.bankLast, R.bankHead) + 2; R.moveFirst = R.moveHead + 1;   // v1.1.70: money that moves
+  R.moveLast = R.moveFirst + DASH_MOVEMENTS.length - 1;
+  R.monthsHead = Math.max(R.total, R.moveLast) + 2;
   R.monthsCols = R.monthsHead + 1; R.monthsFirst = R.monthsCols + 1; R.monthsLast = R.monthsFirst + 11;
   R.gridHead = R.monthsLast + 2; R.gridCols = R.gridHead + 1; R.gridFirst = R.gridCols + 1;
   R.gridLastCat = R.gridFirst + n - 1; R.gridTransfers = R.gridLastCat + 1; R.gridTotal = R.gridTransfers + 1;
@@ -5370,7 +5656,8 @@ function buildOrRefreshDashboard() {
   sheet.setColumnWidth(1, 18);
   // v1.1.24: column B fits its longest label. autoResizeColumns() can't be used
   // here — merged section titles and notes anchored in B would stretch it.
-  const longestB = Math.max.apply(null, categories.map(c => getCategoryWithIcon(c).length).concat([28]));
+  const lineLabel = x => x.category ? '      ' + getCategoryWithIcon(x.category) : x.group.toUpperCase();   // v1.1.70
+  const longestB = Math.max.apply(null, lines.map(x => lineLabel(x).length).concat([28]));
   sheet.setColumnWidth(2, Math.min(380, Math.max(230, Math.round(longestB * 7.2) + 34)));
   for (let c = 3; c <= 14; c++) sheet.setColumnWidth(c, 86);
   sheet.setColumnWidth(15, 104);
@@ -5466,25 +5753,34 @@ function buildOrRefreshDashboard() {
   // ---- 11+ left: where the money went
   section(R.sec1, 2, 8, `="Where the money went  ·  " & TEXT(${PERIOD},"mmmm yyyy")`);
   tableHead(R.head1, 2, ['Category', 'This month', 'Share', '', '', 'Monthly avg', 'Type']);
-  const leftCount = n + 2;                                          // categories + transfers + total
-  const leftRows = categories.map((cat, i) => ({ label: getCategoryWithIcon(cat), g: R.gridFirst + i,
-    type: FIXED_CATEGORY_NAMES.indexOf(cat) !== -1 ? 'Fixed' : 'Variable', color: T.accent }));
-  leftRows.push({ label: '↔️ Transfers (uncategorized)', g: R.gridTransfers, type: '—', color: T.grey });
-  const barMax = `MAX(MAX($C$${R.catFirst}:$C$${R.transfers}),1)`;
+  const leftCount = n + 2;                                          // groups and categories + transfers + total
+  // v1.1.70: each group's row (bold, its subtotal) before its categories; the Type column is empty on a group row,
+  // so "Subtotal fixed / variable" (SUMPRODUCT over it) counts each category once
+  const leftRows = lines.map((x, i) => ({ label: lineLabel(x), g: R.gridFirst + i, isGroup: !x.category,
+    type: x.category ? (isFixedCategory(x.category) ? 'Fixed' : 'Variable') : '', color: x.category ? T.accent : T.navy }));
+  leftRows.push({ label: '↔️ Transfers (uncategorized)', g: R.gridTransfers, isGroup: true, type: '—', color: T.grey });
+  // bars: groups (and the transfers) against the largest group, categories against the largest category
+  const cellsOf = group => leftRows.map((x, i) => x.isGroup === group ? 'C' + (R.catFirst + i) : null).filter(c => c);
+  const barMax = group => `MAX(MAX(${cellsOf(group).join(',')}),1)`;
   sheet.getRange(R.catFirst, 2, leftRows.length, 1).setValues(leftRows.map(x => [x.label]));
   sheet.getRange(R.catFirst, 3, leftRows.length, 2).setFormulas(leftRows.map((x, i) => {
     const r = R.catFirst + i;
     return [`=INDEX($C$${x.g}:$N$${x.g},1,${MONTH_NUM})`, `=IFERROR(C${r}/$C$${R.total},0)`];
   }));
   sheet.getRange(R.catFirst, 5, leftRows.length, 1).setFormulas(leftRows.map((x, i) =>
-    [`=SPARKLINE(C${R.catFirst + i},{"charttype","bar";"max",${barMax};"color1","${x.color}"})`]));
+    [`=SPARKLINE(C${R.catFirst + i},{"charttype","bar";"max",${barMax(x.isGroup)};"color1","${x.color}"})`]));
   sheet.getRange(R.catFirst, 7, leftRows.length, 1).setFormulas(leftRows.map(x =>
     [`=IFERROR(AVERAGEIF($C$${x.g}:$N$${x.g},">0"),0)`]));
   sheet.getRange(R.catFirst, 8, leftRows.length, 1).setValues(leftRows.map(x => [x.type]));
   sheet.getRange(R.total, 2).setValue('TOTAL');
-  sheet.getRange(R.total, 3, 1, 2).setFormulas([[`=SUM(C${R.catFirst}:C${R.transfers})`, `=IF(C${R.total}>0,1,0)`]]);
+  // v1.1.70: the grid's TOTAL for the month (groups + transfers) — a SUM of this column would count each group twice
+  sheet.getRange(R.total, 3, 1, 2).setFormulas([[`=INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM})`, `=IF(C${R.total}>0,1,0)`]]);
   sheet.getRange(R.total, 7).setFormula(`=IFERROR(AVERAGEIF($C$${gt}:$N$${gt},">0"),0)`);
   stripe(R.catFirst, 2, leftRows.length, 7);
+  leftRows.forEach((x, i) => {
+    if (x.isGroup && x.type !== '—') sheet.getRange(R.catFirst + i, 2, 1, 7).setFontWeight('bold').setBackground(T.soft)
+      .setBorder(true, null, null, null, null, null, T.line, border.SOLID);
+  });
   sheet.getRange(R.head1, 5, leftCount + 1, 2).mergeAcross();
   sheet.getRange(R.catFirst, 3, leftCount, 1).setNumberFormat(moneyFmt);
   sheet.getRange(R.catFirst, 7, leftCount, 1).setNumberFormat(moneyFmt);
@@ -5544,12 +5840,25 @@ function buildOrRefreshDashboard() {
     banks.forEach((bank, i) => {
       const r = R.bankFirst + i;
       sheet.getRange(r, 10).setValue(bank).setFontWeight('bold');
-      sheet.getRange(r, 11).setFormula('=' + fxSum(`Transactions!$B:$B,"${bank}",${spend},Transactions!$F:$F,"<>Exclude",${periodCrit}`))
+      sheet.getRange(r, 11).setFormula('=' + fxSum(`Transactions!$B:$B,"${bank}",${spend},Transactions!$F:$F,"<>Exclude",` +
+        `Transactions!$F:$F,"<>${INVESTMENT_CATEGORY}",${periodCrit}`))   // v1.1.70: nor what went to investments
         .setNumberFormat(moneyFmt).setHorizontalAlignment('right');
       sheet.getRange(r, 13).setFormula(`=SPARKLINE(K${r},{"charttype","bar";"max",${bankBarMax};"color1","${T.blue}"})`);
     });
     stripe(R.bankFirst, 10, banks.length, 6);
   }
+
+  // ---- right: money that moves but isn't spent (v1.1.70) — never in the totals above, shown so each can be checked
+  section(R.moveHead, 10, 15, `="Not spending  ·  " & TEXT(${PERIOD},"mmm yyyy")`);
+  sheet.getRange(R.moveFirst, 10, DASH_MOVEMENTS.length, 2).mergeAcross();
+  sheet.getRange(R.moveFirst, 13, DASH_MOVEMENTS.length, 3).mergeAcross();
+  DASH_MOVEMENTS.forEach(([lab, crit, note], i) => {
+    const r = R.moveFirst + i;
+    sheet.getRange(r, 10).setValue(lab);
+    sheet.getRange(r, 12).setFormula('=ABS(' + fxSum(`${crit},${periodCrit}`) + ')').setNumberFormat(moneyFmt).setHorizontalAlignment('right');
+    sheet.getRange(r, 13).setValue(note).setFontSize(8).setFontColor(T.muted);
+  });
+  stripe(R.moveFirst, 10, DASH_MOVEMENTS.length, 6);
 
   // ---- month by month (+ chart)
   section(R.monthsHead, 2, 15, '="Month by month  ·  " & $F$4');
@@ -5591,19 +5900,23 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.gridCols, 3, 1, 13).setHorizontalAlignment('center');
   const monthCrit = L => `Transactions!$A:$A,">="&${L}$${R.gridCols},Transactions!$A:$A,"<"&EDATE(${L}$${R.gridCols},1)`;
 
-  sheet.getRange(R.gridFirst, 2, n, 1).setValues(categories.map(c => [c]));   // PLAIN names — SUMIFS criteria
-  sheet.getRange(R.gridFirst, 3, n, 12).setFormulas(categories.map((cat, i) => {
-    const base = `Transactions!$F:$F,$B${R.gridFirst + i},${spend}`;
+  // PLAIN category names — SUMIFS criteria. v1.1.70: a group's row (its name in capitals) adds up the categories under it
+  sheet.getRange(R.gridFirst, 2, n, 1).setValues(lines.map(x => [x.category || x.group.toUpperCase()]));
+  sheet.getRange(R.gridFirst, 3, n, 12).setFormulas(lines.map((x, i) => {
+    const row = R.gridFirst + i;
+    if (!x.category) return MONTHS12.map(m => `=SUM(${colL(3 + m)}${row + 1}:${colL(3 + m)}${row + x.cats})`);
+    const base = `Transactions!$F:$F,$B${row},${spend}`;
     return MONTHS12.map(m => '=' + fxSum(base + ',' + monthCrit(colL(3 + m))));
   }));
+  const groupRows = lines.map((x, i) => x.category ? null : R.gridFirst + i).filter(r => r);
   sheet.getRange(R.gridTransfers, 2).setValue('Transfers (uncategorized)');
   sheet.getRange(R.gridTransfers, 3, 1, 12).setFormulas([MONTHS12.map(m =>
     '=' + fxSum(`Transactions!$L:$L,"Transfer",Transactions!$F:$F,"",` + monthCrit(colL(3 + m))))]);
   sheet.getRange(R.gridFirst, 15, n + 1, 1).setFormulas(Array.from({ length: n + 1 }, (_, i) =>
     [`=SUM(C${R.gridFirst + i}:N${R.gridFirst + i})`]));
   sheet.getRange(R.gridTotal, 2).setValue('TOTAL');
-  sheet.getRange(R.gridTotal, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) =>
-    `=SUM(${colL(3 + k)}${R.gridFirst}:${colL(3 + k)}${R.gridTransfers})`)]);
+  sheet.getRange(R.gridTotal, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) =>   // v1.1.70: groups + transfers
+    `=SUM(${groupRows.concat([R.gridTransfers]).map(r => colL(3 + k) + r).join(',')})`)]);
   sheet.getRange(R.gridPct, 2).setValue('% of net income');
   sheet.getRange(R.gridPct, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) => k < 12
     ? `=IFERROR(${colL(3 + k)}${gt}/${NET_DOP},0)`
@@ -5621,6 +5934,7 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.gridFirst, 3, n + 1, 13).setFontSize(9);
   sheet.getRange(R.gridFirst, 15, n + 1, 1).setFontWeight('bold');
   sheet.getRange(R.gridTransfers, 2, 1, 14).setFontStyle('italic');
+  groupRows.forEach(r => sheet.getRange(r, 2, 1, 14).setFontWeight('bold').setBackground(T.soft));   // v1.1.70
   totalRow(R.gridTotal, 2, 14);
   sheet.getRange(R.gridPct, 2, 3, 14).setFontSize(8).setFontColor(T.muted);
 
@@ -5653,11 +5967,11 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.mxCols, 10, mxRows, 6).mergeAcross();
   CASHBACK_MATRIX.forEach((row, i) => {
     const r = R.mxFirst + i;
-    [[2, row[0]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]
+    [[2, row[0] + '\n→ ' + row[6]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]   // v1.1.70: + category
       .forEach(([c, v]) => sheet.getRange(r, c).setValue(v));
   });
   stripe(R.mxFirst, 2, CASHBACK_MATRIX.length, 14);
-  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9);
+  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
   sheet.getRange(R.mxFirst, 3, CASHBACK_MATRIX.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
   sheet.getRange(R.mxFirst, 4, CASHBACK_MATRIX.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
   sheet.getRange(R.mxFirst, 10, CASHBACK_MATRIX.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
@@ -5681,8 +5995,9 @@ function buildOrRefreshDashboard() {
     cf().whenTextEqualTo('Logged').setFontColor(T.good).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
     cf().whenTextEqualTo('No data').setFontColor(T.warn).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
     cf().whenTextEqualTo('Upcoming').setFontColor(T.grey).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
+    // v1.1.70: the categories only — a group's subtotal would turn every category pale next to it
     cf().setGradientMinpoint('#FFFFFF').setGradientMaxpoint(T.heat)
-      .setRanges([rng(R.gridFirst, 3, n, 12)]).build(),
+      .setRanges(groupRows.map(r => rng(r + 1, 3, lines[r - R.gridFirst].cats, 12))).build(),
     // v1.1.22: in "Which card for what", tint the cell of the card named first in the pick
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},6)="LAFISE"`).setBackground('#E2EFDA')
       .setRanges([rng(R.mxFirst, 4, CASHBACK_MATRIX.length, 1)]).build(),
@@ -5701,7 +6016,7 @@ function buildOrRefreshDashboard() {
   formatDataSheets();                    // v1.1.24; v1.1.28: styles too
   ensureSheetOrder();
   ss.setActiveSheet(sheet);              // LAST — creating the Categories sheet changes the active sheet
-  Logger.log("✅ Dashboard built/refreshed (" + n + " categories, " + banks.length + " banks, year " + year + ")");
+  Logger.log("✅ Dashboard built/refreshed (" + categories.length + " categories, " + banks.length + " banks, year " + year + ")");
   return sheet;
 }
 
@@ -5726,36 +6041,42 @@ function buildOrRefreshCategoriesSheet(userEmail) {
   sheet.getRange("A2").setValue(
     "Auto-generated from DEFAULT_CATEGORIES (02_categorizer.gs) and your Custom Rules every time the Dashboard rebuilds — not hand-edited.")
     .setFontStyle("italic").setFontColor("#808080").setFontSize(9);
-  sheet.getRange(4, 1, 1, 4).setValues([["Icon", "Category", "Type", "Keywords"]])
+  // v1.1.70: + Group
+  sheet.getRange(4, 1, 1, 5).setValues([["Icon", "Category", "Group", "Type", "Keywords"]])
     .setFontWeight("bold").setBackground("#1F3864").setFontColor("#FFFFFF");
 
   const custom = userEmail ? getUserCustomRules(userEmail) : {};
+  const rules = name => custom[name] ? "Custom Rules: " + custom[name].join(', ') : '';
   const rows = getCategories().map(cat => {
     const data = DEFAULT_CATEGORIES[cat];
-    const extra = custom[cat] ? "   |   Custom Rules: " + custom[cat].join(', ') : "";
-    return [data.icon, cat, FIXED_CATEGORY_NAMES.includes(cat) ? 'Fixed' : 'Variable',
-            (data.keywords || []).join(', ') + extra];
+    const words = (data.keywords || []).join(', ') ||
+      (cat === FALLBACK_CATEGORY ? 'Anything no keyword or Custom Rule matches' : 'No keywords: chosen by hand or with a Custom Rule');
+    return [data.icon, cat, data.group, data.fixed ? 'Fixed' : 'Variable', words + (custom[cat] ? "   |   " + rules(cat) : '')];
   });
-  // v1.1.23: "Exclude" is always listed — Card Payment rows get it automatically
-  const excludeKey = Object.keys(custom).find(c => c.toUpperCase() === EXCLUDE_CATEGORY.toUpperCase());
-  rows.push(['🚫', EXCLUDE_CATEGORY, 'Excluded from totals', 'Automatic for every Card Payment' +
-    (excludeKey ? "   |   Custom Rules: " + custom[excludeKey].join(', ') : '')]);
-  Object.keys(custom).filter(c => !DEFAULT_CATEGORIES[c] && c !== excludeKey).forEach(c => {
-    rows.push(['📌', c, 'Variable', "Custom Rules: " + custom[c].join(', ')]);
+  // v1.1.23: "Exclude" is always listed — Card Payment rows get it automatically. v1.1.70: Investments & savings too.
+  const reservedKey = name => Object.keys(custom).find(c => c.toUpperCase() === name.toUpperCase());
+  const excludeKey = reservedKey(EXCLUDE_CATEGORY), investKey = reservedKey(INVESTMENT_CATEGORY);
+  rows.push(['🚫', EXCLUDE_CATEGORY, '—', 'Not spending', 'Automatic for every Card Payment and transfer between your accounts' +
+    (excludeKey ? "   |   " + rules(excludeKey) : '')]);
+  rows.push(['📈', INVESTMENT_CATEGORY, '—', 'Not spending', "Automatic for transfers to a broker (Investment Accounts' deposit keyword)" +
+    (investKey ? "   |   " + rules(investKey) : '')]);
+  Object.keys(custom).filter(c => !DEFAULT_CATEGORIES[c] && c !== excludeKey && c !== investKey).forEach(c => {
+    rows.push(['📌', c, categoryGroup(c), 'Variable', rules(c)]);
   });
 
-  sheet.getRange(5, 1, rows.length, 4).setValues(rows);
+  sheet.getRange(5, 1, rows.length, 5).setValues(rows);
   sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment("center");
   // v1.1.28: each category in the colours its chip has in the data sheets
   const colours = {};
   categoryPalette(Object.keys(custom)).forEach(p => { colours[p.name] = p; });
   const chip = rows.map(r => colours[r[1]] || { bg: '#FFFFFF', fg: '#1F2937' });
   sheet.getRange(5, 2, rows.length, 1).setBackgrounds(chip.map(c => [c.bg])).setFontColors(chip.map(c => [c.fg])).setFontWeight("bold");
-  sheet.getRange(5, 4, rows.length, 1).setFontSize(9).setFontStyle("italic").setWrap(true);
+  sheet.getRange(5, 5, rows.length, 1).setFontSize(9).setFontStyle("italic").setWrap(true);
   sheet.setColumnWidth(1, 50);
   sheet.setColumnWidth(2, 260);
-  sheet.setColumnWidth(3, 150);
-  sheet.setColumnWidth(4, 600);
+  sheet.setColumnWidth(3, 120);
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 560);
   sheet.setFrozenRows(4);
   sheet.setHiddenGridlines(true);
   sheet.setTabColor(TAB_COLORS["Categories"]);
@@ -6130,7 +6451,7 @@ function reconcileRideReceipts(now, since) {
  * link to the spreadsheet. Each section can be turned on or off in the wizard.
  *
  * Numbers follow the Dashboard's rules exactly: spending = Transaction and
- * Transfer rows that have a category other than "Exclude" (Card Payment and
+ * Transfer rows that have a category other than "Exclude" or Investments & savings (Card Payment and
  * Cashback never count; reversals are negative rows and subtract), converted
  * to DOP-equivalent at the Dashboard's exchange rates. Transfers without a
  * category are listed on their own. Recommendations are fixed rules — no
@@ -6145,8 +6466,9 @@ const SUMMARY_SECTIONS_DEFAULT = { totals: true, vsAverage: true, transfers: tru
 const SUMMARY_MIN_HISTORY_DAYS = 7;
 // v1.1.26: bills and fixed costs are left out of "day-to-day" comparisons — a rent
 // or electricity payment would otherwise make any day look like an alarming spike.
-const SUMMARY_BILL_CATEGORIES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions', 'Electricity'];
-function isBillCategory(cat) { return SUMMARY_BILL_CATEGORIES.indexOf(cat) !== -1; }
+// v1.1.70: the fixed categories of DEFAULT_CATEGORIES (02_categorizer.gs) — one list with the Dashboard's, which had
+// drifted from this one (Electricity was a bill here but variable there)
+function isBillCategory(cat) { return isFixedCategory(cat); }
 const SUMMARY_ABOVE_USUAL = 1.05;   // v1.1.26: only flag a category once it's 5%+ over its usual month
 // v1.1.64: yesterday is compared with a "typical day" — the median of the day-to-day totals of the last 60 days (days
 // with nothing spent count as RD$0) — instead of the 30-day average, which one tank of fuel or one big purchase turned
@@ -6264,7 +6586,7 @@ function computeDailySummary(values, opts) {
     const cat = String(r[TX_COL.CATEGORY] || '');
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     // v1.1.51: money received with a category reduces that category (its amount is negative)
-    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && isSpendingCategory(cat);   // v1.1.70
     const open = type === 'Transfer' && cat === '';
     const month = key.slice(0, 7);
     const item = { merchant: String(r[TX_COL.MERCHANT] || ''), bank: String(r[TX_COL.BANK] || ''), category: cat, amount: amt, type: type };
@@ -6319,7 +6641,7 @@ function computeDailySummary(values, opts) {
   // left (a rent paid on day 1 made day 5 project the month at 6.2 rents). Bills of a usual month not paid yet are
   // added, so the pace is not low before rent day. Only day-to-day spending is extrapolated.
   s.mtdDayToDay = s.mtd - s.mtdFixed;
-  s.pendingFixed = SUMMARY_BILL_CATEGORIES
+  s.pendingFixed = fixedCategoryNames()
     .reduce((sum, c) => sum + Math.max(0, (s.usualByCategory[c] || 0) - (s.mtdByCategory[c] || 0)), 0);
   s.projected = s.dayOfMonth ? s.mtdFixed + s.pendingFixed + s.mtdDayToDay / s.dayOfMonth * s.daysInMonth : 0;
   s.mtdPct = s.netIncomeDop > 0 ? s.mtd / s.netIncomeDop : null;
@@ -6902,12 +7224,12 @@ function sendDailySummaryNow() {
  * so the month's last day is included.
  *
  * Same rules as the Dashboard and the daily email: spending = Transaction and
- * Transfer rows with a category other than "Exclude", in DOP-equivalent at
+ * Transfer rows with a category other than "Exclude" (or Investments & savings, v1.1.70), in DOP-equivalent at
  * the Dashboard's rates. Uses the email kit in 05_dailySummary.gs.
  *
  * Menu "🗓️ Send Monthly Summary Now" sends the last complete month on demand.
  */
-const SUMMARY_SUBSCRIPTIONS_CATEGORY = 'Streaming & Subscriptions';
+const SUMMARY_SUBSCRIPTIONS_CATEGORY = 'Subscriptions';   // v1.1.70 (was 'Streaming & Subscriptions')
 
 /** Everything the monthly email needs. Pure — see tests/. opts as computeDailySummary() plus optional `month` (a Date in it). */
 function computeMonthlySummary(values, opts) {
@@ -6947,7 +7269,7 @@ function computeMonthlySummary(values, opts) {
     const amt = toDop(r[TX_COL.AMOUNT], r[TX_COL.CURRENCY]);
     const merchant = String(r[TX_COL.MERCHANT] || '');
     const bank = String(r[TX_COL.BANK] || '');
-    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && cat !== '' && cat !== EXCLUDE_CATEGORY;   // v1.1.51
+    const spend = (type === 'Transaction' || type === 'Transfer' || type === 'Incoming') && isSpendingCategory(cat);   // v1.1.51; v1.1.70: nor Investments & savings
     if (spend) m.monthTotals[mk] = (m.monthTotals[mk] || 0) + amt;
 
     if (mk === monthKey) {
@@ -6959,7 +7281,7 @@ function computeMonthlySummary(values, opts) {
         m.byBank[bank] = (m.byBank[bank] || 0) + amt;
         const g = m.merchants[merchant] || (m.merchants[merchant] = { merchant: merchant, total: 0, count: 0 });
         g.total += amt; g.count++;
-        if (FIXED_CATEGORY_NAMES.indexOf(cat) !== -1) m.fixed += amt; else m.variable += amt;
+        if (isFixedCategory(cat)) m.fixed += amt; else m.variable += amt;   // v1.1.70: one list of fixed categories
         if (amt > 0 && type === 'Transaction') {
           m.purchases++;
           if (!m.biggest || amt > m.biggest.amount) m.biggest = { merchant: merchant, amount: amt, bank: bank, date: key };
@@ -6980,7 +7302,7 @@ function computeMonthlySummary(values, opts) {
           }
         }
       }
-      if (type === 'Transfer' && cat !== EXCLUDE_CATEGORY) { m.transfersOut += amt; m.transfersCount++; }
+      if (type === 'Transfer' && !isReservedCategory(cat)) { m.transfersOut += amt; m.transfersCount++; }
       if (type === 'Transfer' && cat === '') { m.openCount++; m.openTotal += amt; }
       if (merchant === GARBLED_PLACEHOLDER) m.placeholders++;
       if (merchant === REVERSAL_UNMATCHED) m.unmatchedReversals++;
@@ -7006,7 +7328,7 @@ function computeMonthlySummary(values, opts) {
   m.categories = Object.keys(m.byCategory).map(c => ({
     cat: c, amount: m.byCategory[c], share: m.spent > 0 ? m.byCategory[c] / m.spent : 0,
     prev: m.prevByCategory[c] || 0, usual: m.usualMonths ? (m.usualCatSums[c] || 0) / m.usualMonths : 0,
-    fixed: FIXED_CATEGORY_NAMES.indexOf(c) !== -1
+    fixed: isFixedCategory(c)
   })).sort((a, b) => b.amount - a.amount);
   m.topMerchants = Object.keys(m.merchants).map(k => m.merchants[k]).sort((a, b) => b.total - a.total).slice(0, 8);
   m.subscriptions = Object.keys(m.subs).map(k => Object.assign({ recurring: !!m.prevSubs[k] }, m.subs[k]))
@@ -7526,6 +7848,18 @@ function readInvestmentAccounts() {
   return sheet.getRange(2, 1, last - 1, 3).getValues()
     .filter(r => String(r[0]).trim())
     .map(r => ({ account: String(r[0]).trim(), kind: String(r[1]).trim(), keyword: String(r[2]).trim() }));
+}
+
+/**
+ * v1.1.70: the deposit keywords of Investment Accounts — a transfer whose beneficiary contains one is Investments &
+ * savings, not spending (computeRecategorization). Reads the sheet without creating it: before it exists, the
+ * defaults (HAPI's collection account).
+ */
+function investmentDepositKeywords() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_ACCOUNTS_SHEET);
+  const rows = sheet && sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues()
+    : DEFAULT_INVESTMENT_ACCOUNTS;
+  return rows.filter(r => String(r[0]).trim()).map(r => String(r[2] === null || r[2] === undefined ? '' : r[2]).trim()).filter(k => k);
 }
 
 /** Bank transfers (Transactions) whose beneficiary contains an account's deposit keyword → Deposit events. Pure. */
@@ -9047,9 +9381,22 @@ function startHereStatus(now) {
       .filter(r => r[TX_COL.DATE] && r[TX_COL.TYPE] === 'Incoming' && !String(r[TX_COL.CATEGORY] || '').trim()).length;
     if (received) {
       add('Your data', 'incoming', received + ' incoming transfer(s) without a category', 'warn',
-        'Give each one the category it pays back (a roommate\'s share of the rent → Rent) and it is taken off what you spent there; ' +
+        'Give each one the category it pays back (a roommate\'s share of the rent → Rent & housing) and it is taken off what you spent there; ' +
         'Exclude for money that pays nothing back. A Custom Rule on the sender\'s name does it by itself.',
         open('Open Incoming Transfers', 'Incoming Transfers'));
+    }
+  }
+
+  // v1.1.70: Custom Rules still on a category name that merged several kinds of spending (one-to-one names were renamed)
+  if (configured) {
+    let rules = {};
+    try { rules = getUserCustomRules(config.email); } catch (error) { rules = {}; }
+    const old = Object.keys(rules).filter(isMergedLegacyCategory);
+    if (old.length) {
+      add('Your data', 'oldCategories', 'Custom Rules with a category from before v1.1.70', 'warn',
+        'These names were split into several categories: ' + old.map(c => '"' + c + '" → ' +
+          LEGACY_CATEGORIES[c].within.join(' or ')).join('; ') + '. Pick the new one in the Category column of each rule.',
+        open('Open Custom Rules', 'Custom Rules'));
     }
   }
 

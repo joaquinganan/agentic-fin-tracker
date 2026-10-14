@@ -88,13 +88,13 @@ rebuilt from it on every run (your **Notes** in `Raw_<BANK>` column G are preser
 
 | Sheet | What it holds |
 |---|---|
-| Dashboard | Month by name (**Current month** follows today) and year, exchange rates with the date they were last edited, KPI cards (net income · spent · remaining · % of income · transfers to review), categories for the month with in-cell bars, income & deductions, fixed vs. variable, spend by bank, month-by-month table + chart, the year as a heat map, credit cards, and "Which card for what" (the LAFISE, BANESCO and BHD cashback programs side by side). Yellow cells are yours; they live in named ranges (`DASH_MONTH`, `DASH_YEAR`, `RATE_USD/EUR/COP`, `RATE_UPDATED`, `DASH_CARDS`) and survive every rebuild. |
+| Dashboard | Month by name (**Current month** follows today) and year, exchange rates with the date they were last edited, KPI cards (net income · spent · remaining · % of income · transfers to review), categories for the month with in-cell bars — each group with its subtotal, its categories below (v1.1.70) — income & deductions, fixed vs. variable, spend by bank, **Not spending** (card payments, between your accounts, investments & savings, money received, purchases left out — v1.1.70), month-by-month table + chart, the year as a heat map, credit cards, and "Which card for what" (the LAFISE, BANESCO and BHD cashback programs side by side). Yellow cells are yours; they live in named ranges (`DASH_MONTH`, `DASH_YEAR`, `RATE_USD/EUR/COP`, `RATE_UPDATED`, `DASH_CARDS`) and survive every rebuild. |
 | Transactions | `Date · Bank · Merchant · Amount · Currency · Category · Description · Email Subject · Timestamp (hidden) · IsCredit · IsCashback (hidden) · Type · MessageId (hidden) · TxRef (hidden — the bank's own transaction id)` |
 | Bank Transfers | Every Type = Transfer row |
 | Raw_<BANK> | Every Type = Transaction row for that bank, plus your Notes |
-| Custom Rules | `UserEmail · Category · Keyword` — checked before the defaults, for any Type. Category **Exclude** leaves a row out of every total (self-transfers). A category that isn't a default one gets its own Dashboard row. |
+| Custom Rules | `UserEmail · Category · Keyword` — checked before the defaults, for any Type. Category **Exclude** leaves a row out of every total (self-transfers); **Investments & savings** too (money put aside). A category that isn't a default one gets its own Dashboard row, under Other. An old one-to-one category name (Rent, Electricity…) is renamed by Recategorize (v1.1.70). |
 | Configuration | Key/value. The Dashboard reads it through named ranges (`CFG_MONTHLY_INCOME`, `CFG_ARS`, `CFG_AFP`, `CFG_TAX_RATE`, `CFG_INCOME_CURRENCY`), so row order no longer matters. |
-| Categories | Auto-generated reference: default keywords + your Custom Rules |
+| Categories | Auto-generated reference: each category with its group, Fixed/Variable, default keywords + your Custom Rules |
 
 **Type:** `Transaction` · `Transfer` · `Card Payment` · `Cashback`. Only Transaction (and any
 row a Custom Rule categorizes) counts as spending; Card Payment and Cashback never do.
@@ -105,12 +105,24 @@ that transaction's own text).
 
 ## 📌 CATEGORIES
 
-11 defaults, evaluated **in this order** (first match wins; order matters —
-e.g. Dining is checked before Vehicle Gas so "BONJOUR TOTAL" isn't gas):
-Rent · Gym + Calisthenics · Telecommunications · Streaming & Subscriptions · Electricity ·
-Groceries + Barbershop · Dining/Delivery + Entertainment + Other (also the fallback) ·
-Vehicle Gas · Health + Vet + Pharmacy · Education · Transportation.
-Fixed: Rent, Gym, Telecommunications, Streaming. Full keyword lists: the **Categories** sheet.
+25 defaults in 8 groups (v1.1.70; ★ = fixed, a bill every month):
+
+| Group | Categories |
+|---|---|
+| Housing | Rent & housing ★ · Utilities ★ · Phone & internet ★ |
+| Food | Groceries · Restaurants & cafés · Delivery |
+| Mobility | Ride apps & taxis · Public transport & parking · Fuel & vehicle |
+| Health & care | Health & pharmacy · Personal care · Pets · Gym ★ |
+| Lifestyle | Subscriptions ★ · Shopping & home · Leisure & going out · Education & books |
+| Travel | Travel (by hand or a Custom Rule) |
+| Bank & debt | Bank fees & taxes · Loan payments ★ · Insurance ★ |
+| Other | Cash · Government & procedures · Payments to people · **Unclassified** (the fallback) |
+
+Keywords are tried in their own order (`CATEGORY_MATCH_ORDER`; first match wins) — e.g. Delivery before Ride apps so
+"UBER EATS" isn't a ride, Restaurants before Fuel so "BONJOUR TOTAL" isn't gas. Transfers get a category only from a
+Custom Rule or by hand, except a bank's tax-and-commission row (Bank fees & taxes), a loan installment (Loan payments)
+and a deposit to a broker in Investment Accounts (Investments & savings, never spending). Full keyword lists: the
+**Categories** sheet.
 
 **Keyword matching rule (v1.1.19):** keywords of 4 letters/digits or fewer (`BAR`, `BUS`,
 `UBER`, `ACH`…) match whole words only; longer ones match anywhere in the text
@@ -243,7 +255,7 @@ HAPI emails a notice for every completed deposit, without the amount: the tracke
 ## Incoming transfers: money paid back to you
 
 Money you receive lands in **Incoming Transfers**, without a category (highlighted). Give it the category it pays back
-— a roommate's share of the rent → *Rent* — and it is taken off what you spent there, on the Dashboard and in the
+— a roommate's share of the rent → *Rent & housing* — and it is taken off what you spent there, on the Dashboard and in the
 summaries; *Exclude* for money that pays nothing back. When the transfer names its sender (LAFISE does), a Custom Rule
 on that name categorizes it by itself. Transfers from your own account are recognized and excluded.
 

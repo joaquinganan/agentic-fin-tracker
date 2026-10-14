@@ -70,14 +70,14 @@ function book(opts) {
 }
 
 test('a run reads the statement PDF (by itself, no Drive) and the LAFISE email; Incoming Transfers lists them; nothing twice', () => {
-  const { h, mock, tx } = book({ rules: [['Rent', 'LUIS ALBERTO']] });
+  const { h, mock, tx } = book({ rules: [['Rent & housing', 'LUIS ALBERTO']] });
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   const incoming = tx().filter(r => r[11] === 'Incoming');
   assert.deepEqual(incoming.map(r => [r[1], r[2], r[3], r[5]]).sort(), [
     ['BANESCO', 'ACH transfer (sender not in the statement)', -2300, ''], ['BANESCO', 'ACH transfer (sender not in the statement)', -6500, ''],
     ['BANESCO', 'Ana Maria Perez Sot', -3000, 'Exclude'], ['BANESCO', 'Intereses', -150.25, ''], ['BANESCO', 'Luis Gomez Diaz', -1200, ''],
     ['BANESCO', 'Transf Recibida Ana Maria Perez Soto', -700, 'Exclude'], ['BANESCO', 'Transf Recibida Maria Lopez Rosa', -1000, ''],
-    ['LAFISE', 'LUIS ALBERTO GOMEZ DIAZ', -4500, 'Rent']].sort(), 'the Custom Rule categorized the LAFISE one');
+    ['LAFISE', 'LUIS ALBERTO GOMEZ DIAZ', -4500, 'Rent & housing']].sort(), 'the Custom Rule categorized the LAFISE one');
   assert.equal(h.ctx.normalizeDateForCompare(incoming.find(r => r[3] === -6500)[0]), '2026-08-17', 'the statement row\'s own date');
   const sheet = mock.ss.getSheetByName('Incoming Transfers');
   assert.ok(sheet, 'Incoming Transfers created');
@@ -91,10 +91,10 @@ test('money received with a category is taken off that category; without one it 
   const h = load();
   const row = (d, type, merchant, amount, category) => { const x = new Array(15).fill(''); x[0] = h.date(2026, 8, d); x[1] = 'BANESCO';
     x[2] = merchant; x[3] = amount; x[4] = 'DOP'; x[5] = category; x[6] = merchant; x[11] = type; return x; };
-  const values = [new Array(15).fill('h'), row(26, 'Transfer', 'PAGO RENTA', 30000, 'Rent'), row(28, 'Incoming', 'ROOMMATE', -15000, 'Rent'),
+  const values = [new Array(15).fill('h'), row(26, 'Transfer', 'PAGO RENTA', 30000, 'Rent & housing'), row(28, 'Incoming', 'ROOMMATE', -15000, 'Rent & housing'),
     row(29, 'Incoming', 'ACH', -9000, ''), row(30, 'Incoming', 'ME', -5000, 'Exclude')];
   const m = h.plain(h.ctx.computeMonthlySummary(values, { today: h.date(2026, 9, 1, 9), rates: { USD: 60, EUR: 64, COP: 0.015 }, netIncomeDop: 80000, cards: [] }));
-  const rent = m.categories.find(c => c.cat === 'Rent');
+  const rent = m.categories.find(c => c.cat === 'Rent & housing');
   assert.equal(rent.amount, 15000, '30,000 paid − 15,000 paid back');
   assert.equal(m.spent, 15000, 'the uncategorized and the excluded ones count nowhere');
 });
@@ -104,12 +104,12 @@ test('recategorizing keeps a row Incoming, your own money Exclude, and a categor
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   const sheet = mock.ss.getSheetByName('Incoming Transfers');
   const at = sheet._rows(8).findIndex(r => r[4] === 6500) + 2;
-  sheet.getRange(at, 4).setValue('Electricity');                      // typed where you review them
+  sheet.getRange(at, 4).setValue('Utilities');                      // typed where you review them
   h.ctx.recategorizeAllTransactions('user@example.com');
   h.ctx.recategorizeAllTransactions('user@example.com');
   const incoming = tx().filter(r => r[3] < 0);
   assert.ok(incoming.every(r => r[11] === 'Incoming'), 'still Incoming');
-  assert.equal(incoming.find(r => r[3] === -6500)[5], 'Electricity', 'your category kept');
+  assert.equal(incoming.find(r => r[3] === -6500)[5], 'Utilities', 'your category kept');
   assert.equal(incoming.find(r => r[3] === -3000)[5], 'Exclude', 'own money stays Exclude');
 });
 

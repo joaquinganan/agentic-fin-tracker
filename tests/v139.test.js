@@ -21,31 +21,31 @@ const row = (h, merchant, category, type, auto) => { const x = new Array(15).fil
 test('recategorize keeps the categories you set by hand (reported: it wiped them)', () => {
   const { h, mock, tx } = book();
   mock.ss.getSheetByName('Transactions').getRange(2, 1, 4, 15).setValues([
-    row(h, 'JUAN PEREZ', 'Rent', 'Transfer'),                                              // before v1.1.39: a transfer you categorised
-    row(h, 'SUPERMERCADO BRAVO', 'Health + Vet + Pharmacy', 'Transaction', 'Groceries + Barbershop'),   // you changed the tracker's choice
-    row(h, 'FARMACIA CAROL', 'Groceries + Barbershop', 'Transaction'),                    // before v1.1.39, a purchase: re-evaluated
-    row(h, 'SUPERMERCADO NACIONAL', '', 'Transaction', 'Health + Vet + Pharmacy')]);     // you cleared it: the automatic one comes back
+    row(h, 'JUAN PEREZ', 'Rent & housing', 'Transfer'),                                              // before v1.1.39: a transfer you categorised
+    row(h, 'SUPERMERCADO BRAVO', 'Health & pharmacy', 'Transaction', 'Groceries'),   // you changed the tracker's choice
+    row(h, 'FARMACIA CAROL', 'Groceries', 'Transaction'),                    // before v1.1.39, a purchase: re-evaluated
+    row(h, 'SUPERMERCADO NACIONAL', '', 'Transaction', 'Health & pharmacy')]);     // you cleared it: the automatic one comes back
   h.ctx.recategorizeAllTransactions('user@example.com');
   const by = Object.fromEntries(tx().map(r => [r[2], [r[5], r[14]]]));
-  assert.deepEqual(by['JUAN PEREZ'], ['Rent', '(none)'], 'kept; the tracker\'s own choice (none) recorded');
-  assert.deepEqual(by['SUPERMERCADO BRAVO'], ['Health + Vet + Pharmacy', 'Groceries + Barbershop'], 'kept');
-  assert.deepEqual(by['FARMACIA CAROL'], ['Health + Vet + Pharmacy', 'Health + Vet + Pharmacy']);
-  assert.deepEqual(by['SUPERMERCADO NACIONAL'], ['Groceries + Barbershop', 'Groceries + Barbershop']);
+  assert.deepEqual(by['JUAN PEREZ'], ['Rent & housing', '(none)'], 'kept; the tracker\'s own choice (none) recorded');
+  assert.deepEqual(by['SUPERMERCADO BRAVO'], ['Health & pharmacy', 'Groceries'], 'kept');
+  assert.deepEqual(by['FARMACIA CAROL'], ['Health & pharmacy', 'Health & pharmacy']);
+  assert.deepEqual(by['SUPERMERCADO NACIONAL'], ['Groceries', 'Groceries']);
   // and again: nothing you set moves
   h.ctx.recategorizeAllTransactions('user@example.com');
-  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent');
-  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['SUPERMERCADO BRAVO'], 'Health + Vet + Pharmacy');
+  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent & housing');
+  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['SUPERMERCADO BRAVO'], 'Health & pharmacy');
 });
 
 test('a Custom Rule still applies to rows whose category the tracker set; a hand-set one wins over it', () => {
-  const { h, mock, tx } = book([['Rent', 'MARIA GOMEZ'], ['Exclude', 'JUAN PEREZ']]);
+  const { h, mock, tx } = book([['Rent & housing', 'MARIA GOMEZ'], ['Exclude', 'JUAN PEREZ']]);
   mock.ss.getSheetByName('Transactions').getRange(2, 1, 2, 15).setValues([
     row(h, 'MARIA GOMEZ', '', 'Transfer', '(none)'),
-    row(h, 'JUAN PEREZ', 'Gym + Calisthenics', 'Transfer', '(none)')]);
+    row(h, 'JUAN PEREZ', 'Gym', 'Transfer', '(none)')]);
   h.ctx.recategorizeAllTransactions('user@example.com');
   const by = Object.fromEntries(tx().map(r => [r[2], r[5]]));
-  assert.equal(by['MARIA GOMEZ'], 'Rent', 'the rule fills an empty one');
-  assert.equal(by['JUAN PEREZ'], 'Gym + Calisthenics', 'your choice beats a rule added later — clear the cell to let the rule apply');
+  assert.equal(by['MARIA GOMEZ'], 'Rent & housing', 'the rule fills an empty one');
+  assert.equal(by['JUAN PEREZ'], 'Gym', 'your choice beats a rule added later — clear the cell to let the rule apply');
 });
 
 test('a category typed in Bank Transfers reaches Transactions and survives the rebuild and later runs', () => {
@@ -57,13 +57,13 @@ test('a category typed in Bank Transfers reaches Transactions and survives the r
   assert.equal(bt.getRange(1, 8).getValue(), 'Id');
   assert.ok(bt.isColumnHiddenByUser(8));
   const at = bt._rows(8).findIndex(r => r[2] === 'JUAN PEREZ') + 2;
-  bt.getRange(at, 4).setValue('Rent');                            // you categorise it where you review transfers
+  bt.getRange(at, 4).setValue('Rent & housing');                            // you categorise it where you review transfers
   h.ctx.recategorizeAllTransactions('user@example.com');
-  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent');
-  assert.equal(bt._rows(8).find(r => r[2] === 'JUAN PEREZ')[3], 'Rent', 'still there after the rebuild');
+  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent & housing');
+  assert.equal(bt._rows(8).find(r => r[2] === 'JUAN PEREZ')[3], 'Rent & housing', 'still there after the rebuild');
   assert.equal(bt._rows(8).find(r => r[2] === 'LUISA DIAZ')[3], '');
   h.ctx.recategorizeAllTransactions('user@example.com');
-  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent', 'and on every later run');
+  assert.equal(Object.fromEntries(tx().map(r => [r[2], r[5]]))['JUAN PEREZ'], 'Rent & housing', 'and on every later run');
 });
 
 test('an old Bank Transfers sheet (no Id yet) still hands back its edits, matched by date, beneficiary and amount', () => {
@@ -71,9 +71,9 @@ test('an old Bank Transfers sheet (no Id yet) still hands back its edits, matche
   mock.ss.getSheetByName('Transactions').getRange(2, 1, 1, 15).setValues([row(h, 'JUAN PEREZ', '', 'Transfer')]);
   const bt = mock.ss.insertSheet('Bank Transfers');
   bt.getRange(1, 1, 2, 7).setValues([['Date', 'Bank', 'Beneficiary / Description', 'Category', 'Amount', 'Currency', 'Email Subject'],
-    [h.date(2026, 9, 10), 'BANESCO', 'JUAN PEREZ', 'Rent', 2500, 'DOP', 'Transferencia realizada']]);
+    [h.date(2026, 9, 10), 'BANESCO', 'JUAN PEREZ', 'Rent & housing', 2500, 'DOP', 'Transferencia realizada']]);
   h.ctx.recategorizeAllTransactions('user@example.com');
-  assert.equal(tx()[0][5], 'Rent');
+  assert.equal(tx()[0][5], 'Rent & housing');
 });
 
 test('HAPI\'s return can start at its value on an earlier date — not only at the snapshot (reported)', () => {

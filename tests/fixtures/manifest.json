@@ -17,7 +17,7 @@
         "amount": 642,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Dining/Delivery + Entertainment + Other"
+        "category": "Unclassified"
       }
     ]
   },
@@ -60,7 +60,7 @@
         "amount": 488,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Dining/Delivery + Entertainment + Other"
+        "category": "Delivery"
       }
     ]
   },
@@ -82,7 +82,7 @@
         "amount": 163,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Health + Vet + Pharmacy"
+        "category": "Health & pharmacy"
       }
     ]
   },
@@ -126,7 +126,7 @@
         "amount": 387.45,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Groceries + Barbershop"
+        "category": "Groceries"
       }
     ]
   },
@@ -162,7 +162,7 @@
         "amount": 163,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Health + Vet + Pharmacy"
+        "category": "Health & pharmacy"
       }
     ]
   },
@@ -184,7 +184,7 @@
         "amount": 297.25,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Dining/Delivery + Entertainment + Other"
+        "category": "Delivery"
       }
     ]
   },
@@ -206,7 +206,7 @@
         "amount": 1230,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Health + Vet + Pharmacy"
+        "category": "Pets"
       }
     ]
   },
@@ -228,7 +228,7 @@
         "amount": 488,
         "currency": "DOP",
         "type": "Transaction",
-        "category": "Dining/Delivery + Entertainment + Other"
+        "category": "Delivery"
       }
     ]
   },

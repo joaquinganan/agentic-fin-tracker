@@ -2,6 +2,55 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.70 (Oct 14, 2026) — new spending categories: 25 in 8 groups, Unclassified as the fallback, money that isn't spent named apart
+- **Why:** a year of one user's rows showed most of what was logged as spending in two buckets that explained nothing. "Dining/Delivery + Entertainment + Other" was the fallback (since v1.1.5), so every
+  merchant the tracker didn't know landed there, next to restaurants — half of all spending, including shopping, a whole
+  trip, delivery and bars. "Transfers (uncategorized)" held a quarter: deposits to the broker (counted as spending), loan
+  installments, bank taxes. Both users reviewed a proposal and agreed on the list and the decisions below.
+- **The categories** (`02_categorizer.gs`): Housing (Rent & housing · Utilities · Phone & internet), Food (Groceries ·
+  Restaurants & cafés · Delivery), Mobility (Ride apps & taxis · Public transport & parking · Fuel & vehicle), Health &
+  care (Health & pharmacy · Personal care · Pets · Gym), Lifestyle (Subscriptions · Shopping & home · Leisure & going out
+  · Education & books), Travel, Bank & debt (Bank fees & taxes · Loan payments · Insurance), Other (Cash · Government &
+  procedures · Payments to people · Unclassified). Each old category's keywords moved to the one they belong to; a few
+  public merchants and generic words were added (water utilities, hardware and home stores, colmados, bakeries…).
+- **Unclassified is the fallback:** what no keyword knows stays visible instead of looking like a restaurant.
+- **Agreed decisions:** Travel and Payments to people have no keywords — chosen by hand or with a Custom Rule (a trip's
+  purchases keep the category of what they are). PayPal: "PAYPAL *<merchant>" takes that merchant's category, bare
+  PayPal is Unclassified (it says nothing of what was bought). Cash withdrawals are their own category. Personal care and
+  Pets are kept (the other user's file has both). Home repairs, laundry and sports gear are in Shopping & home, not in a
+  fixed category: a one-off in a fixed category inflated the daily summary's month-end pace for three months.
+  Insurance premiums are fixed. Names stay in English.
+- **Keyword order is its own list** (`CATEGORY_MATCH_ORDER`), not the display order: several past fixes depend on one
+  category being tried before another, and those pairs are now in different groups (Delivery before Ride apps for
+  "UBER EATS", Restaurants before Fuel for "BONJOUR TOTAL", Shopping before Public transport for "METRO PLAZA", Pets
+  before Health for "CLINICA VETERINARIA", Subscriptions before Shopping for "AMAZON PRIME").
+- **Fixed or variable comes from one place:** each category says it. The Dashboard (`FIXED_CATEGORY_NAMES`) and the
+  summaries (`SUMMARY_BILL_CATEGORIES`) had lists of their own that had drifted apart — Electricity was a bill in the
+  emails but variable on the Dashboard. Both lists are gone.
+- **Transfers the tracker names by itself:** a bank's tax-and-commission row → Bank fees & taxes; "Pago de préstamo …"
+  → Loan payments (a Custom Rule still wins); a transfer whose beneficiary has an Investment Accounts deposit keyword →
+  **Investments & savings**, a new reserved category that, like Exclude, is never spending (it wins over a rule and over
+  an Exclude you set by hand on such a row). The broker's deposits still fund the portfolio's return as before.
+- **Dashboard:** each group's row (its subtotal) with its categories below, in "Where the money went" and in "Year at a
+  glance"; TOTAL adds the groups and the uncategorized transfers, so no category counts twice. The heat map colours the
+  categories only. A new block, **Not spending**, shows the month's card payments, transfers between your accounts,
+  investments & savings, money received and purchases left out (Uber holds, Exclude by hand). By bank leaves investments
+  out. "Which card for what" names the tracker's category for each kind of spending. The Categories sheet shows each
+  category's group.
+- **Saved rows move by themselves:** Recategorize recomputes every automatic category. A category set by hand with an
+  old one-to-one name (Rent, Electricity, Telecommunications, Streaming & Subscriptions, Gym + Calisthenics, Vehicle Gas,
+  Education) takes its new name. One with a name that merged several kinds of spending takes the new category the
+  keywords find when it is one of its own family, otherwise the family's main one ("Groceries + Barbershop" on a
+  barbershop → Personal care; "Dining/…" on a transfer → Unclassified). Custom Rules on a one-to-one name are renamed in
+  the sheet; one on a merged name keeps working as a category of its own and 📘 Start here asks you to choose.
+- **BDI Digital "Comprobante de Transacción"** (a transfer to another BDI account, often a currency exchange) had no
+  reader — the only one of the samples shared on Oct 14 that went to Unrecognized. Now a Transfer of what left the
+  source account (the first "Monto"), with what arrived and the rate in the context. The email doesn't say whether the
+  account is yours: a Custom Rule on your name makes it Exclude. Tax and commission: a Bank fees & taxes row per
+  currency when not zero. The other new samples (Scotiabank, Banreservas, BDI Online) already read correctly with v1.1.69.
+- Tests: 295 (11 new in `v170.test.js`), on `src/` and on the single file (mutation-checked: 27 mutations, each caught).
+  Tests that pinned the old category names were updated on purpose, each to the category the same merchant gets now.
+
 ### v1.1.69 (Oct 9, 2026) — another user's Unrecognized sheet: Scotiabank transfers, BDI Online, Banreservas loans and deposits, BHD declines
 - **Reported:** 19 rows in Unrecognized, with real samples of each transactional format. Each sample replayed through
   the whole reader, in memory; every other sample reads as before.

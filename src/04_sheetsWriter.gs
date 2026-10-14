@@ -271,7 +271,8 @@ function styleCustomRulesSheet(sheet, palette) {
   const cat = sheet.getRange(2, 2, rows, 1);
   cat.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(palette.map(p => p.name), true).setAllowInvalid(true)
-    .setHelpText('Pick a category — or type a new name to create your own. "Exclude" leaves matches out of every total.')
+    .setHelpText('Pick a category — or type a new name to create your own. "Exclude" leaves matches out of every total; ' +
+      '"Investments & savings" too, for money you put aside.')
     .build());
   const rules = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=LEFT($A2,8)="(example"')
     .setFontColor(SHEET_THEME.example).setItalic(true).setRanges([sheet.getRange(2, 1, rows, 4)]).build()];
@@ -701,7 +702,7 @@ const VALID_CURRENCIES = new Set(['DOP', 'USD', 'EUR', 'COP']);
  *    Type=Transaction only — same rule as at parse time, on the same text.
  *  - IsCredit/IsCashback follow the Type for Card Payment/Cashback.
  */
-function computeRecategorization(row, rawCustomRules) {
+function computeRecategorization(row, rawCustomRules, investmentKeywords) {
   const subject = String(row[TX_COL.SUBJECT] || '');
   const merchant = String(row[TX_COL.MERCHANT] || '');
   const description = String(row[TX_COL.DESCRIPTION] || '') || merchant;
@@ -714,6 +715,12 @@ function computeRecategorization(row, rawCustomRules) {
 
   let category = findCustomRuleOverride(description, rawCustomRules);
   if (!category && type === 'Transaction') category = categorizeTransaction(description);
+  // v1.1.70: a bank's tax-and-commission row and a loan installment get their category by themselves; a deposit to a
+  // broker (Investment Accounts' deposit keyword) is Investments & savings — money kept, not spent — even over a rule
+  if (type === 'Transfer') {
+    const auto = autoTransferCategory(description, investmentKeywords);
+    if (auto === INVESTMENT_CATEGORY || (auto && !category)) category = auto;
+  }
   // v1.1.23: paying the card is never spending — explicit "Exclude"
   if (type === 'Card Payment') category = EXCLUDE_CATEGORY;
   // v1.1.51: your own money. v1.1.66: sent, too — a transfer to your own account was Exclude when read (v1.1.63) and
@@ -756,8 +763,12 @@ function computeRecategorization(row, rawCustomRules) {
  */
 function recategorizeAllTransactions(userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // v1.1.70: Custom Rules on an old one-to-one category name are renamed in the sheet first
+  try { renameLegacyCustomRules(); } catch (error) { Logger.log('Could not rename old categories in Custom Rules: ' + error); }
   const rawCustomRules = getUserCustomRules(userEmail);
-  let totalChanged = 0;
+  let investmentKeywords = [];
+  try { investmentKeywords = investmentDepositKeywords(); } catch (error) { Logger.log('Could not read Investment Accounts: ' + error); }
+  let totalChanged = 0, renamed = 0;
   // v1.1.54: rows typed by hand in Incoming Transfers are saved before that sheet is rebuilt below
   try { importTypedIncomingRows(); } catch (error) { Logger.log('Could not save the rows typed in Incoming Transfers: ' + error); }
   try { importTypedTransferRows('Bank Transfers', 'Transfer'); } catch (error) { Logger.log('Could not save the rows typed in Bank Transfers: ' + error); }   // v1.1.57
@@ -791,10 +802,18 @@ function recategorizeAllTransactions(userEmail) {
         changedCols.add(TX_COL.MERCHANT);
         totalChanged++;
       }
-      const r = computeRecategorization(row, rawCustomRules);
+      const r = computeRecategorization(row, rawCustomRules, investmentKeywords);
       // v1.1.39: a category you set by hand is kept; the tracker's own category is recorded either way
       const manual = isManualCategory(row, r.category);
-      if (manual) keptManual++;
+      if (manual) {
+        keptManual++;
+        // v1.1.70: one set by hand with a name from before v1.1.70 moves to its new name (LEGACY_CATEGORIES); an
+        // Exclude on a deposit to your broker becomes Investments & savings (also left out of spending, now named)
+        const moved = legacyCategoryFor(row[TX_COL.CATEGORY], r.category) ||
+          (r.category === INVESTMENT_CATEGORY && String(row[TX_COL.CATEGORY]).trim().toUpperCase() === EXCLUDE_CATEGORY.toUpperCase()
+            ? INVESTMENT_CATEGORY : '');
+        if (moved) { row[TX_COL.CATEGORY] = moved; changedCols.add(TX_COL.CATEGORY); totalChanged++; renamed++; }
+      }
       const auto = r.category || AUTO_NONE;
       if (asText(row[TX_COL.AUTO_CATEGORY]) !== auto) { row[TX_COL.AUTO_CATEGORY] = auto; changedCols.add(TX_COL.AUTO_CATEGORY); }
       [[TX_COL.TYPE, r.type], [TX_COL.CATEGORY, manual ? row[TX_COL.CATEGORY] : r.category], [TX_COL.CURRENCY, r.currency],
@@ -812,6 +831,7 @@ function recategorizeAllTransactions(userEmail) {
       txSheet.getRange(2, c + 1, numRows, 1).setValues(values.map(row => [row[c]]));
     });
     if (keptManual) Logger.log('✍️ Categories you set by hand, kept: ' + keptManual);
+    if (renamed) Logger.log('🏷️ Categories set by hand moved to their v1.1.70 names: ' + renamed);
   }
 
   const rebuildCounts = rebuildDerivedSheets();
@@ -962,7 +982,6 @@ function rebuildDerivedSheets() {
 
   return Object.keys(byBank).map(b => b + "=" + byBank[b].length).join(", ") + " | Transfers=" + transfers.length + " | Incoming=" + incoming.length;
 }
-const FIXED_CATEGORY_NAMES = ['Rent', 'Gym + Calisthenics', 'Telecommunications', 'Streaming & Subscriptions'];
 
 /**
  * v1.1.19 (E3): named ranges for the Configuration values the Dashboard
@@ -1170,26 +1189,26 @@ function upgradeCardNotes(cards) {
  * Mi País product page (a summary — the full terms may add caps or minimums).
  * Reference only; nothing is computed from it yet. "≥" means the whole
  * category earns nothing that cycle below that amount (LAFISE all-or-nothing).
- * [spending, MCC, LAFISE, BANESCO, BHD, best per the terms]
+ * [spending, MCC, LAFISE, BANESCO, BHD, best per the terms, the tracker's category for it (v1.1.70)]
  */
 const CASHBACK_MATRIX = [
-  ['Supermarkets', '5411', '—', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'BANESCO'],
-  ['Pharmacies', '—', '—', '—', '5%', 'BHD'],
-  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO'],
-  ['Restaurants', '5812', '10% if ≥ RD$5,000 · cap RD$1,000', '—', '5%', 'LAFISE once the cycle reaches RD$5,000; otherwise BHD'],
-  ['Fast food', '5814', '10% if ≥ RD$2,000 · cap RD$1,000', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$2,000; otherwise BANESCO'],
-  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)'],
-  ['Telecommunications', '4814, 4899', '10% if ≥ RD$3,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)'],
-  ['Taxi apps (Uber, DiDi)', '4121', '10% if ≥ RD$3,000 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)'],
-  ['Salons & barbershops', '7230', '10% if ≥ RD$1,500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$1,500; otherwise BANESCO'],
-  ['Gyms', '7997', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (only if the gym takes cards)'],
-  ['Streaming', '5815, 5968', '10% if ≥ US$10 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Couriers', '4215', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE'],
-  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO'],
-  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO'],
-  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD'],
-  ['Everything else (vet, clothing, Amazon…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)']
+  ['Supermarkets', '5411', '—', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Pharmacies', '—', '—', '—', '5%', 'BHD', 'Health & pharmacy'],
+  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO', 'Utilities'],
+  ['Restaurants', '5812', '10% if ≥ RD$5,000 · cap RD$1,000', '—', '5%', 'LAFISE once the cycle reaches RD$5,000; otherwise BHD', 'Restaurants & cafés'],
+  ['Fast food', '5814', '10% if ≥ RD$2,000 · cap RD$1,000', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$2,000; otherwise BANESCO', 'Restaurants & cafés'],
+  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)', 'Fuel & vehicle'],
+  ['Telecommunications', '4814, 4899', '10% if ≥ RD$3,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)', 'Phone & internet'],
+  ['Taxi apps (Uber, DiDi)', '4121', '10% if ≥ RD$3,000 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$3,000)', 'Ride apps & taxis'],
+  ['Salons & barbershops', '7230', '10% if ≥ RD$1,500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$1,500; otherwise BANESCO', 'Personal care'],
+  ['Gyms', '7997', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (only if the gym takes cards)', 'Gym'],
+  ['Streaming', '5815, 5968', '10% if ≥ US$10 · cap RD$500', '—', 'Stars', 'LAFISE', 'Subscriptions'],
+  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Leisure & going out'],
+  ['Couriers', '4215', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Shopping & home'],
+  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO', 'Personal care'],
+  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD', 'Shopping & home'],
+  ['Everything else (vet, clothing, Amazon…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)', 'Pets, Shopping & home and the rest']
 ];
 const CASHBACK_NOTES = [
   'LAFISE 10/10 — all or nothing per category: below the minimum in a billing cycle that category earns RD$0. ' +
@@ -1200,6 +1219,18 @@ const CASHBACK_NOTES = [
     'Only purchases with the credit card count (the Visa Débito Intl earns nothing).',
   'All three programs pay by the merchant\'s MCC, which bank emails don\'t include — the tracker\'s categories are an approximation. ' +
     'Cashback arrives as a statement credit, never by email.'
+];
+
+/**
+ * v1.1.70: "Money that moves but isn't spent" — what the Dashboard leaves out of spending, by kind, for the month.
+ * [label, SUMIFS criteria on Transactions (L = Type, F = Category), note]. Amounts shown as positive.
+ */
+const DASH_MOVEMENTS = [
+  ['💳 Credit card payments', 'Transactions!$L:$L,"Card Payment"', 'each purchase already counted'],
+  ['🔁 Between your accounts', 'Transactions!$L:$L,"Transfer",Transactions!$F:$F,"' + EXCLUDE_CATEGORY + '"', 'sent to yourself'],
+  ['📈 Investments & savings', 'Transactions!$F:$F,"' + INVESTMENT_CATEGORY + '"', 'deposits to your broker'],
+  ['📥 Money received', 'Transactions!$L:$L,"Incoming",Transactions!$F:$F,"<>' + EXCLUDE_CATEGORY + '"', 'from others'],
+  ['🚫 Purchases left out', 'Transactions!$L:$L,"Transaction",Transactions!$F:$F,"' + EXCLUDE_CATEGORY + '"', 'Uber holds, Exclude by hand']
 ];
 
 const DASH_THEME = {
@@ -1273,13 +1304,35 @@ function resetDashboardSheet(sheet) {
 function categoriesOnlyInTransactions(named) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRANSACTIONS_SHEET);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  const known = new Set(named.map(c => String(c).trim().toUpperCase()).concat([EXCLUDE_CATEGORY.toUpperCase()]));
+  const known = new Set(named.map(c => String(c).trim().toUpperCase())
+    .concat([EXCLUDE_CATEGORY.toUpperCase(), INVESTMENT_CATEGORY.toUpperCase()]));   // v1.1.70: never spending rows
   const out = [];
   sheet.getDataRange().getValues().slice(1).forEach(r => {
     const c = String(r[TX_COL.CATEGORY] === null || r[TX_COL.CATEGORY] === undefined ? '' : r[TX_COL.CATEGORY]).trim();
     if (c && !known.has(c.toUpperCase())) { known.add(c.toUpperCase()); out.push(c); }
   });
   return out.sort();
+}
+
+/**
+ * v1.1.70: the Dashboard's category rows, by group — each group's row (the subtotal of its categories) followed by its
+ * categories: [{group, cats}] and [{category, group}]. A category of your own goes under Other, before Unclassified.
+ * A group with no category is left out. Pure.
+ */
+function dashboardLines(categories) {
+  const byGroup = {};
+  categories.forEach(c => { const g = categoryGroup(c); (byGroup[g] = byGroup[g] || []).push(c); });
+  if (byGroup.Other && byGroup.Other.indexOf(FALLBACK_CATEGORY) !== -1) {
+    byGroup.Other = byGroup.Other.filter(c => c !== FALLBACK_CATEGORY).concat([FALLBACK_CATEGORY]);
+  }
+  const lines = [];
+  CATEGORY_GROUPS.forEach(g => {
+    const cats = byGroup[g] || [];
+    if (!cats.length) return;
+    lines.push({ group: g, cats: cats.length });
+    cats.forEach(c => lines.push({ category: c, group: g }));
+  });
+  return lines;
 }
 
 function buildOrRefreshDashboard() {
@@ -1305,7 +1358,8 @@ function buildOrRefreshDashboard() {
   const named = getCategories().concat(userEmail ? getCustomCategoryNames(userEmail) : []);
   const categories = named.concat(categoriesOnlyInTransactions(named));   // v1.1.62
   const banks = Object.keys(BANK_PATTERNS).filter(b => !(config && config.banksToTrack) || config.banksToTrack[b]);
-  const n = categories.length;
+  const lines = dashboardLines(categories);                         // v1.1.70: groups, each followed by its categories
+  const n = lines.length;
   const put = (range, v) => (typeof v === 'string' && v.charAt(0) === '=') ? range.setFormula(v) : range.setValue(v);
   const border = SpreadsheetApp.BorderStyle;
 
@@ -1317,7 +1371,9 @@ function buildOrRefreshDashboard() {
   R.income = 12; R.netDop = 19;                                   // right block: 12..19 (v1.1.59: + other deductions)
   R.fvHead = 21; R.fvFirst = 22;                                  // 22..24
   R.bankHead = 26; R.bankFirst = 27; R.bankLast = R.bankFirst + banks.length - 1;
-  R.monthsHead = Math.max(R.total, R.bankLast) + 2;
+  R.moveHead = Math.max(R.bankLast, R.bankHead) + 2; R.moveFirst = R.moveHead + 1;   // v1.1.70: money that moves
+  R.moveLast = R.moveFirst + DASH_MOVEMENTS.length - 1;
+  R.monthsHead = Math.max(R.total, R.moveLast) + 2;
   R.monthsCols = R.monthsHead + 1; R.monthsFirst = R.monthsCols + 1; R.monthsLast = R.monthsFirst + 11;
   R.gridHead = R.monthsLast + 2; R.gridCols = R.gridHead + 1; R.gridFirst = R.gridCols + 1;
   R.gridLastCat = R.gridFirst + n - 1; R.gridTransfers = R.gridLastCat + 1; R.gridTotal = R.gridTransfers + 1;
@@ -1358,7 +1414,8 @@ function buildOrRefreshDashboard() {
   sheet.setColumnWidth(1, 18);
   // v1.1.24: column B fits its longest label. autoResizeColumns() can't be used
   // here — merged section titles and notes anchored in B would stretch it.
-  const longestB = Math.max.apply(null, categories.map(c => getCategoryWithIcon(c).length).concat([28]));
+  const lineLabel = x => x.category ? '      ' + getCategoryWithIcon(x.category) : x.group.toUpperCase();   // v1.1.70
+  const longestB = Math.max.apply(null, lines.map(x => lineLabel(x).length).concat([28]));
   sheet.setColumnWidth(2, Math.min(380, Math.max(230, Math.round(longestB * 7.2) + 34)));
   for (let c = 3; c <= 14; c++) sheet.setColumnWidth(c, 86);
   sheet.setColumnWidth(15, 104);
@@ -1454,25 +1511,34 @@ function buildOrRefreshDashboard() {
   // ---- 11+ left: where the money went
   section(R.sec1, 2, 8, `="Where the money went  ·  " & TEXT(${PERIOD},"mmmm yyyy")`);
   tableHead(R.head1, 2, ['Category', 'This month', 'Share', '', '', 'Monthly avg', 'Type']);
-  const leftCount = n + 2;                                          // categories + transfers + total
-  const leftRows = categories.map((cat, i) => ({ label: getCategoryWithIcon(cat), g: R.gridFirst + i,
-    type: FIXED_CATEGORY_NAMES.indexOf(cat) !== -1 ? 'Fixed' : 'Variable', color: T.accent }));
-  leftRows.push({ label: '↔️ Transfers (uncategorized)', g: R.gridTransfers, type: '—', color: T.grey });
-  const barMax = `MAX(MAX($C$${R.catFirst}:$C$${R.transfers}),1)`;
+  const leftCount = n + 2;                                          // groups and categories + transfers + total
+  // v1.1.70: each group's row (bold, its subtotal) before its categories; the Type column is empty on a group row,
+  // so "Subtotal fixed / variable" (SUMPRODUCT over it) counts each category once
+  const leftRows = lines.map((x, i) => ({ label: lineLabel(x), g: R.gridFirst + i, isGroup: !x.category,
+    type: x.category ? (isFixedCategory(x.category) ? 'Fixed' : 'Variable') : '', color: x.category ? T.accent : T.navy }));
+  leftRows.push({ label: '↔️ Transfers (uncategorized)', g: R.gridTransfers, isGroup: true, type: '—', color: T.grey });
+  // bars: groups (and the transfers) against the largest group, categories against the largest category
+  const cellsOf = group => leftRows.map((x, i) => x.isGroup === group ? 'C' + (R.catFirst + i) : null).filter(c => c);
+  const barMax = group => `MAX(MAX(${cellsOf(group).join(',')}),1)`;
   sheet.getRange(R.catFirst, 2, leftRows.length, 1).setValues(leftRows.map(x => [x.label]));
   sheet.getRange(R.catFirst, 3, leftRows.length, 2).setFormulas(leftRows.map((x, i) => {
     const r = R.catFirst + i;
     return [`=INDEX($C$${x.g}:$N$${x.g},1,${MONTH_NUM})`, `=IFERROR(C${r}/$C$${R.total},0)`];
   }));
   sheet.getRange(R.catFirst, 5, leftRows.length, 1).setFormulas(leftRows.map((x, i) =>
-    [`=SPARKLINE(C${R.catFirst + i},{"charttype","bar";"max",${barMax};"color1","${x.color}"})`]));
+    [`=SPARKLINE(C${R.catFirst + i},{"charttype","bar";"max",${barMax(x.isGroup)};"color1","${x.color}"})`]));
   sheet.getRange(R.catFirst, 7, leftRows.length, 1).setFormulas(leftRows.map(x =>
     [`=IFERROR(AVERAGEIF($C$${x.g}:$N$${x.g},">0"),0)`]));
   sheet.getRange(R.catFirst, 8, leftRows.length, 1).setValues(leftRows.map(x => [x.type]));
   sheet.getRange(R.total, 2).setValue('TOTAL');
-  sheet.getRange(R.total, 3, 1, 2).setFormulas([[`=SUM(C${R.catFirst}:C${R.transfers})`, `=IF(C${R.total}>0,1,0)`]]);
+  // v1.1.70: the grid's TOTAL for the month (groups + transfers) — a SUM of this column would count each group twice
+  sheet.getRange(R.total, 3, 1, 2).setFormulas([[`=INDEX($C$${gt}:$N$${gt},1,${MONTH_NUM})`, `=IF(C${R.total}>0,1,0)`]]);
   sheet.getRange(R.total, 7).setFormula(`=IFERROR(AVERAGEIF($C$${gt}:$N$${gt},">0"),0)`);
   stripe(R.catFirst, 2, leftRows.length, 7);
+  leftRows.forEach((x, i) => {
+    if (x.isGroup && x.type !== '—') sheet.getRange(R.catFirst + i, 2, 1, 7).setFontWeight('bold').setBackground(T.soft)
+      .setBorder(true, null, null, null, null, null, T.line, border.SOLID);
+  });
   sheet.getRange(R.head1, 5, leftCount + 1, 2).mergeAcross();
   sheet.getRange(R.catFirst, 3, leftCount, 1).setNumberFormat(moneyFmt);
   sheet.getRange(R.catFirst, 7, leftCount, 1).setNumberFormat(moneyFmt);
@@ -1532,12 +1598,25 @@ function buildOrRefreshDashboard() {
     banks.forEach((bank, i) => {
       const r = R.bankFirst + i;
       sheet.getRange(r, 10).setValue(bank).setFontWeight('bold');
-      sheet.getRange(r, 11).setFormula('=' + fxSum(`Transactions!$B:$B,"${bank}",${spend},Transactions!$F:$F,"<>Exclude",${periodCrit}`))
+      sheet.getRange(r, 11).setFormula('=' + fxSum(`Transactions!$B:$B,"${bank}",${spend},Transactions!$F:$F,"<>Exclude",` +
+        `Transactions!$F:$F,"<>${INVESTMENT_CATEGORY}",${periodCrit}`))   // v1.1.70: nor what went to investments
         .setNumberFormat(moneyFmt).setHorizontalAlignment('right');
       sheet.getRange(r, 13).setFormula(`=SPARKLINE(K${r},{"charttype","bar";"max",${bankBarMax};"color1","${T.blue}"})`);
     });
     stripe(R.bankFirst, 10, banks.length, 6);
   }
+
+  // ---- right: money that moves but isn't spent (v1.1.70) — never in the totals above, shown so each can be checked
+  section(R.moveHead, 10, 15, `="Not spending  ·  " & TEXT(${PERIOD},"mmm yyyy")`);
+  sheet.getRange(R.moveFirst, 10, DASH_MOVEMENTS.length, 2).mergeAcross();
+  sheet.getRange(R.moveFirst, 13, DASH_MOVEMENTS.length, 3).mergeAcross();
+  DASH_MOVEMENTS.forEach(([lab, crit, note], i) => {
+    const r = R.moveFirst + i;
+    sheet.getRange(r, 10).setValue(lab);
+    sheet.getRange(r, 12).setFormula('=ABS(' + fxSum(`${crit},${periodCrit}`) + ')').setNumberFormat(moneyFmt).setHorizontalAlignment('right');
+    sheet.getRange(r, 13).setValue(note).setFontSize(8).setFontColor(T.muted);
+  });
+  stripe(R.moveFirst, 10, DASH_MOVEMENTS.length, 6);
 
   // ---- month by month (+ chart)
   section(R.monthsHead, 2, 15, '="Month by month  ·  " & $F$4');
@@ -1579,19 +1658,23 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.gridCols, 3, 1, 13).setHorizontalAlignment('center');
   const monthCrit = L => `Transactions!$A:$A,">="&${L}$${R.gridCols},Transactions!$A:$A,"<"&EDATE(${L}$${R.gridCols},1)`;
 
-  sheet.getRange(R.gridFirst, 2, n, 1).setValues(categories.map(c => [c]));   // PLAIN names — SUMIFS criteria
-  sheet.getRange(R.gridFirst, 3, n, 12).setFormulas(categories.map((cat, i) => {
-    const base = `Transactions!$F:$F,$B${R.gridFirst + i},${spend}`;
+  // PLAIN category names — SUMIFS criteria. v1.1.70: a group's row (its name in capitals) adds up the categories under it
+  sheet.getRange(R.gridFirst, 2, n, 1).setValues(lines.map(x => [x.category || x.group.toUpperCase()]));
+  sheet.getRange(R.gridFirst, 3, n, 12).setFormulas(lines.map((x, i) => {
+    const row = R.gridFirst + i;
+    if (!x.category) return MONTHS12.map(m => `=SUM(${colL(3 + m)}${row + 1}:${colL(3 + m)}${row + x.cats})`);
+    const base = `Transactions!$F:$F,$B${row},${spend}`;
     return MONTHS12.map(m => '=' + fxSum(base + ',' + monthCrit(colL(3 + m))));
   }));
+  const groupRows = lines.map((x, i) => x.category ? null : R.gridFirst + i).filter(r => r);
   sheet.getRange(R.gridTransfers, 2).setValue('Transfers (uncategorized)');
   sheet.getRange(R.gridTransfers, 3, 1, 12).setFormulas([MONTHS12.map(m =>
     '=' + fxSum(`Transactions!$L:$L,"Transfer",Transactions!$F:$F,"",` + monthCrit(colL(3 + m))))]);
   sheet.getRange(R.gridFirst, 15, n + 1, 1).setFormulas(Array.from({ length: n + 1 }, (_, i) =>
     [`=SUM(C${R.gridFirst + i}:N${R.gridFirst + i})`]));
   sheet.getRange(R.gridTotal, 2).setValue('TOTAL');
-  sheet.getRange(R.gridTotal, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) =>
-    `=SUM(${colL(3 + k)}${R.gridFirst}:${colL(3 + k)}${R.gridTransfers})`)]);
+  sheet.getRange(R.gridTotal, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) =>   // v1.1.70: groups + transfers
+    `=SUM(${groupRows.concat([R.gridTransfers]).map(r => colL(3 + k) + r).join(',')})`)]);
   sheet.getRange(R.gridPct, 2).setValue('% of net income');
   sheet.getRange(R.gridPct, 3, 1, 13).setFormulas([Array.from({ length: 13 }, (_, k) => k < 12
     ? `=IFERROR(${colL(3 + k)}${gt}/${NET_DOP},0)`
@@ -1609,6 +1692,7 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.gridFirst, 3, n + 1, 13).setFontSize(9);
   sheet.getRange(R.gridFirst, 15, n + 1, 1).setFontWeight('bold');
   sheet.getRange(R.gridTransfers, 2, 1, 14).setFontStyle('italic');
+  groupRows.forEach(r => sheet.getRange(r, 2, 1, 14).setFontWeight('bold').setBackground(T.soft));   // v1.1.70
   totalRow(R.gridTotal, 2, 14);
   sheet.getRange(R.gridPct, 2, 3, 14).setFontSize(8).setFontColor(T.muted);
 
@@ -1641,11 +1725,11 @@ function buildOrRefreshDashboard() {
   sheet.getRange(R.mxCols, 10, mxRows, 6).mergeAcross();
   CASHBACK_MATRIX.forEach((row, i) => {
     const r = R.mxFirst + i;
-    [[2, row[0]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]
+    [[2, row[0] + '\n→ ' + row[6]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]   // v1.1.70: + category
       .forEach(([c, v]) => sheet.getRange(r, c).setValue(v));
   });
   stripe(R.mxFirst, 2, CASHBACK_MATRIX.length, 14);
-  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9);
+  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
   sheet.getRange(R.mxFirst, 3, CASHBACK_MATRIX.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
   sheet.getRange(R.mxFirst, 4, CASHBACK_MATRIX.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
   sheet.getRange(R.mxFirst, 10, CASHBACK_MATRIX.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
@@ -1669,8 +1753,9 @@ function buildOrRefreshDashboard() {
     cf().whenTextEqualTo('Logged').setFontColor(T.good).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
     cf().whenTextEqualTo('No data').setFontColor(T.warn).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
     cf().whenTextEqualTo('Upcoming').setFontColor(T.grey).setRanges([rng(R.monthsFirst, 6, 12, 1)]).build(),
+    // v1.1.70: the categories only — a group's subtotal would turn every category pale next to it
     cf().setGradientMinpoint('#FFFFFF').setGradientMaxpoint(T.heat)
-      .setRanges([rng(R.gridFirst, 3, n, 12)]).build(),
+      .setRanges(groupRows.map(r => rng(r + 1, 3, lines[r - R.gridFirst].cats, 12))).build(),
     // v1.1.22: in "Which card for what", tint the cell of the card named first in the pick
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},6)="LAFISE"`).setBackground('#E2EFDA')
       .setRanges([rng(R.mxFirst, 4, CASHBACK_MATRIX.length, 1)]).build(),
@@ -1689,7 +1774,7 @@ function buildOrRefreshDashboard() {
   formatDataSheets();                    // v1.1.24; v1.1.28: styles too
   ensureSheetOrder();
   ss.setActiveSheet(sheet);              // LAST — creating the Categories sheet changes the active sheet
-  Logger.log("✅ Dashboard built/refreshed (" + n + " categories, " + banks.length + " banks, year " + year + ")");
+  Logger.log("✅ Dashboard built/refreshed (" + categories.length + " categories, " + banks.length + " banks, year " + year + ")");
   return sheet;
 }
 
@@ -1714,36 +1799,42 @@ function buildOrRefreshCategoriesSheet(userEmail) {
   sheet.getRange("A2").setValue(
     "Auto-generated from DEFAULT_CATEGORIES (02_categorizer.gs) and your Custom Rules every time the Dashboard rebuilds — not hand-edited.")
     .setFontStyle("italic").setFontColor("#808080").setFontSize(9);
-  sheet.getRange(4, 1, 1, 4).setValues([["Icon", "Category", "Type", "Keywords"]])
+  // v1.1.70: + Group
+  sheet.getRange(4, 1, 1, 5).setValues([["Icon", "Category", "Group", "Type", "Keywords"]])
     .setFontWeight("bold").setBackground("#1F3864").setFontColor("#FFFFFF");
 
   const custom = userEmail ? getUserCustomRules(userEmail) : {};
+  const rules = name => custom[name] ? "Custom Rules: " + custom[name].join(', ') : '';
   const rows = getCategories().map(cat => {
     const data = DEFAULT_CATEGORIES[cat];
-    const extra = custom[cat] ? "   |   Custom Rules: " + custom[cat].join(', ') : "";
-    return [data.icon, cat, FIXED_CATEGORY_NAMES.includes(cat) ? 'Fixed' : 'Variable',
-            (data.keywords || []).join(', ') + extra];
+    const words = (data.keywords || []).join(', ') ||
+      (cat === FALLBACK_CATEGORY ? 'Anything no keyword or Custom Rule matches' : 'No keywords: chosen by hand or with a Custom Rule');
+    return [data.icon, cat, data.group, data.fixed ? 'Fixed' : 'Variable', words + (custom[cat] ? "   |   " + rules(cat) : '')];
   });
-  // v1.1.23: "Exclude" is always listed — Card Payment rows get it automatically
-  const excludeKey = Object.keys(custom).find(c => c.toUpperCase() === EXCLUDE_CATEGORY.toUpperCase());
-  rows.push(['🚫', EXCLUDE_CATEGORY, 'Excluded from totals', 'Automatic for every Card Payment' +
-    (excludeKey ? "   |   Custom Rules: " + custom[excludeKey].join(', ') : '')]);
-  Object.keys(custom).filter(c => !DEFAULT_CATEGORIES[c] && c !== excludeKey).forEach(c => {
-    rows.push(['📌', c, 'Variable', "Custom Rules: " + custom[c].join(', ')]);
+  // v1.1.23: "Exclude" is always listed — Card Payment rows get it automatically. v1.1.70: Investments & savings too.
+  const reservedKey = name => Object.keys(custom).find(c => c.toUpperCase() === name.toUpperCase());
+  const excludeKey = reservedKey(EXCLUDE_CATEGORY), investKey = reservedKey(INVESTMENT_CATEGORY);
+  rows.push(['🚫', EXCLUDE_CATEGORY, '—', 'Not spending', 'Automatic for every Card Payment and transfer between your accounts' +
+    (excludeKey ? "   |   " + rules(excludeKey) : '')]);
+  rows.push(['📈', INVESTMENT_CATEGORY, '—', 'Not spending', "Automatic for transfers to a broker (Investment Accounts' deposit keyword)" +
+    (investKey ? "   |   " + rules(investKey) : '')]);
+  Object.keys(custom).filter(c => !DEFAULT_CATEGORIES[c] && c !== excludeKey && c !== investKey).forEach(c => {
+    rows.push(['📌', c, categoryGroup(c), 'Variable', rules(c)]);
   });
 
-  sheet.getRange(5, 1, rows.length, 4).setValues(rows);
+  sheet.getRange(5, 1, rows.length, 5).setValues(rows);
   sheet.getRange(5, 1, rows.length, 1).setHorizontalAlignment("center");
   // v1.1.28: each category in the colours its chip has in the data sheets
   const colours = {};
   categoryPalette(Object.keys(custom)).forEach(p => { colours[p.name] = p; });
   const chip = rows.map(r => colours[r[1]] || { bg: '#FFFFFF', fg: '#1F2937' });
   sheet.getRange(5, 2, rows.length, 1).setBackgrounds(chip.map(c => [c.bg])).setFontColors(chip.map(c => [c.fg])).setFontWeight("bold");
-  sheet.getRange(5, 4, rows.length, 1).setFontSize(9).setFontStyle("italic").setWrap(true);
+  sheet.getRange(5, 5, rows.length, 1).setFontSize(9).setFontStyle("italic").setWrap(true);
   sheet.setColumnWidth(1, 50);
   sheet.setColumnWidth(2, 260);
-  sheet.setColumnWidth(3, 150);
-  sheet.setColumnWidth(4, 600);
+  sheet.setColumnWidth(3, 120);
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 560);
   sheet.setFrozenRows(4);
   sheet.setHiddenGridlines(true);
   sheet.setTabColor(TAB_COLORS["Categories"]);

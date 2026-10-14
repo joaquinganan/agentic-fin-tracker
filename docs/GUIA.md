@@ -77,7 +77,27 @@ que esas líneas no aparezcan: los correos ya leídos se saltan, así que cada v
 
 ## 6. Categorías
 
-- Cada consumo recibe una categoría automática según el nombre del comercio.
+- Cada consumo recibe una categoría automática según el nombre del comercio. Si ninguna palabra lo reconoce, queda en
+  **Unclassified**, a la vista, para que le pongas la categoría o una Custom Rule.
+- Hay 25 categorías en 8 grupos (desde v1.1.70). El Dashboard muestra cada grupo con su subtotal y sus categorías debajo:
+
+  | Grupo | Categorías (★ = fija: una factura de cada mes) |
+  |---|---|
+  | Housing | Rent & housing ★ · Utilities ★ (luz, agua) · Phone & internet ★ |
+  | Food | Groceries · Restaurants & cafés · Delivery |
+  | Mobility | Ride apps & taxis · Public transport & parking · Fuel & vehicle |
+  | Health & care | Health & pharmacy · Personal care · Pets · Gym ★ |
+  | Lifestyle | Subscriptions ★ · Shopping & home · Leisure & going out · Education & books |
+  | Travel | Travel (se elige a mano o con una Custom Rule) |
+  | Bank & debt | Bank fees & taxes · Loan payments ★ · Insurance ★ |
+  | Other | Cash · Government & procedures · Payments to people · Unclassified |
+
+- Algunas transferencias se categorizan solas: la fila de impuesto y comisión de una transferencia (*Bank fees & taxes*),
+  un pago de préstamo (*Loan payments*) y un depósito a tu bróker (*Investments & savings*, que no es gasto: aparece en el
+  bloque **Not spending** del Dashboard junto a los pagos de tarjeta, lo que mueves entre tus cuentas y lo que recibes).
+- Si venías de una versión anterior, **🔁 Recategorize** pasa solo las filas y las Custom Rules a los nombres nuevos
+  (*Rent* → *Rent & housing*, *Electricity* → *Utilities*…). Una Custom Rule con un nombre viejo que juntaba varias
+  categorías (como *Groceries + Barbershop*) se queda como está y el panel 📘 Start here te pide elegir la nueva.
 - **Puedes cambiarla a mano** en **Transactions** o en **Bank Transfers**: el tracker respeta lo que pusiste y no lo
   vuelve a cambiar. Para volver a la categoría automática, **borra la celda**.
 - Para que algo se categorice siempre igual (un comercio, una persona a la que le transfieres), agrega una regla en
@@ -93,7 +113,7 @@ Si compartes gastos (la renta o los servicios con un roommate, por ejemplo) y la
 el tracker puede **restarla de lo que gastaste** en esa categoría.
 
 - Lo recibido aparece en la hoja **Incoming Transfers**, sin categoría y resaltado en naranja.
-- **Dale la categoría que devuelve.** Si pagaste 30,000 de renta y te transfirieron 15,000 con categoría *Rent*, la
+- **Dale la categoría que devuelve.** Si pagaste 30,000 de renta y te transfirieron 15,000 con categoría *Rent & housing*, la
   renta muestra 15,000 en el Dashboard y en los resúmenes. Usa **Exclude** para dinero que no devuelve ningún gasto.
 - Si la transferencia trae el nombre de quien envía (LAFISE lo trae), una regla en **Custom Rules** con ese nombre y la
   categoría lo hace sola desde entonces.

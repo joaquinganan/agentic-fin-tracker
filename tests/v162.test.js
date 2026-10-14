@@ -78,7 +78,7 @@ test('BDI card payment from the account: a Card Payment (Exclude) and its tax as
   const r = parseBody(h, ...F.bdiPay, fixture('bdi_pago_tarjeta'));
   assert.equal(r.status, 'ok', 'it was Unrecognized');
   assert.deepEqual(r.items.map(row), [['BDI', 'Card Payment', 'DOP', 4000, 'Pago Tarjetas de Crédito (BDI)', 'Exclude'],
-    ['BDI', 'Transfer', 'DOP', 8, 'BDI: impuesto y comisión de pago de tarjeta', '']]);
+    ['BDI', 'Transfer', 'DOP', 8, 'BDI: impuesto y comisión de pago de tarjeta', 'Bank fees & taxes']]);   // v1.1.70
   const done = parseBody(h, 'BDI Digital: Aviso Notificación Transacción Interbancaria - Completada', F.bdi[1], fixture('bdi_interbancaria_completada'));
   assert.equal(done.status, 'filtered', 'it confirms a transfer already saved from its Comprobante (it even says [Salida])');
   assert.deepEqual(parseBody(h, ...F.bdi, fixture('bdi_transferencia_interbancaria')).items.map(x => x.amount), [2500, 5], 'the Comprobante is still read');
@@ -202,7 +202,15 @@ function evaluator(ss) {
         }
         return total;
       }
-      if (fn === 'SUM') { let t = 0; const g = a[0]; for (let r = g.r1; r <= g.r2; r++) for (let c = g.c1; c <= g.c2; c++) { const v = cellValue(r, c); if (typeof v === 'number') t += v; } return t; }
+      // v1.1.70: as in Sheets, SUM takes ranges and single values (the TOTAL adds the group rows: SUM(C20,C24,…))
+      if (fn === 'SUM') {
+        let t = 0;
+        for (const g of a) {
+          if (typeof g === 'number') { t += g; continue; }
+          for (let r = g.r1; r <= g.r2; r++) for (let c = g.c1; c <= g.c2; c++) { const v = cellValue(r, c); if (typeof v === 'number') t += v; }
+        }
+        return t;
+      }
       if (fn === 'IFERROR') return a[0];
       throw new Error('evaluator: no function ' + fn);
     }
@@ -219,17 +227,17 @@ test('Dashboard arithmetic, computed: every category, month and currency; Incomi
    ['banksToTrack', JSON.stringify({ LAFISE: true })]].forEach(r => cfg.appendRow(r));
   mock.ss.insertSheet('Transactions'); h.ctx.initializeTransactionsSheet();
   mock.ss.insertSheet('Custom Rules').appendRow(['UserEmail', 'Category', 'Keyword', 'Timestamp']);
-  const DIN = 'Dining/Delivery + Entertainment + Other';
+  const DIN = 'Restaurants & cafés';
   const sheet = mock.ss.getSheetByName('Transactions');
   const add = (m, d, amount, cur, cat, type) => sheet.appendRow(h.ctx.transactionToRow({ date: h.date(2026, m, d), bank: 'LAFISE', merchant: 'M',
     amount, currency: cur, category: cat, description: 'M', subject: 's', timestamp: '', type, messageId: 'id' + Math.random() }));
   // October: the reported case. A USD row is converted at the USD rate; a DOP row is itself.
   add(10, 1, 120, 'USD', DIN, 'Transaction'); add(10, 1, 432.10, 'DOP', DIN, 'Transaction');
-  add(10, 2, 88.40, 'DOP', 'Transportation', 'Transaction'); add(10, 2, 141.75, 'DOP', 'Transportation', 'Transaction');
-  add(10, 3, 10, 'EUR', 'Streaming & Subscriptions', 'Transaction');
-  add(10, 1, 30000, 'DOP', 'Rent', 'Transfer');                 // a transfer with a category counts in it
+  add(10, 2, 88.40, 'DOP', 'Ride apps & taxis', 'Transaction'); add(10, 2, 141.75, 'DOP', 'Ride apps & taxis', 'Transaction');
+  add(10, 3, 10, 'EUR', 'Subscriptions', 'Transaction');
+  add(10, 1, 30000, 'DOP', 'Rent & housing', 'Transfer');                 // a transfer with a category counts in it
   add(10, 4, 2000, 'DOP', '', 'Transfer');                      // uncategorized transfer: its own row
-  add(10, 5, -300, 'DOP', 'Transportation', 'Incoming');        // money back for a shared ride
+  add(10, 5, -300, 'DOP', 'Ride apps & taxis', 'Incoming');        // money back for a shared ride
   add(10, 6, -25000, 'DOP', '', 'Incoming');                    // money received, no category: counts nowhere
   add(10, 6, 25000, 'DOP', 'Exclude', 'Transfer');              // between your own accounts
   add(10, 7, 5000, 'DOP', 'Exclude', 'Card Payment');           // paying the card
@@ -249,16 +257,21 @@ test('Dashboard arithmetic, computed: every category, month and currency; Incomi
   assert.equal(at(DIN, 10), r2(120 * usd + 432.10), 'the reported case: the USD row at the rate, plus the DOP row');
   assert.equal(at(DIN, 9), 255.50);
   assert.equal(at(DIN, 11), 100);
-  assert.equal(at('Transportation', 10), r2(88.40 + 141.75 - 300), 'money back lowers its category');
-  assert.equal(at('Streaming & Subscriptions', 10), r2(10 * eur));
-  assert.equal(at('Rent', 10), 30000);
+  assert.equal(at('Ride apps & taxis', 10), r2(88.40 + 141.75 - 300), 'money back lowers its category');
+  assert.equal(at('Subscriptions', 10), r2(10 * eur));
+  assert.equal(at('Rent & housing', 10), 30000);
   assert.equal(at('Transfers (uncategorized)', 10), 2000, 'not the money received, not the Exclude transfer');
   assert.ok(findGrid('Viajes'), 'a category typed by hand gets its row (it was counted nowhere)');
   assert.equal(at('Viajes', 10), 750);
   assert.equal(findGrid('Exclude'), null, 'Exclude is never a row');
-  for (const cat of h.plain(h.ctx.getCategories())) if (![DIN, 'Transportation', 'Streaming & Subscriptions', 'Rent'].includes(cat)) assert.equal(at(cat, 10), 0, cat);
+  for (const cat of h.plain(h.ctx.getCategories())) if (![DIN, 'Ride apps & taxis', 'Subscriptions', 'Rent & housing'].includes(cat)) assert.equal(at(cat, 10), 0, cat);
   const total = r2(120 * usd + 432.10 + 88.40 + 141.75 - 300 + 10 * eur + 30000 + 2000 + 750);
   assert.equal(at('TOTAL', 10), total, 'TOTAL = every category + uncategorized transfers; no payment, cashback, Exclude or uncategorized money in');
+  // v1.1.70: a group's row adds up its categories, and TOTAL counts each category once (through its group)
+  assert.equal(at('FOOD', 10), at(DIN, 10));
+  assert.equal(at('MOBILITY', 10), at('Ride apps & taxis', 10));
+  assert.equal(at('OTHER', 10), 750, 'a category typed by hand goes under Other');
+  assert.equal(at('TRAVEL', 10), 0);
   assert.equal(r2(ev.cellValue(findGrid(DIN), 15)), r2(120 * usd + 432.10 + 255.50 + 100), 'the year column adds the months');
 });
 

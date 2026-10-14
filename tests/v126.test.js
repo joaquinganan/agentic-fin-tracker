@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { load } = require('./harness');
 const { makeServices } = require('./sheets_mock');
 
-const D = 'Dining/Delivery + Entertainment + Other';
+const D = 'Restaurants & cafés';
 function rowsFor(h, list) {
   return [new Array(14).fill('h')].concat(list.map(o => {
     const r = new Array(14).fill('');
@@ -20,7 +20,7 @@ test('daily: rent/electricity are left out of the day-to-day comparison, but sti
   const h = load();
   const list = [];
   for (let d = 1; d <= 23; d++) list.push({ date: h.date(2026, 9, d), amount: 1000 });
-  list.push({ date: h.date(2026, 9, 24), merchant: 'EDESUR APP-WB', amount: 3600, category: 'Electricity' });
+  list.push({ date: h.date(2026, 9, 24), merchant: 'EDESUR APP-WB', amount: 3600, category: 'Utilities' });
   list.push({ date: h.date(2026, 9, 24), merchant: 'UBER*EATS', amount: 900 });
   const s = h.plain(h.ctx.computeDailySummary(rowsFor(h, list), { today: h.date(2026, 9, 25), rates: RATES, netIncomeDop: 60000, cards: [] }));
   assert.equal(s.spent, 4500, 'hero total includes the bill');
@@ -30,13 +30,13 @@ test('daily: rent/electricity are left out of the day-to-day comparison, but sti
   assert.ok(!s.recommendations.some(r => /highest days/.test(r.text)), 'no false alarm from the bill');
   assert.equal(s.last7.length, 7);
   assert.deepEqual(s.last7.map(x => x.amount), [1000, 1000, 1000, 1000, 1000, 1000, 4500]);
-  assert.ok(s.mtdTop.every(c => c.cat !== 'Electricity'), 'bars show variable categories only');
+  assert.ok(s.mtdTop.every(c => c.cat !== 'Utilities'), 'bars show variable categories only');
   assert.equal(s.mtdBills, 3600);
 });
 
 test('daily email: redesigned blocks, preheader, links, data-health line', () => {
   const h = load();
-  const list = [{ date: h.date(2026, 9, 24), merchant: 'SM POLA', amount: 1200, category: 'Groceries + Barbershop', bank: 'BANESCO' }];
+  const list = [{ date: h.date(2026, 9, 24), merchant: 'SM POLA', amount: 1200, category: 'Groceries', bank: 'BANESCO' }];
   const s = h.ctx.computeDailySummary(rowsFor(h, list), { today: h.date(2026, 9, 25, 8), rates: RATES, netIncomeDop: 60000, cards: [],
     lastRun: { at: h.date(2026, 9, 25, 6, 4).toISOString(), saved: 3, unparsed: 1, errors: 0 }, now: h.date(2026, 9, 25, 8, 10) });
   const mail = h.plain(h.ctx.buildDailySummaryEmail(s, { sheetName: 'Tracker',
@@ -63,15 +63,15 @@ test('data health: stale update and unknown status', () => {
 function monthData(h) {
   const list = [];
   for (const [m, last, uber] of [[6, 30, 300], [7, 31, 300], [8, 31, 450]]) {
-    for (let d = 1; d <= last; d++) list.push({ date: h.date(2026, m, d), merchant: 'UBER*RIDES', amount: uber, category: 'Transportation' });
-    list.push({ date: h.date(2026, m, 2), merchant: 'LANDLORD', amount: 30000, category: 'Rent', type: 'Transfer' });
-    list.push({ date: h.date(2026, m, 5), merchant: 'Spotify', amount: 12, currency: 'USD', category: 'Streaming & Subscriptions' });
+    for (let d = 1; d <= last; d++) list.push({ date: h.date(2026, m, d), merchant: 'UBER*RIDES', amount: uber, category: 'Ride apps & taxis' });
+    list.push({ date: h.date(2026, m, 2), merchant: 'LANDLORD', amount: 30000, category: 'Rent & housing', type: 'Transfer' });
+    list.push({ date: h.date(2026, m, 5), merchant: 'Spotify', amount: 12, currency: 'USD', category: 'Subscriptions' });
   }
-  list.push({ date: h.date(2026, 8, 6), merchant: 'Netflix', amount: 10, currency: 'USD', category: 'Streaming & Subscriptions' });
-  list.push({ date: h.date(2026, 8, 10), merchant: 'FARMA VALUE FD05', amount: 2000, bank: 'POPULAR', category: 'Health + Vet + Pharmacy' });
+  list.push({ date: h.date(2026, 8, 6), merchant: 'Netflix', amount: 10, currency: 'USD', category: 'Subscriptions' });
+  list.push({ date: h.date(2026, 8, 10), merchant: 'FARMA VALUE FD05', amount: 2000, bank: 'POPULAR', category: 'Health & pharmacy' });
   list.push({ date: h.date(2026, 8, 12), merchant: 'MARIA PRUEBA', amount: 5000, category: '', type: 'Transfer' });
   list.push({ date: h.date(2026, 8, 15), merchant: 'PAGO TARJETA', amount: 20000, type: 'Card Payment', category: 'Exclude' });
-  list.push({ date: h.date(2026, 9, 1), merchant: 'UBER*RIDES', amount: 999, category: 'Transportation' });   // next month: ignored
+  list.push({ date: h.date(2026, 9, 1), merchant: 'UBER*RIDES', amount: 999, category: 'Ride apps & taxis' });   // next month: ignored
   return rowsFor(h, list);
 }
 
@@ -93,7 +93,7 @@ test('monthly: totals, comparisons, subscriptions, missed cashback, year to date
   assert.equal(m.byDayToDay[2], 450, 'calendar colours leave the rent out');
   assert.equal(m.byDay[2], 30450);
   const texts = m.recommendations.map(r => r.text).join(' | ');
-  assert.match(texts, /Spending was up \d+% vs\. July, mostly Transportation/);
+  assert.match(texts, /Spending was up \d+% vs\. July, mostly Ride apps & taxis/);
   assert.match(texts, /2 subscription\(s\) cost RD\$1,320 this month — about RD\$15,840 a year/);
   assert.match(texts, /RD\$100 in cashback was left on the table — e\.g\. pharmacies paid with POPULAR/);
   assert.match(texts, /1 transfer\(s\) have no category/);

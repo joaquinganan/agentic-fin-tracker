@@ -146,7 +146,7 @@ test('reported shape: "1.234,56" typed in Incoming Transfers goes to Unrecognize
   mock.ss.insertSheet('Transactions'); h.ctx.initializeTransactionsSheet();
   const inc = mock.ss.insertSheet('Incoming Transfers');
   inc.getRange(1, 1, 1, 8).setValues([h.get('TRANSFERS_HEADERS')]);
-  inc.getRange(2, 1, 2, 6).setValues([['2026-08-28', 'LAFISE', 'Roommate', 'Rent', '1.234,56', 'DOP'], ['2026-08-29', 'LAFISE', 'Roommate', 'Rent', '1,234.56', 'DOP']]);
+  inc.getRange(2, 1, 2, 6).setValues([['2026-08-28', 'LAFISE', 'Roommate', 'Rent & housing', '1.234,56', 'DOP'], ['2026-08-29', 'LAFISE', 'Roommate', 'Rent & housing', '1,234.56', 'DOP']]);
   assert.deepEqual(h.plain(h.ctx.importTypedIncomingRows()), { added: 1, rejected: 1, repaired: 0 });
   const tx = mock.ss.getSheetByName('Transactions').getDataRange().getValues().slice(1);
   assert.deepEqual(tx.map(r => r[3]), [-1234.56]);

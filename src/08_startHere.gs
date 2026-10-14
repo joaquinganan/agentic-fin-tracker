@@ -107,9 +107,22 @@ function startHereStatus(now) {
       .filter(r => r[TX_COL.DATE] && r[TX_COL.TYPE] === 'Incoming' && !String(r[TX_COL.CATEGORY] || '').trim()).length;
     if (received) {
       add('Your data', 'incoming', received + ' incoming transfer(s) without a category', 'warn',
-        'Give each one the category it pays back (a roommate\'s share of the rent → Rent) and it is taken off what you spent there; ' +
+        'Give each one the category it pays back (a roommate\'s share of the rent → Rent & housing) and it is taken off what you spent there; ' +
         'Exclude for money that pays nothing back. A Custom Rule on the sender\'s name does it by itself.',
         open('Open Incoming Transfers', 'Incoming Transfers'));
+    }
+  }
+
+  // v1.1.70: Custom Rules still on a category name that merged several kinds of spending (one-to-one names were renamed)
+  if (configured) {
+    let rules = {};
+    try { rules = getUserCustomRules(config.email); } catch (error) { rules = {}; }
+    const old = Object.keys(rules).filter(isMergedLegacyCategory);
+    if (old.length) {
+      add('Your data', 'oldCategories', 'Custom Rules with a category from before v1.1.70', 'warn',
+        'These names were split into several categories: ' + old.map(c => '"' + c + '" → ' +
+          LEGACY_CATEGORIES[c].within.join(' or ')).join('; ') + '. Pick the new one in the Category column of each rule.',
+        open('Open Custom Rules', 'Custom Rules'));
     }
   }
 

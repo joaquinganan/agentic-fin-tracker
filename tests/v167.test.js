@@ -179,12 +179,12 @@ test('a hold put back by hand stays yours; no receipts in Gmail: nothing changes
   h.ctx.reconcileRideReceipts(h.date(2026, 10, 9, 6, 0));
   const sheet = mock.ss.getSheetByName('Transactions');
   const i = tx().findIndex(x => x[3] === 230.1);
-  sheet.getRange(i + 2, 6).setValue('Transportation');   // you say it was charged
+  sheet.getRange(i + 2, 6).setValue('Ride apps & taxis');   // you say it was charged
   h.ctx.recategorizeAllTransactions('user@example.com');
-  assert.equal(tx()[i][5], 'Transportation');
+  assert.equal(tx()[i][5], 'Ride apps & taxis');
   // a typed row has no Gmail message: it is skipped, not an error
   const typed = h.ctx.transactionToRow({ date: h.date(2026, 10, 8), bank: 'LAFISE', merchant: 'UBER*RIDES', amount: 50, currency: 'DOP',
-    category: 'Transportation', description: 'UBER*RIDES', subject: 'Added by hand', timestamp: 't', type: 'Transaction', messageId: 'manual:1:out:9' });
+    category: 'Ride apps & taxis', description: 'UBER*RIDES', subject: 'Added by hand', timestamp: 't', type: 'Transaction', messageId: 'manual:1:out:9' });
   sheet.appendRow(typed);
   assert.doesNotThrow(() => h.ctx.reconcileRideReceipts(h.date(2026, 10, 9, 6, 0)));
 });

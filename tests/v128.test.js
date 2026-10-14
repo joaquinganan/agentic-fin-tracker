@@ -6,7 +6,7 @@ const { makeServices, fakeThread } = require('./sheets_mock');
 
 const EMAIL = 'user@example.com';
 
-/** Same configured system as integration.test.js: every fixture email in Gmail, one custom category ("Pets"). */
+/** Same configured system as integration.test.js: every fixture email in Gmail, one custom category ("Kids" — Pets is a default since v1.1.70). */
 function setup() {
   const mock = makeServices();
   const h = load({ services: mock.services });
@@ -18,7 +18,7 @@ function setup() {
   h.ctx.initializeTransactionsSheet();
   const rules = mock.ss.insertSheet('Custom Rules');
   [['UserEmail', 'Category', 'Keyword', 'Timestamp'], ['(example — delete this row)', 'Exclude', 'YOUR NAME', ''],
-   [EMAIL, 'Pets', 'PETSMART', '']].forEach(r => rules.appendRow(r));
+   [EMAIL, 'Kids', 'TOYSRUS', '']].forEach(r => rules.appendRow(r));
   const msg = fx => h.fakeMessage({ subject: fx.subject, from: fx.from, body: fixture(fx.name), date: h.date(...fx.date), id: 'id-' + fx.name });
   const byName = Object.fromEntries(manifest().map(fx => [fx.name, fx]));
   mock.gmail.threads.push(
@@ -38,20 +38,26 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
 
 test('category colours: one per category, distinct, readable (WCAG AA 4.5:1), custom ones rotate', () => {
   const h = load();
-  const palette = h.plain(h.ctx.categoryPalette(['Pets', 'Kids', 'Exclude', 'Rent']));
+  // v1.1.70: 25 default categories; Pets is one of them; Investments & savings is reserved, like Exclude
+  const palette = h.plain(h.ctx.categoryPalette(['Pets', 'Kids', 'Exclude', 'Rent & housing', 'Investments & savings', 'Toys']));
   const names = palette.map(p => p.name);
   const T = h.plain(h.get('SHEET_THEME'));
-  assert.deepEqual(names.slice(0, 10), h.plain(h.ctx.getCategories()), 'every default category, in their order');
-  assert.deepEqual(names.slice(10), ['Exclude', 'Pets', 'Kids'], 'Exclude, then custom ones — no duplicates of defaults/Exclude');
+  const defaults = h.plain(h.ctx.getCategories());
+  assert.equal(defaults.length, 25);
+  assert.deepEqual(names.slice(0, 25), defaults, 'every default category, in their order');
+  assert.deepEqual(names.slice(25), ['Exclude', 'Investments & savings', 'Kids', 'Toys'],
+    'Exclude and Investments & savings, then custom ones — no duplicates of defaults or reserved ones');
   assert.equal(new Set(palette.map(p => p.bg)).size, palette.length, 'no two categories share a background');
   const checks = palette.map(p => [p.name, p.fg, p.bg])
     .concat(Object.entries(h.plain(h.get('TYPE_COLORS'))).map(([t, c]) => [t, c[1], c[0]]))
     .concat([['header', T.headerFg, T.headerBg], ['refund on stripe', T.refund, T.stripe], ['config keys', T.keyFg, T.keyBg]]);
   for (const [what, fg, bg] of checks) assert.ok(contrast(fg, bg) >= 4.5, `${what}: ${fg} on ${bg} = ${contrast(fg, bg).toFixed(2)}:1`);
-  // the four chips from the demo video are kept
+  // the four chips from the demo video are kept (v1.1.70: on the categories that took over from those)
   const byName = Object.fromEntries(palette.map(p => [p.name, [p.bg, p.fg]]));
-  assert.deepEqual(byName['Groceries + Barbershop'], ['#FFF4E5', '#B45309']);
-  assert.deepEqual(byName['Transportation'], ['#EAF1FE', '#1D4ED8']);
+  assert.deepEqual(byName['Groceries'], ['#FFF4E5', '#B45309']);
+  assert.deepEqual(byName['Ride apps & taxis'], ['#EAF1FE', '#1D4ED8']);
+  assert.deepEqual(byName['Restaurants & cafés'], ['#FFE4E6', '#BE123C']);
+  assert.deepEqual(byName['Health & pharmacy'], ['#E8F5E9', '#2E7D32']);
 });
 
 test('data sheets get header, chips and attention rules after a run — and styling raised no error', () => {
@@ -66,15 +72,15 @@ test('data sheets get header, chips and attention rules after a run — and styl
   assert.match(rules[0].whenFormulaSatisfied, /^=OR\(\$C2="\(unparsed/, 'problem rows first (highest priority)');
   assert.equal(rules[1].whenFormulaSatisfied, '=AND($A2<>"",$L2="Transfer",$F2="")', 'uncategorized transfers next');
   const chips = rules.filter(r => r.whenTextEqualTo && colOf(r) === 6).map(r => [r.whenTextEqualTo, r.setBackground]);
-  assert.equal(chips.length, 12, '10 categories + Exclude + Pets on column F');
-  assert.deepEqual(chips.find(c => c[0] === 'Pets'), ['Pets', '#CFFAFE']);
+  assert.equal(chips.length, 28, '25 categories + Exclude + Investments & savings + Kids on column F');
+  assert.deepEqual(chips.find(c => c[0] === 'Kids'), ['Kids', '#CFFAFE']);
   assert.ok(rules.some(r => r.whenTextEqualTo === 'Transfer' && colOf(r) === 12), 'Type chip');
   assert.ok(rules.some(r => r.whenNumberLessThan === 0 && colOf(r) === 4 && r.setFontColor === '#2E7D32'), 'refunds green');
   assert.equal(rules[rules.length - 1].whenFormulaSatisfied, '=AND($A2<>"",ISEVEN(ROW()))', 'stripe last (lowest priority)');
   // every rule covers the whole sheet below the header, not just current rows
   assert.ok(rules.every(r => r.ranges[0].getRow() === 2 && r.ranges[0].getNumRows() === tx.getMaxRows() - 1));
   const raw = mock.ss.getSheetByName('Raw_BHD');
-  assert.ok(raw.cfRules.some(r => r.whenTextEqualTo === 'Health + Vet + Pharmacy' && colOf(r) === 4), 'Raw_ sheets: chips on column D');
+  assert.ok(raw.cfRules.some(r => r.whenTextEqualTo === 'Health & pharmacy' && colOf(r) === 4), 'Raw_ sheets: chips on column D');
 });
 
 test('Bank Transfers shows each transfer\'s Category; an old sheet is migrated and its filter recreated', () => {
@@ -102,12 +108,12 @@ test('Custom Rules: a dropdown of every category (new names allowed), chips, exa
   h.ctx.runGmailMonitorForDateRange('2026-01-01', '2026-12-31');
   const cr = mock.ss.getSheetByName('Custom Rules');
   const dv = h.plain(cr.styles.find(s => s.m === 'setDataValidation').v);
-  assert.deepEqual(dv.list.slice(-2), ['Exclude', 'Pets']);
-  assert.equal(dv.list.length, 12);
+  assert.deepEqual(dv.list.slice(-3), ['Exclude', 'Investments & savings', 'Kids']);
+  assert.equal(dv.list.length, 28);
   assert.equal(dv.allowInvalid, true, 'typing a new category still works');
   assert.match(dv.helpText, /type a new name/);
   assert.ok(cr.cfRules.some(r => r.whenFormulaSatisfied === '=LEFT($A2,8)="(example"' && r.setItalic === true));
-  assert.ok(cr.cfRules.some(r => r.whenTextEqualTo === 'Pets' && r.ranges[0].getColumn() === 2));
+  assert.ok(cr.cfRules.some(r => r.whenTextEqualTo === 'Kids' && r.ranges[0].getColumn() === 2));
   const cfg = mock.ss.getSheetByName('Configuration');
   assert.ok(cfg.styles.some(s => s.m === 'setNote' && /Setup Wizard/.test(s.v)));
 });
@@ -119,7 +125,7 @@ test('Categories sheet shows each category in its chip colours', () => {
   const bg = h.plain(sheet.styles.find(s => s.m === 'setBackgrounds' && s.rect.c1 === 2).v.map(r => r[0]));
   const all = sheet._rows(4);
   const names = all.slice(all.findIndex(r => r[1] === 'Category') + 1).map(r => r[1]).filter(Boolean);
-  const palette = Object.fromEntries(h.plain(h.ctx.categoryPalette(['Pets'])).map(p => [p.name, p.bg]));
+  const palette = Object.fromEntries(h.plain(h.ctx.categoryPalette(['Kids'])).map(p => [p.name, p.bg]));
   assert.deepEqual(bg, names.map(n => palette[n]));
-  assert.ok(names.includes('Pets') && names.includes('Exclude'));
+  assert.ok(names.includes('Kids') && names.includes('Exclude'));
 });

@@ -102,7 +102,9 @@ test('Dashboard income box: ISR row for DOP, rate row for USD; card table points
   assert.equal(mock.ss.getRangeByName('CFG_ISR').getValue(), 1854);
   assert.deepEqual(h.plain(mock.ss.getRangeByName('DASH_CARDS').getValues()),
     [['No credit cards set up yet', '', '', '', 'Add them in 📊 Tracker › Setup Wizard.']], 'v1.1.27: no empty bank rows');
-  assert.ok(dash.getColumnWidth(2) >= 300, 'column B fits the longest category label');
+  // v1.1.70: the longest label is now an indented category ("Public transport & parking"), shorter than the old
+  // "Dining/Delivery + Entertainment + Other"
+  assert.ok(dash.getColumnWidth(2) >= 280, 'column B fits the longest category label');
 });
 
 // ---------- Auto-fit columns
@@ -123,11 +125,13 @@ test('columns widen to fit the data after a run; hidden columns and wider manual
   assert.ok(!h.logs.some(l => l.includes('Could not fit')));
 });
 
-// ---------- Education removed
-test('Education is no longer a default category', () => {
+// ---------- Education removed (v1.1.24) — and back as "Education & books" in v1.1.70, on purpose: the categories agreed
+// for v1.1.70 have it (courses, a language school and books were a real part of the spending they were built from)
+test('Education: removed in v1.1.24, back as "Education & books" in v1.1.70', () => {
   const h = load();
   assert.ok(!h.plain(h.ctx.getCategories()).includes('Education'));
-  assert.equal(h.ctx.categorizeTransaction('ACADEMIA DE INGLES'), 'Dining/Delivery + Entertainment + Other');
+  assert.ok(h.plain(h.ctx.getCategories()).includes('Education & books'));
+  assert.equal(h.ctx.categorizeTransaction('ACADEMIA DE INGLES'), 'Education & books');
 });
 
 // ---------- Daily summary
@@ -136,7 +140,7 @@ function rowsFor(h, list) {
   return [header].concat(list.map(o => {
     const r = new Array(14).fill('');
     r[0] = o.date; r[1] = o.bank || 'LAFISE'; r[2] = o.merchant || 'X'; r[3] = o.amount; r[4] = o.currency || 'DOP';
-    r[5] = o.category === undefined ? 'Dining/Delivery + Entertainment + Other' : o.category;
+    r[5] = o.category === undefined ? 'Restaurants & cafés' : o.category;
     r[11] = o.type || 'Transaction';
     return r;
   }));
@@ -146,7 +150,7 @@ test('daily summary: totals, average, pace, open transfers, card tips (pure)', (
   const h = load();
   const list = [];
   for (let d = 1; d <= 23; d++) list.push({ date: h.date(2026, 9, d), amount: 1000 });          // steady RD$1,000/day
-  list.push({ date: h.date(2026, 9, 24), merchant: 'FARMA VALUE FD05', bank: 'POPULAR', amount: 3000, category: 'Health + Vet + Pharmacy' });
+  list.push({ date: h.date(2026, 9, 24), merchant: 'FARMA VALUE FD05', bank: 'POPULAR', amount: 3000, category: 'Health & pharmacy' });
   list.push({ date: h.date(2026, 9, 24), merchant: 'UBER*EATS', amount: 25, currency: 'USD' });
   list.push({ date: h.date(2026, 9, 24), merchant: 'PAGO TARJETA', amount: 20000, type: 'Card Payment', category: 'Exclude' });
   list.push({ date: h.date(2026, 9, 24), merchant: 'MARIA PRUEBA', amount: 1500, type: 'Transfer', category: '' });

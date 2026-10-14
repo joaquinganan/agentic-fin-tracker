@@ -113,12 +113,14 @@ const BANK_PATTERNS = {
     // v1.1.60: real samples — card purchases ("Notificacion de Consumos") and interbank transfers sent
     // v1.1.61: interbank transfers RECEIVED (same subject as the ones sent; the body says "Recibida"), and strict: an
     // email none of these recognizes goes to Unrecognized instead of being guessed (see STRICT_BANK_NOTE)
-    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDITransferTransactions, incoming: extractBDIIncomingTransactions,
+    // v1.1.70: transfer = interbank, or to another BDI account ("Comprobante de Transacción", Tipo: Transferencias)
+    extractors: { consumo: extractBDIConsumoTransactions, transfer: extractBDIAnyTransferTransactions, incoming: extractBDIIncomingTransactions,
       cardPayment: extractBDICardPaymentTransactions },
     // v1.1.69: "BDI Online" lays the receipt out in columns (all labels, then all values), so the card payment is
     // recognized anywhere in the text, not right after its label
     detectType: (subject, text) => /Interbancaria\s+Recibida/i.test(text) ? 'Incoming' :
-      /Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' : null,   // v1.1.62
+      /Pago Tarjetas? de Cr[ée]dito/i.test(text) ? 'Card Payment' :   // v1.1.62
+      /Tipo de Transacci[óo]n\s+Transferencias?\b/i.test(text) ? 'Transfer' : null,   // v1.1.70
     // v1.1.62: "… Interbancaria - Completada" confirms a transfer already read from its "Comprobante" (same time)
     ignore: [/Transacci[óo]n Interbancaria\s*-\s*Completada/i],
     strict: true,
@@ -783,6 +785,9 @@ function parseEmailMessage(message, rawCustomRules, stats) {
       if (!category && type === 'Transaction' && !isReversal) {   // a reversal takes its original's category
         category = categorizeTransaction(merchant);
       }
+      // v1.1.70: a bank's tax-and-commission row, a loan installment (broker deposits: at the run's Recategorize, which
+      // reads Investment Accounts)
+      if (!category && type === 'Transfer') category = autoTransferCategory(merchant, []);
       // v1.1.51: money received is saved NEGATIVE, like a reversal — given a category (a Custom Rule, or by hand) it
       // reduces what you spent there; money from your own account is Exclude
       const isIncoming = type === 'Incoming';
@@ -1113,7 +1118,7 @@ const REVERSAL_UNMATCHED = 'Reversal (original purchase not found)'; // v1.1.23
  * v1.1.34: a POPULAR "Código Cash" withdrawal has no merchant column (Monto | Moneda | Fecha | Estatus), so the
  * status word after the date — "Aprobada" — was saved as the merchant (seen in a live Raw_POPULAR). A status word is
  * never a merchant: a Código Cash email gets a clear label, anything else the unreadable-merchant placeholder.
- * The category stays the fallback, Dining/Delivery + Entertainment + Other.
+ * The category was the fallback, Dining/Delivery + Entertainment + Other; since v1.1.70 it is Cash.
  */
 const STATUS_WORD_MERCHANT = /^(APROBAD[AO]|RECHAZAD[AO]|DECLINAD[AO]|REVERSAD[AO]|REVERSO)$/i;
 const CODIGO_CASH_MERCHANT = 'Código Cash (cash withdrawal)';
@@ -1655,6 +1660,43 @@ function extractBDITransferTransactions(text) {
     merchant: (who || 'Transferencia interbancaria').trim().substring(0, 50), context: (bank ? 'to ' + bank.trim() : 'interbank transfer') }];
   if (fees > 0) out.push({ amount: +fees.toFixed(2), currency: currency, merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' });
   return out;
+}
+
+/**
+ * v1.1.70: BDI Digital "Comprobante de Transacción" for a transfer to another BDI account ("Tipo de Transacción
+ * Transferencias", no "[Salida]"), often a currency exchange between two accounts:
+ *   Monto Transferido US$50.00 · … Impuesto 0.20% RD$0.00 Monto RD$3,050.00 … Beneficiario <NAME> <account> …
+ *   Monto US$50.00 Tasa de Cambio 61.00 Comisión US$0.00
+ * The money out is the FIRST "Monto" (in the source account's currency); what arrived is in the context. The email
+ * does not say whether the account is yours: a Custom Rule on your name (→ Exclude) does. Tax and commission: a row
+ * per currency, when not zero.
+ */
+function extractBDIInternalTransferTransactions(text) {
+  const flat = flatText(text);
+  if (/\[\s*Salida\s*\]|Interbancaria/i.test(flat) || !/Tipo de Transacci[óo]n\s+Transferencias?\b/i.test(flat)) return [];
+  const out = flat.match(/Impuesto[^$]*?(?:RD|US)\$\s*[\d,]+\.\d{2}\s+Monto\s+(RD\$|US\$)\s*([\d,]+\.\d{2})/i);
+  if (!out) return [];
+  const currency = moneyCurrency(out[1]);
+  const who = ((flat.match(/Beneficiario\s+(.+?)\s+\d{6,}/i) || [])[1] || '').trim();
+  const acct = (flat.match(/Beneficiario\s+.+?\s+(\d{6,})/i) || [])[1];
+  const got = flat.match(/No\. Autorizaci[óo]n\s+\S+\s+Monto\s+(RD\$|US\$)\s*([\d,]+\.\d{2})\s+Tasa de Cambio\s+([\d.,]+)/i);
+  const items = [{ amount: moneyNumber(out[2]), currency: currency, merchant: (who || 'Transferencia BDI').substring(0, 50),
+    context: 'to BDI account' + (acct ? ' ***' + acct.slice(-4) : '') +
+      (got && moneyCurrency(got[1]) !== currency ? ' (' + got[1] + got[2] + ' at ' + got[3] + ')' : '') }];
+  const fees = {};
+  [/Impuesto[^$]*?(RD|US)\$\s*([\d,]+\.\d{2})/i, /Comisi[óo]n\s+(RD|US)\$\s*([\d,]+\.\d{2})/i].forEach(re => {
+    const f = flat.match(re);
+    if (f && moneyNumber(f[2]) > 0) { const c = moneyCurrency(f[1] + '$'); fees[c] = (fees[c] || 0) + moneyNumber(f[2]); }
+  });
+  Object.keys(fees).forEach(c => items.push({ amount: +fees[c].toFixed(2), currency: c,
+    merchant: 'BDI — impuesto y comisión de transferencia', context: 'transfer fees' }));
+  return items;
+}
+
+/** v1.1.70: BDI transfers sent — interbank ("[Salida]") or to another BDI account. */
+function extractBDIAnyTransferTransactions(text) {
+  const interbank = extractBDITransferTransactions(text);
+  return interbank.length ? interbank : extractBDIInternalTransferTransactions(text);
 }
 
 /** Scotiabank "Autorización …": "por un monto de $25.50 USD en <merchant> con su Tarjeta de Crédito Scotiabank ***1234". */

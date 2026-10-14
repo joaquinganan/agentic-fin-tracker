@@ -30,10 +30,10 @@ test('Scotiabank transfer to your own credit card: a Card Payment, Exclude, the 
   assert.deepEqual([re.type, re.category], ['Card Payment', 'Exclude']);
 });
 
-test('Scotiabank transfer to your own loan: money out, no category; to another account of yours: Exclude', () => {
+test('Scotiabank transfer to your own loan: money out, Loan payments (v1.1.70; no category before); to another account of yours: Exclude', () => {
   const h = load();
   const loan = parseBody(h, EMAILS.scotiaOwn, fixture(EMAILS.scotiaOwn.body).replace('Tarjeta de Crédito ***2222', 'Préstamo ***3333'));
-  assert.deepEqual(loan.items.map(row), [['SCOTIABANK', 'Transfer', 'DOP', 1250.4, 'Pago de préstamo ***3333', '']]);
+  assert.deepEqual(loan.items.map(row), [['SCOTIABANK', 'Transfer', 'DOP', 1250.4, 'Pago de préstamo ***3333', 'Loan payments']]);   // v1.1.70: was left without a category
   const own = parseBody(h, EMAILS.scotiaOwn, fixture(EMAILS.scotiaOwn.body).replace('Tarjeta de Crédito ***2222', 'Cuenta de Ahorro ***4444'));
   assert.deepEqual(own.items.map(row), [['SCOTIABANK', 'Transfer', 'DOP', 1250.4, 'Transferencia a Cuenta de Ahorro ***4444', 'Exclude']]);
   assert.match(own.items[0].description, /\(own account\)$/);
@@ -56,7 +56,7 @@ test('BDI Online card payment (receipt in columns): the amount paid is Exclude, 
   const r = parse(h, EMAILS.bdiOnline);
   assert.equal(r.status, 'ok', 'reported: Unrecognized, "Format not known yet"');
   assert.deepEqual(r.items.map(row), [['BDI', 'Card Payment', 'DOP', 2500, 'Pago Tarjetas de Crédito (BDI)', 'Exclude'],
-    ['BDI', 'Transfer', 'DOP', 5, 'BDI: impuesto y comisión de pago de tarjeta', '']]);
+    ['BDI', 'Transfer', 'DOP', 5, 'BDI: impuesto y comisión de pago de tarjeta', 'Bank fees & taxes']]);   // v1.1.70
   assert.equal(r.items[0].txRef, 'BDI:PAY:4000001');
   assert.ok(!r.items.some(x => /PEREZ|1234/.test(x.merchant)), 'neither the holder nor the card number is kept');
   // a commission is added to the tax
@@ -69,12 +69,12 @@ test('BDI Online card payment (receipt in columns): the amount paid is Exclude, 
   assert.deepEqual(h.plain(h.ctx.extractBDICardPaymentTransactions(fixture('bdi_pago_tarjeta'))).map(x => x.amount), [4000, 8]);
 });
 
-test('Banreservas loan payment: money out named after the loan, no category; its tax a row of its own', () => {
+test('Banreservas loan payment: money out named after the loan, Loan payments (v1.1.70); its tax a row of its own', () => {
   const h = load();
   const r = parse(h, EMAILS.brLoan);
   assert.equal(r.status, 'ok', 'reported: Unrecognized, "Format not known yet"');
-  assert.deepEqual(r.items.map(row), [['BANRESERVAS', 'Transfer', 'DOP', 3200.5, 'Pago de préstamo *3333', ''],
-    ['BANRESERVAS', 'Transfer', 'DOP', 4.8, 'Banreservas: impuesto y comisión de pago de préstamo', '']]);
+  assert.deepEqual(r.items.map(row), [['BANRESERVAS', 'Transfer', 'DOP', 3200.5, 'Pago de préstamo *3333', 'Loan payments'],   // v1.1.70: Loan payments and Bank fees & taxes by themselves
+    ['BANRESERVAS', 'Transfer', 'DOP', 4.8, 'Banreservas: impuesto y comisión de pago de préstamo', 'Bank fees & taxes']]);
   assert.equal(r.items[0].txRef, 'BANRESERVAS:200000000001');
   // a transfer to a third party still reads as before
   assert.deepEqual(parse(h, { subject: 'Recibo de la transacción', from: EMAILS.brLoan.from, body: 'banreservas_transferencia_tercero' }).items.map(x => x.type),

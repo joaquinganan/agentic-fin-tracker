@@ -70,7 +70,7 @@ test('recategorize repairs the CACHAREPA row and never touches the merchant (C3,
     DESCRIPTION: 'CACHAREPA CHURCHILL', TYPE: 'Transfer', CATEGORY: '', CURRENCY: 'DOP', IS_CREDIT: 'NO' });
   const r1 = h.plain(h.ctx.computeRecategorization(cacharepa, {}));
   assert.equal(r1.type, 'Transaction');
-  assert.equal(r1.category, 'Dining/Delivery + Entertainment + Other');
+  assert.equal(r1.category, 'Unclassified');
   assert.equal('merchant' in r1, false, 'recategorize has no way to rewrite the merchant any more');
 
   const bdi = mkRow({ SUBJECT: 'Aviso BDI', MERCHANT: 'X', TYPE: 'Transfer', CURRENCY: 'DOP' });
@@ -82,7 +82,7 @@ test('recategorize repairs the CACHAREPA row and never touches the merchant (C3,
   assert.equal(r3.isCashback, 'YES');
 
   const payment = mkRow({ SUBJECT: 'Joaquín, ¡Realizaste un pago a tu tarjeta LAFISE!', MERCHANT: 'LAFISE',
-    TYPE: 'Transaction', CATEGORY: 'Dining/Delivery + Entertainment + Other', CURRENCY: 'FKR', IS_CREDIT: 'NO' });
+    TYPE: 'Transaction', CATEGORY: 'Unclassified', CURRENCY: 'FKR', IS_CREDIT: 'NO' });
   const r4 = h.plain(h.ctx.computeRecategorization(payment, {}));
   assert.equal(r4.type, 'Card Payment');
   assert.equal(r4.category, 'Exclude', 'card payments are explicitly excluded (v1.1.23)');
@@ -116,7 +116,7 @@ test('reversals pair with their original and net to zero (v1.1.23)', () => {
   const COL = h.get('TX_COL');
   const tx = (o) => Object.assign({ bank: 'BHD', currency: 'DOP', type: 'Transaction', date: h.date(2026, 5, 6) }, o);
   const batch = [
-    tx({ merchant: 'PedidosYa*Som Cafe', category: 'Dining/Delivery + Entertainment + Other', amount: 488, timeKey: '06/05/2026 11:47 am' }),
+    tx({ merchant: 'PedidosYa*Som Cafe', category: 'Delivery', amount: 488, timeKey: '06/05/2026 11:47 am' }),
     tx({ merchant: h.get('REVERSAL_UNMATCHED'), category: '', amount: -488, reversal: true, timeKey: '06/05/2026 11:47 am' }),
     tx({ merchant: h.get('REVERSAL_UNMATCHED'), category: '', amount: -488, reversal: true, timeKey: '06/05/2026 11:47 am' }) // a 2nd reversal can't reuse it
   ];
@@ -124,24 +124,24 @@ test('reversals pair with their original and net to zero (v1.1.23)', () => {
   assert.equal(unmatched, 1);
   assert.equal(batch[1].merchant, 'PedidosYa*Som Cafe');
   assert.equal(batch[1].description, 'PedidosYa*Som Cafe (reversal)');
-  assert.equal(batch[1].category, 'Dining/Delivery + Entertainment + Other');
+  assert.equal(batch[1].category, 'Delivery');
   assert.equal(batch[0].amount + batch[1].amount, 0);
   assert.equal(batch[2].merchant, h.get('REVERSAL_UNMATCHED'));
 
   // original already saved on an earlier run: matched by bank + amount + day
   const saved = new Array(14).fill('');
   saved[COL.DATE] = h.date(2026, 5, 6); saved[COL.BANK] = 'BHD'; saved[COL.AMOUNT] = 488;
-  saved[COL.MERCHANT] = 'PedidosYa*Som Cafe'; saved[COL.CATEGORY] = 'Dining/Delivery + Entertainment + Other';
+  saved[COL.MERCHANT] = 'PedidosYa*Som Cafe'; saved[COL.CATEGORY] = 'Delivery';
   const later = [tx({ merchant: h.get('REVERSAL_UNMATCHED'), category: '', amount: -488, reversal: true, timeKey: '06/05/2026 11:47 am' })];
   assert.equal(h.ctx.resolveReversals(later, [new Array(14).fill('h'), saved]), 0);
-  assert.equal(later[0].category, 'Dining/Delivery + Entertainment + Other');
+  assert.equal(later[0].category, 'Delivery');
 
   // recategorize keeps a paired reversal in its original's category, and leaves an unmatched one blank
   const row = f => { const r = new Array(14).fill(''); Object.keys(f).forEach(k => { r[COL[k]] = f[k]; }); return r; };
   const subject = 'BHD Notificación de Transacciones';
   assert.equal(h.ctx.computeRecategorization(row({ SUBJECT: subject, MERCHANT: 'PedidosYa*Som Cafe',
     DESCRIPTION: 'PedidosYa*Som Cafe (reversal)', AMOUNT: -488, TYPE: 'Transaction', CURRENCY: 'DOP' }), {}).category,
-    'Dining/Delivery + Entertainment + Other');
+    'Delivery');
   assert.equal(h.ctx.computeRecategorization(row({ SUBJECT: subject, MERCHANT: h.get('REVERSAL_UNMATCHED'),
     DESCRIPTION: h.get('REVERSAL_UNMATCHED'), AMOUNT: -488, TYPE: 'Transaction', CURRENCY: 'DOP' }), {}).category, '');
 });

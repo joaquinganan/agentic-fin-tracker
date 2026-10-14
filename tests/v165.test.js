@@ -5,7 +5,7 @@ const { load } = require('./harness');
 
 // v1.1.65: the month-end pace counts bills and fixed costs once (plus the usual ones not paid yet) and extrapolates
 // only day-to-day spending. Before, everything spent so far was multiplied by days-in-month / day-of-month.
-const D = 'Dining/Delivery + Entertainment + Other';
+const D = 'Restaurants & cafés';
 function rowsFor(list) {
   return [new Array(14).fill('h')].concat(list.map(o => {
     const r = new Array(14).fill('');
@@ -30,19 +30,19 @@ const email = (h, list) => {
 function reportedCase(h) {
   const d = n => h.date(2026, 10, n);
   return [
-    { date: d(1), merchant: 'LANDLORD EJEMPLO', amount: 45000, category: 'Rent', type: 'Transfer', bank: 'BANESCO' },
+    { date: d(1), merchant: 'LANDLORD EJEMPLO', amount: 45000, category: 'Rent & housing', type: 'Transfer', bank: 'BANESCO' },
     { date: d(1), merchant: 'OWN ACCOUNT', amount: 60000, category: 'Exclude', type: 'Transfer' },
     { date: d(1), merchant: 'OWN ACCOUNT', amount: -60000, category: 'Exclude', type: 'Incoming', bank: 'BANESCO' },
     { date: d(1), merchant: 'UBER*EATS', amount: 400 }, { date: d(1), merchant: 'UBER*EATS', amount: 500 },
-    { date: d(1), merchant: 'UBER*RIDES', amount: 120, category: 'Transportation' },
-    { date: d(1), merchant: 'UBER*RIDES', amount: 160, category: 'Transportation' },
+    { date: d(1), merchant: 'UBER*RIDES', amount: 120, category: 'Ride apps & taxis' },
+    { date: d(1), merchant: 'UBER*RIDES', amount: 160, category: 'Ride apps & taxis' },
     { date: d(2), merchant: 'UBER*EATS', amount: 360 },
-    { date: d(3), merchant: 'SHELL EJEMPLO', amount: 2800, category: 'Vehicle Gas' },
+    { date: d(3), merchant: 'SHELL EJEMPLO', amount: 2800, category: 'Fuel & vehicle' },
     { date: d(3), merchant: 'UBER*EATS', amount: 400 }, { date: d(3), merchant: 'UBER*EATS', amount: 600 },
     { date: d(3), merchant: 'UBER*EATS', amount: 460 },
-    { date: d(4), merchant: 'SPOTIFY', amount: 3.5, currency: 'USD', category: 'Streaming & Subscriptions' },
+    { date: d(4), merchant: 'SPOTIFY', amount: 3.5, currency: 'USD', category: 'Subscriptions' },
     { date: d(4), merchant: 'UBER*EATS', amount: 400 }, { date: d(4), merchant: 'UBER*EATS', amount: 500 },
-    { date: d(5), merchant: 'TRAINER EJEMPLO', amount: 2500, category: 'Gym + Calisthenics', type: 'Transfer', bank: 'BANESCO' },
+    { date: d(5), merchant: 'TRAINER EJEMPLO', amount: 2500, category: 'Gym', type: 'Transfer', bank: 'BANESCO' },
     { date: d(5), merchant: 'UBER*EATS', amount: 400 }, { date: d(5), merchant: 'UBER*EATS', amount: 380 }
   ];
 }
@@ -76,14 +76,14 @@ test('bills of a usual month not paid yet are added once; bills already paid are
   const list = [];
   // July, August, September: rent RD$45,000, electricity RD$3,000, phone RD$1,500, and day-to-day spending
   [7, 8, 9].forEach(m => {
-    list.push({ date: h.date(2026, m, 1), amount: 45000, category: 'Rent', type: 'Transfer' });
-    list.push({ date: h.date(2026, m, 12), amount: 3000, category: 'Electricity' });
-    list.push({ date: h.date(2026, m, 15), amount: 1500, category: 'Telecommunications' });
+    list.push({ date: h.date(2026, m, 1), amount: 45000, category: 'Rent & housing', type: 'Transfer' });
+    list.push({ date: h.date(2026, m, 12), amount: 3000, category: 'Utilities' });
+    list.push({ date: h.date(2026, m, 15), amount: 1500, category: 'Phone & internet' });
     list.push({ date: h.date(2026, m, 20), amount: 9000 });
   });
   // October so far: rent paid, phone paid above its usual, electricity not yet; RD$1,000 a day of day-to-day
-  list.push({ date: h.date(2026, 10, 1), amount: 45000, category: 'Rent', type: 'Transfer' });
-  list.push({ date: h.date(2026, 10, 2), amount: 2000, category: 'Telecommunications' });
+  list.push({ date: h.date(2026, 10, 1), amount: 45000, category: 'Rent & housing', type: 'Transfer' });
+  list.push({ date: h.date(2026, 10, 2), amount: 2000, category: 'Phone & internet' });
   for (let n = 1; n <= 5; n++) list.push({ date: h.date(2026, 10, n), amount: 1000 });
   const s = summarize(h, list);
   assert.equal(s.mtdFixed, 47000);

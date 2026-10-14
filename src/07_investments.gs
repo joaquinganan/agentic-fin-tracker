@@ -219,6 +219,18 @@ function readInvestmentAccounts() {
     .map(r => ({ account: String(r[0]).trim(), kind: String(r[1]).trim(), keyword: String(r[2]).trim() }));
 }
 
+/**
+ * v1.1.70: the deposit keywords of Investment Accounts — a transfer whose beneficiary contains one is Investments &
+ * savings, not spending (computeRecategorization). Reads the sheet without creating it: before it exists, the
+ * defaults (HAPI's collection account).
+ */
+function investmentDepositKeywords() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVESTMENT_ACCOUNTS_SHEET);
+  const rows = sheet && sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues()
+    : DEFAULT_INVESTMENT_ACCOUNTS;
+  return rows.filter(r => String(r[0]).trim()).map(r => String(r[2] === null || r[2] === undefined ? '' : r[2]).trim()).filter(k => k);
+}
+
 /** Bank transfers (Transactions) whose beneficiary contains an account's deposit keyword → Deposit events. Pure. */
 function brokerDepositsFromTransactions(values, accounts) {
   const withKeyword = accounts.filter(a => a.keyword);

@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.69** (9 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.70** (14 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,15 +26,15 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.69)
+## 2. Estado actual (v1.1.70)
 
-- **284 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **295 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
 |---|---|
 | `01_main.gs` | Menú, corridas (diaria y por rango de fechas), Setup Wizard, configuración, disparadores. |
-| `02_categorizer.gs` | Categorías por comercio, palabras clave, paleta de colores. |
+| `02_categorizer.gs` | Categorías (25 en 8 grupos, cuál es fija), orden de las palabras clave (`CATEGORY_MATCH_ORDER`), categorías automáticas de transferencias, nombres viejos (`LEGACY_CATEGORIES`), paleta de colores. |
 | `03_gmailMonitor.gs` | Búsqueda en Gmail, `BANK_PATTERNS` (un bloque por banco), extractores por formato, filtros (promociones, no transaccionales, rechazados), lectura de estados de cuenta. |
 | `04_sheetsWriter.gs` | Guardado en Transactions, recategorización, hojas derivadas (Bank Transfers, Incoming Transfers, Raw_<BANCO>), Dashboard, estilos, Unrecognized, catálogo de tarjetas (`CARD_PRODUCTS`). |
 | `05_dailySummary.gs` / `06_monthlySummary.gs` | Correos de resumen diario y mensual. |
@@ -57,7 +57,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 | BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66; formato de sept. 2026 con `RD$` en cada monto, v1.1.68) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
 | BHD | Consumos (tabla con varias filas; "Denegada- …" se filtra como rechazada, v1.1.69), transferencias | bhd.com.do |
 | POPULAR | Consumos, Código Cash | popularenlinea.com |
-| BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta (también el comprobante "BDI Online", en columnas, v1.1.69) | bdi.com.do |
+| BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta (también el comprobante "BDI Online", en columnas, v1.1.69), transferencia a otra cuenta BDI ("BDI Digital: Comprobante de Transacción", a menudo un cambio de moneda; v1.1.70) | bdi.com.do |
 | SCOTIABANK | Autorizaciones con tarjeta, Pagos al Instante recibidos, transferencias enviadas (a terceros; a cuentas propias: a la tarjeta es pago de tarjeta, a un préstamo es gasto, a otra cuenta es Exclude; v1.1.69) | alertas@scotiabank.com |
 | QIK | Consumos con tarjeta de crédito, retiros con Código CASH | notificaciones@qik.do, no-reply-qik@qik.com.do |
 | BANRESERVAS | Transferencias enviadas (con impuesto aparte), retiros TuEfectivo, transferencias recibidas, pagos de préstamo desde la app y depósitos en oficina ("Dep de ahorros sin libreta"; propio si el depositante es el titular) (v1.1.69) | NotificacionesTuBancoApp@banreservas.com, notificaciones@banreservas.com |
@@ -135,6 +135,14 @@ git push
 - **Las hojas derivadas** (Bank Transfers, Incoming Transfers, Raw_<BANCO>) **se reconstruyen desde Transactions** en
   cada actualización. Cualquier lista de hojas en el código debe incluir a todas (un olvido dejó Incoming Transfers
   sin formato). Mejor aún: derivar las listas de una sola fuente, como `BANK_ORDER`.
+- **Las categorías (v1.1.70)** viven en `DEFAULT_CATEGORIES` con su grupo y si son fijas (`fixed`): el Dashboard y los
+  dos resúmenes leen eso (antes cada uno tenía su lista y se separaron). El **orden en que se prueban las palabras
+  clave es `CATEGORY_MATCH_ORDER`**, no el orden de la tabla: varias correcciones dependen de que una categoría se pruebe
+  antes que otra (Delivery antes que Ride apps por "UBER EATS", Restaurants antes que Fuel por "BONJOUR TOTAL"…).
+  Agregar una categoría: la entrada en `DEFAULT_CATEGORIES` (color de fondo único con contraste AA, lo verifica
+  `tests/v128.test.js`), su lugar en `CATEGORY_MATCH_ORDER` si tiene palabras clave, y si reemplaza un nombre viejo, la
+  entrada en `LEGACY_CATEGORIES` para que Recategorize mueva lo guardado. *Exclude* e *Investments & savings* son
+  reservadas: nunca son gasto (`isSpendingCategory`).
 - **Una configuración vieja debe seguir funcionando** sin abrir el Wizard (ejemplo: el ingreso adicional único se migra
   a la lista nueva y el Dashboard lo muestra sin quedar en 0).
 
@@ -160,8 +168,9 @@ git push
   asterisco como un fragmento aparte mete saltos de línea que Gmail no pone y produce falsos errores. Los extractores nuevos leen
   con `flatText()`, que quita esas marcas y conserva el asterisco dentro de una palabra. **Los fixtures deben llevar las
   marcas** donde el correo real tiene negritas: los de v1.1.60/61 no las tenían y las pruebas pasaban con correos que
-  en la vida real fallaban. Para emular el texto de Gmail desde un `.eml`, convertir `<b>`, `<strong>` y
-  `font-weight:bold` en `*…*`. La hoja Unrecognized muestra el texto tal como lo entrega Gmail: es la mejor referencia.
+  en la vida real fallaban. Para emular el texto de Gmail desde un `.eml`, convertir solo `<b>` y `<strong>` en `*…*`
+  (v1.1.70: convertir también `font-weight:bold` hizo que la plantilla de LAFISE de arriba leyera un comercio falso,
+  "cia:* 000… *Tipo de Transacción:*"; sin esa conversión, el comercio sale bien). La hoja Unrecognized muestra el texto tal como lo entrega Gmail: es la mejor referencia.
 - **Fechas:** `new Date('2026-08-28')` es medianoche UTC, que en Santo Domingo es el día anterior. Un texto
   `yyyy-mm-dd` se toma como su día (`normalizeDateForCompare`).
 - **Filas escritas a mano** en Bank Transfers e Incoming Transfers se importan a Transactions antes de reconstruir la
@@ -169,8 +178,7 @@ git push
   pudo reproducir**. Quedó una verificación posterior al guardado que corrige la fecha y deja en el registro la línea
   "⚠️ … please report this line". Si aparece, investigar con esa evidencia.
 - **Pruebas en Windows:** desde v1.1.66, `.gitattributes` fija LF en todo el repo, como en CI. Antes, con
-  `core.autocrlf=true`, el checkout quedaba en CRLF y fallaban pruebas que buscan `
-` en un fixture y `bundle:check`.
+  `core.autocrlf=true`, el checkout quedaba en CRLF y fallaban pruebas que buscan `\n` en un fixture y `bundle:check`.
   Un checkout anterior a ese cambio sigue en CRLF hasta renovarlo (`git rm -r --cached -q .` y `git reset --hard`, con
   el árbol limpio). En Windows, `npm run test:bundle` no corre (cmd no entiende `GS_BUNDLE=…`): usar Git Bash.
 - **No editar la hoja mientras corre el tracker** (pegar o borrar filas durante una ejecución).
@@ -212,9 +220,10 @@ git push
   `SUMMARY_HIGH_DAY_PERCENTILE`, `SUMMARY_SPORADIC_MULTIPLE` en `05_dailySummary.gs`). Falta confirmar con correos
   reales que los umbrales (60 días, percentil 90, 3×) se sienten bien; ajustarlos es cambiar esas constantes.
   La clave de la sección en la configuración sigue siendo `vsAverage` para que las configuraciones guardadas sirvan.
-- **Ritmo de fin de mes (v1.1.65):** los fijos (`SUMMARY_BILL_CATEGORIES`) cuentan una vez, más los de un mes usual
-  (promedio de 3 meses) que aún no se han pagado; solo el día a día se extrapola. Un pago mensual que no esté en
-  esas categorías (préstamo, seguro) todavía se multiplica: si aparece, agregar su categoría a la lista.
+- **Ritmo de fin de mes (v1.1.65):** las categorías fijas (`fixed` en `DEFAULT_CATEGORIES` desde v1.1.70) cuentan una
+  vez, más las de un mes usual (promedio de 3 meses) que aún no se han pagado; solo el día a día se extrapola. Desde
+  v1.1.70 Loan payments e Insurance son fijas. Un gasto único dentro de una categoría fija infla el ritmo de los tres
+  meses siguientes: por eso reparaciones, lavandería y equipo deportivo van en Shopping & home.
 - **Viajes de Uber (v1.1.67):** Uber autoriza un estimado al pedir el viaje; si la tarifa cambia autoriza la final (y
   libera el estimado), o cobra menos sin aviso nuevo; un pedido que no llega a viaje también deja una autorización.
   El banco avisa cada una como consumo. `reconcileRideReceipts` compara los avisos de viajes (`RIDE_MERCHANT_RE`) con
@@ -226,12 +235,25 @@ git push
 - **Hoja Unrecognized, texto cortado a 300 caracteres** (`04_sheetsWriter.gs`): en BHD cortó justo antes de la tabla
   y hizo falta el `.eml` para ver el estado "Denegada" (v1.1.69). Ampliarlo hace las filas más altas (la columna
   ajusta el texto); si se hace, revisar cómo se ve en la hoja real.
-- **Pagos de préstamo (v1.1.69):** Scotiabank y Banreservas se guardan como Transfer sin categoría (es gasto: el préstamo
-  nunca se contó como ingreso). Si la cuota también está como deducción en el Setup Wizard, se cuenta dos veces.
+- **Pagos de préstamo:** Scotiabank y Banreservas (v1.1.69) se guardan como Transfer con categoría *Loan payments*
+  (v1.1.70; es gasto: el préstamo nunca se contó como ingreso). Si la cuota también está como deducción en el Setup
+  Wizard, se cuenta dos veces.
+- **Categorías nuevas (v1.1.70), por confirmar en las hojas reales:** cuánto queda en *Unclassified* en cada archivo
+  después de actualizar (la propuesta estimó 2% clasificando a mano; con palabras clave será más, sobre todo compras en
+  el extranjero y PayPal sin comercio): lo que se repita va a una Custom Rule o, si es un comercio público, a las palabras
+  clave. Una transferencia fija a una persona (alquiler, por ejemplo) se resuelve con una Custom Rule a su categoría,
+  no con una categoría nueva. *Travel* no tiene palabras clave a propósito (se elige a mano o con Custom Rule).
+- **Retenciones de Uber anteriores a v1.1.67:** la conciliación con los recibos solo mira 35 días hacia atrás en la
+  corrida diaria; para el histórico, correr *Monitor by Date Range* mes por mes (la búsqueda de recibos trae hasta 200
+  hilos por corrida).
+- **BDI "Comprobante de Transacción" a otra cuenta BDI (v1.1.70):** el correo no dice si la cuenta es propia; se guarda
+  como Transfer por revisar. Una Custom Rule con el nombre propio (como lo escribe el banco: "APELLIDOS, NOMBRES") la
+  vuelve Exclude.
 - **Sin muestra todavía:** el correo de bienvenida de BDI (hoy se filtra por palabras: "bienvenido/a", "primer
   depósito", "apertura de cuenta"; con su `.eml` se puede confirmar), consumos de Scotiabank en DOP, consumos con
   tarjeta de débito de Banreservas, otros recibos de la app de Banreservas (pagos de servicio, entre cuentas propias),
-  correos de BHD con varias transacciones agrupadas, acreditación de cashback, estado de cuenta de Banesco en dólares con el formato de sept. 2026 (`US$` en cada monto se supone, v1.1.68).
+  correos de BHD con varias transacciones agrupadas, consumos de BHD que se guardan sin comercio y transferencias
+  recibidas en Popular que se leen como enviadas (vistos en otro archivo en oct. 2026; hace falta su `.eml`), acreditación de cashback, estado de cuenta de Banesco en dólares con el formato de sept. 2026 (`US$` en cada monto se supone, v1.1.68).
 - **Cashback por categorías** (topes, mínimos, días): el catálogo solo guarda el cashback base y una nota.
 - **El formato del Dashboard** tarda ~80 s en hojas grandes; vigilar el límite de 6 minutos si crecen los datos.
 - **IBKR:** pendiente leer su reporte (Flex Query) cuando haya operaciones.

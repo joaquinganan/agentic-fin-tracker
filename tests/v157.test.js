@@ -13,7 +13,7 @@ function book(rules) {
   const cr = mock.ss.insertSheet('Custom Rules'); cr.appendRow(['UserEmail', 'Category', 'Keyword', 'Timestamp']);
   (rules || []).forEach(r => cr.appendRow(['user@example.com', r[0], r[1], '']));
   const row = h.ctx.transactionToRow({ date: h.date(2026, 8, 26), bank: 'BANESCO', merchant: 'PAGO RENTA', amount: 30000, currency: 'DOP',
-    category: 'Rent', autoCategory: h.get('AUTO_NONE'), description: 'PAGO RENTA', subject: 's', timestamp: 't', isCredit: false,
+    category: 'Rent & housing', autoCategory: h.get('AUTO_NONE'), description: 'PAGO RENTA', subject: 's', timestamp: 't', isCredit: false,
     isCashback: false, type: 'Transfer', messageId: 'rent-1', txRef: '' });
   mock.ss.getSheetByName('Transactions').getRange(2, 1, 1, 15).setValues([row]);
   h.ctx.recategorizeAllTransactions('user@example.com');   // builds Bank Transfers

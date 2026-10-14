@@ -5,7 +5,7 @@ const { load } = require('./harness');
 
 // v1.1.64: the daily summary compares yesterday with a "typical day" (the median of the last 60 days of day-to-day
 // spending), warns only when the day is among the highest of those 60 days, and names big one-off purchases apart.
-const D = 'Dining/Delivery + Entertainment + Other';
+const D = 'Restaurants & cafés';
 function rowsFor(list) {
   return [new Array(14).fill('h')].concat(list.map(o => {
     const r = new Array(14).fill('');
@@ -77,7 +77,7 @@ test('typical day: over 60 days (not 30), counting days with nothing spent as RD
   const h = load();
   // the last 30 days at RD$400, the 30 before at RD$1,000: the median of all 60 is RD$700 (an even count: the middle two)
   const list = history(h, fill(30, 400).concat(fill(30, 1000)));
-  for (let i = 1; i <= 60; i += 5) list.push({ date: before(h, i), merchant: 'EDESUR', amount: 9000, category: 'Electricity' });
+  for (let i = 1; i <= 60; i += 5) list.push({ date: before(h, i), merchant: 'EDESUR', amount: 9000, category: 'Utilities' });
   list.push({ date: before(h, 90), amount: 50000 });                 // older than 60 days: left out
   list.push({ date: yesterday(h), amount: 700 });
   const s = summarize(h, list);
@@ -125,7 +125,7 @@ test('one-off purchases: three times a typical day or more, named apart; smaller
   const list = history(h, fill(60, 500));
   list.push({ date: yesterday(h), merchant: 'FERRETERIA OCHOA', amount: 1500 },  // exactly 3× → named
     { date: yesterday(h), merchant: 'SUPERMERCADO NACIONAL', amount: 1400 },        // 2.8× → part of the rest
-    { date: yesterday(h), merchant: 'ALQUILER', amount: 25000, category: 'Rent' }); // bills are never one-off purchases
+    { date: yesterday(h), merchant: 'ALQUILER', amount: 25000, category: 'Rent & housing' }); // bills are never one-off purchases
   const s = summarize(h, list);
   assert.deepEqual(s.sporadic.map(x => x.merchant), ['FERRETERIA OCHOA']);
   assert.equal(s.restDayToDay, 1400);

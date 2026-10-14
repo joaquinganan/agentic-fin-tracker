@@ -5,7 +5,7 @@ const { load, fixture, manifest } = require('./harness');
 const { makeServices, fakeThread } = require('./sheets_mock');
 
 const EMAIL = 'user@example.com';
-const DINING = 'Dining/Delivery + Entertainment + Other';
+// v1.1.70: categories by merchant now — Uber Eats and PedidosYa are Delivery, a merchant no keyword knows is Unclassified
 
 /** A configured system with every fixture email sitting in Gmail. */
 function setup(options) {
@@ -21,7 +21,7 @@ function setup(options) {
   const rules = mock.ss.insertSheet('Custom Rules');
   [['UserEmail', 'Category', 'Keyword', 'Timestamp'],
    [EMAIL, 'Exclude', 1111, ''],            // numeric keyword (C4)
-   [EMAIL, 'Pets', 'PETSMART', '']].forEach(r => rules.appendRow(r));
+   [EMAIL, 'Kids', 'TOYSRUS', '']].forEach(r => rules.appendRow(r));
 
   const msg = fx => h.fakeMessage({ subject: fx.subject, from: fx.from, body: fixture(fx.name),
     date: h.date(...fx.date), id: 'id-' + fx.name });
@@ -63,10 +63,10 @@ test('full-year run: every fixture lands in the right place; re-run is fully ded
   const byMerchant = Object.fromEntries(rows.map(r => [r[2], r]));
 
   assert.equal(rows.length, 7, 'declined BANESCO and the broken email add nothing: ' + rows.map(r => r[2]).join(' | '));
-  assert.equal(byMerchant['HOLA PLAZA LAS AMERICAS'][5], 'Groceries + Barbershop');
+  assert.equal(byMerchant['HOLA PLAZA LAS AMERICAS'][5], 'Groceries');
   assert.equal(byMerchant['CACHAREPA CHURCHILL'][11], 'Transaction');
-  assert.equal(byMerchant['LA CASITA DE'][5], 'Health + Vet + Pharmacy');
-  assert.equal(byMerchant['UBER EATS-W*UBER EATS- SANTO DOMINGO DOM'][5], DINING);
+  assert.equal(byMerchant['LA CASITA DE'][5], 'Pets');
+  assert.equal(byMerchant['UBER EATS-W*UBER EATS- SANTO DOMINGO DOM'][5], 'Delivery');
   assert.equal(byMerchant['JUAN PEREZ'][11], 'Transfer');
   assert.ok(!rows.some(r => r[3] === 39766.33), 'balance never saved');
 
@@ -102,7 +102,7 @@ test('recategorize repairs a mis-typed row and keeps Raw_ notes (C3, C5, M7)', (
   h.ctx.recategorizeAllTransactions(EMAIL);
   const fixed = tx().find(r => r[2] === 'CACHAREPA CHURCHILL');
   assert.equal(fixed[11], 'Transaction');
-  assert.equal(fixed[5], DINING);
+  assert.equal(fixed[5], 'Unclassified');
   assert.equal(fixed[2], 'CACHAREPA CHURCHILL', 'merchant untouched');
   const rawRows = mock.ss.getSheetByName('Raw_BHD')._rows(8);
   assert.equal(rawRows.length, 2, 'CACHAREPA is back in Raw_BHD');
@@ -113,7 +113,8 @@ test('recategorize repairs a mis-typed row and keeps Raw_ notes (C3, C5, M7)', (
 
 // ---------- Dashboard (v1.1.21 layout)
 const SHEETS_FUNCTIONS = new Set(['IF', 'IFERROR', 'INDEX', 'MATCH', 'MONTH', 'TODAY', 'DATE', 'EDATE', 'SUMIFS',
-  'SUM', 'SUMPRODUCT', 'AVERAGEIF', 'TEXT', 'UPPER', 'SPARKLINE', 'MAX', 'MIN', 'GOOGLEFINANCE', 'COLUMN', 'ROW', 'LEFT']);
+  'SUM', 'SUMPRODUCT', 'AVERAGEIF', 'TEXT', 'UPPER', 'SPARKLINE', 'MAX', 'MIN', 'GOOGLEFINANCE', 'COLUMN', 'ROW', 'LEFT',
+  'ABS']);   // v1.1.70: the "Not spending" block shows amounts as positive
 
 /** Static checks a formula must pass before it ever reaches Sheets. Returns a list of problems. */
 function lintFormula(f, namedRanges) {
@@ -166,14 +167,21 @@ test('Dashboard: every formula passes the lint; KPIs and tables point at the rig
   // KPI "spent" points at the left table's TOTAL row, which sums every category + transfers row
   const totalRow = Number(cell('C8').match(/^=\$C\$(\d+)$/)[1]);
   assert.equal(dash.getRange(totalRow, 2).getValue(), 'TOTAL');
-  // each left-table row reads the grid row of the SAME category (icon stripped)
-  const labels = h.plain(h.ctx.getCategories()).concat(['Pets']);
-  for (let i = 0; i < labels.length; i++) {
+  // each left-table row reads the grid row of the SAME category (icon stripped) — v1.1.70: or of the same group, whose
+  // row comes before its categories (the custom "Kids" goes under Other, before Unclassified)
+  const lines = h.plain(h.ctx.dashboardLines(h.plain(h.ctx.getCategories()).concat(['Kids'])));
+  assert.equal(lines.filter(x => x.category).length, h.plain(h.ctx.getCategories()).length + 1);
+  assert.deepEqual(lines.slice(-3).map(x => x.category), ['Payments to people', 'Kids', 'Unclassified']);
+  for (let i = 0; i < lines.length; i++) {
     const r = 13 + i;
     const g = Number(dash.getRange(r, 3).getValue().match(/^=INDEX\(\$C\$(\d+):/)[1]);
-    assert.equal(dash.getRange(g, 2).getValue(), labels[i], 'row ' + r);
-    assert.ok(String(dash.getRange(r, 2).getValue()).endsWith(labels[i]));
+    const label = lines[i].category || lines[i].group.toUpperCase();
+    assert.equal(dash.getRange(g, 2).getValue(), label, 'row ' + r);
+    assert.ok(String(dash.getRange(r, 2).getValue()).endsWith(label));
+    assert.equal(dash.getRange(r, 8).getValue(), lines[i].category ? (h.ctx.isFixedCategory(lines[i].category) ? 'Fixed' : 'Variable') : '',
+      'a group row has no Type, so the fixed/variable subtotals count each category once');
   }
+  assert.equal(dash.getRange(13 + lines.length, 2).getValue(), '↔️ Transfers (uncategorized)');
   // grid headers are midnight DATE() formulas following the Year cell (M9)
   const gridHeaderRow = [...dash.cells.entries()].find(([k, v]) => v === '=DATE($F$4,1,1)')[0].split(',')[0];
   assert.equal(dash.getRange(Number(gridHeaderRow), 2).getValue(), 'Category');
@@ -195,11 +203,14 @@ test('Dashboard: every formula passes the lint; KPIs and tables point at the rig
   const all = [...dash.cells.values()];
   // "Which card for what": the three programs side by side (v1.1.22)
   const row = name => h.plain(h.get('CASHBACK_MATRIX')).find(r => r[0] === name);
-  assert.ok(all.includes('Supermarkets') && all.includes('Taxi apps (Uber, DiDi)') && all.includes('4121'));
+  // v1.1.70: each kind of spending names the tracker's category for it
+  assert.ok(all.includes('Supermarkets\n→ Groceries') && all.includes('Taxi apps (Uber, DiDi)\n→ Ride apps & taxis') && all.includes('4121'));
+  for (const r of h.plain(h.get('CASHBACK_MATRIX')).slice(0, -1)) assert.ok(h.plain(h.ctx.getCategories()).includes(r[6]), r[0]);
   assert.equal(row('Supermarkets')[5], 'BANESCO');
   assert.equal(row('Pharmacies')[5], 'BHD');
   assert.match(row('Restaurants')[2], /10% if ≥ RD\$5,000/);
-  assert.ok(all.includes('Pets') && !all.includes('Exclude'), 'custom-only category row, never Exclude');
+  assert.ok(all.includes('Kids') && !all.includes('Exclude') && !all.includes('Investments & savings'),
+    'custom-only category row, never Exclude nor Investments & savings');
 });
 
 test('Dashboard: first build migrates the v1.1.20 inputs; later builds keep every edit (C7, v1.1.21)', () => {
@@ -265,7 +276,7 @@ test('bulk save past the default 1,000 rows and filter growth past 2,000 keep wo
   const { h, mock, tx } = setup();
   const many = Array.from({ length: 2300 }, (_, i) => ({
     date: h.date(2026, 1, 1 + (i % 28)), bank: 'LAFISE', merchant: 'M' + i, amount: i + 1, currency: 'DOP',
-    category: DINING, type: 'Transaction', description: 'M' + i, subject: 's', timestamp: '', messageId: 'bulk_' + i
+    category: 'Restaurants & cafés', type: 'Transaction', description: 'M' + i, subject: 's', timestamp: '', messageId: 'bulk_' + i
   }));
   const sheet = mock.ss.getSheetByName('Transactions');
   const first = h.plain(h.ctx.saveTransactions(many.slice(0, 1500)));
@@ -286,7 +297,7 @@ test('real thread: purchase + "Reversada" 15 s later → +488 and −488, same m
   const rows = tx();
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(r => r[3]).sort((a, b) => a - b), [-488, 488]);
-  assert.ok(rows.every(r => r[2] === 'PedidosYa*Som Cafe' && r[5] === DINING), JSON.stringify(rows.map(r => r.slice(2, 7))));
+  assert.ok(rows.every(r => r[2] === 'PedidosYa*Som Cafe' && r[5] === 'Delivery'), JSON.stringify(rows.map(r => r.slice(2, 7))));
   assert.equal(rows.find(r => r[3] < 0)[6], 'PedidosYa*Som Cafe (reversal)');
   assert.equal(rows.reduce((sum, r) => sum + r[3], 0), 0, 'nets to zero');
   assert.match(h.logs.find(l => l.includes('Email threads found')), /Reversals: 1/);
