@@ -135,6 +135,14 @@ para lo que no devuelve ningún gasto. Los que nombran al titular de la cuenta s
 PDF por sí solo, sin activar nada, y comprueba que lo leído cuadre con los totales del propio estado de cuenta; si no
 cuadra, no toma nada y lo avisa en Unrecognized.
 
+**QIK** (desde v1.1.72): el **estado de cuenta de la tarjeta de crédito** (el PDF que llega por correo) completa lo que
+las alertas no avisaron. Cada consumo que ya está guardado por su alerta se reconoce (mismo monto, ±3 días; una compra en
+dólares en el extranjero, por el nombre del comercio) y no se guarda otra vez: solo se agregan los que faltaban. También
+guarda el **pago a la tarjeta** (*Card Payment*, nunca es gasto), el **cashback abonado** (*Cashback*) y, si aparece, un
+**reembolso** de un comercio (resta en la categoría de ese comercio). Igual que con Banesco, todo debe cuadrar con los
+totales del estado; si no, no toma nada y lo avisa en Unrecognized. El registro de ejecución nombra cada consumo que
+solo estaba en el estado ("Only in the statement").
+
 ## 7. Inversiones
 
 ### HAPI: primeros pasos

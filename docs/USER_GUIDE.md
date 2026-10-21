@@ -265,6 +265,13 @@ categorize each by hand or with a Custom Rule on its description, Exclude what p
 account holder are recognized as yours. The tracker reads the PDF itself (nothing to turn on). What's read must add up to the statement's own
 totals, or nothing is taken and it shows in Unrecognized.
 
+QIK (v1.1.72): the **credit card statement** (a PDF) fills in what the alerts missed. A purchase already saved from its
+alert is recognized (same amount, ±3 days; a purchase abroad in dollars, by the merchant's name) and not saved again —
+only the missing ones are added. It also saves the **card payment** (*Card Payment*, never spending), the **cashback
+credited** (*Cashback*) and any merchant **refund** (taken off that merchant's category). As with Banesco, it must add
+up to the statement's totals, or nothing is taken and it shows in Unrecognized. The execution log names every purchase
+found only in the statement ("Only in the statement").
+
 A category typed in Incoming Transfers or Bank Transfers applies at once (the Dashboard doesn't wait for the next
 update); each transfer counts in the month of its date. A transfer the tracker didn't see can be typed in an empty row
 of Incoming Transfers (received) or Bank Transfers (sent) — date (yyyy-mm-dd), bank (optional), from, category, amount (positive; DOP if no currency) — and

@@ -477,11 +477,49 @@ function findIncomingPair(index, key, day, statement) {
   return best;
 }
 
+/**
+ * v1.1.72: a card statement (QIK) lists every purchase, most already saved from their alerts. A statement row and a
+ * notified one (an alert, or a row typed by hand) of the same bank, Type and sign, at most CARD_STATEMENT_MATCH_DAYS
+ * apart, are the same money when amount and currency are equal — or, for a purchase abroad (the alert in USD, the
+ * statement in RD$), when the merchant's first word is. An alert dated after the statement's cut (plus a day) can't be
+ * in it. The statement is read again every run: its rows are recognized by their reference first, and the alert a row
+ * paired with stays free for it, so pairs are not rebuilt from the sheet (v1.1.66 did, for copies saved before then).
+ * An Uber hold (v1.1.67) was never charged: the statement doesn't list it, so it pairs with nothing.
+ */
+const CARD_STATEMENT_MATCH_DAYS = 3;
+const CARD_PAIR_TYPES = { 'Transaction': true, 'Card Payment': true, 'Cashback': true };
+function cardPairKey(bank, type, amount) { return String(bank) + '|' + type + '|' + (Number(amount) < 0 ? '-' : '+'); }
+function cardPairEntry(date, currency, amount, merchant, ref) {
+  const cut = /:STMT:(\d{4})(\d{2})(\d{2}):/.exec(String(ref || ''));
+  return { day: dayNumber(date), currency: currency || 'DOP', cents: Math.round(Math.abs(Number(amount)) * 100),
+    word: normalizedWords(merchant).find(w => w.length >= 3) || '', statement: isStatementRef(ref),
+    cut: cut ? Date.UTC(Number(cut[1]), Number(cut[2]) - 1, Number(cut[3])) / 86400000 : NaN, paired: false };
+}
+function addCardEntry(index, key, entry) {
+  const lists = index.card[key] = index.card[key] || { statement: [], notified: [] };
+  lists[entry.statement ? 'statement' : 'notified'].push(entry);
+}
+/** The closest unpaired row of the other kind (statement ↔ notified) for this one — same amount first — or null. */
+function findCardPair(index, key, e) {
+  const lists = index.card[key];
+  let best = null, bestScore = Infinity;
+  ((lists && lists[e.statement ? 'notified' : 'statement']) || []).forEach(o => {
+    if (o.paired || !(Math.abs(o.day - e.day) <= CARD_STATEMENT_MATCH_DAYS)) return;
+    if (!((e.statement ? o : e).day <= (e.statement ? e : o).cut + 1)) return;
+    const same = o.currency === e.currency && o.cents === e.cents;
+    if (!same && !(o.currency !== e.currency && e.word && o.word === e.word)) return;
+    const score = (same ? 0 : 100) + Math.abs(o.day - e.day);
+    if (score < bestScore) { best = o; bestScore = score; }
+  });
+  return best;
+}
+
 function buildExistingIndex(values) {
   const messageIds = new Set();
   const legacyKeys = new Set();
   const refs = new Set();
   const incoming = {};
+  const card = {};
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const id = row[TX_COL.MESSAGE_ID];
@@ -492,8 +530,13 @@ function buildExistingIndex(values) {
       const key = incomingKey(row[TX_COL.BANK], row[TX_COL.CURRENCY], row[TX_COL.AMOUNT]);
       (incoming[key] = incoming[key] || []).push({ day: dayNumber(row[TX_COL.DATE]), statement: isStatementRef(row[TX_COL.TX_REF]), paired: false });
     }
+    const type = row[TX_COL.TYPE] || 'Transaction';
+    if (CARD_PAIR_TYPES[type] && row[TX_COL.DATE] && !String(row[TX_COL.DESCRIPTION] || '').endsWith(RIDE_HOLD_SUFFIX)) {
+      const entry = cardPairEntry(row[TX_COL.DATE], row[TX_COL.CURRENCY], row[TX_COL.AMOUNT], row[TX_COL.MERCHANT], row[TX_COL.TX_REF]);
+      addCardEntry({ card: card }, cardPairKey(row[TX_COL.BANK], type, row[TX_COL.AMOUNT]), entry);
+    }
   }
-  const index = { messageIds: messageIds, legacyKeys: legacyKeys, refs: refs, incoming: incoming };
+  const index = { messageIds: messageIds, legacyKeys: legacyKeys, refs: refs, incoming: incoming, card: card };
   // both copies saved before v1.1.66: paired now, so neither is taken as the copy of a later credit
   Object.keys(incoming).forEach(key => incoming[key].forEach(e => {
     if (!e.statement || e.paired) return;
@@ -507,6 +550,7 @@ function selectNewTransactions(transactions, index) {
   const fresh = [];
   let duplicates = 0;
   if (!index.incoming) index.incoming = {};
+  if (!index.card) index.card = {};
   for (const t of transactions) {
     const id = t.messageId ? String(t.messageId) : '';
     const key = legacyKey(t.date, t.bank, t.amount);
@@ -528,6 +572,20 @@ function selectNewTransactions(transactions, index) {
         continue;
       }
       (index.incoming[inKey] = index.incoming[inKey] || []).push({ day: day, statement: statement, paired: false });
+    }
+    if (CARD_PAIR_TYPES[t.type || 'Transaction']) {   // v1.1.72: a card statement's row and the alert of the same purchase
+      const cKey = cardPairKey(t.bank, t.type || 'Transaction', t.amount), entry = cardPairEntry(t.date, t.currency, t.amount, t.merchant, ref);
+      const pair = findCardPair(index, cKey, entry);
+      if (pair) {
+        pair.paired = true;
+        duplicates++;
+        continue;
+      }
+      addCardEntry(index, cKey, entry);
+      if (entry.statement) {
+        Logger.log('Only in the statement (no alert saved): ' + t.bank + ' ' + (t.type || 'Transaction') + ' ' + (t.currency || 'DOP') + ' ' +
+          Number(t.amount).toFixed(2) + ' ' + normalizeDateForCompare(t.date) + ' "' + t.merchant + '" — saved');
+      }
     }
     if (id) index.messageIds.add(id); else index.legacyKeys.add(key); // same-run repeats too
     if (ref) index.refs.add(ref);
@@ -2137,6 +2195,7 @@ function reconcileRideReceipts(now, since) {
     if (!r[TX_COL.DATE] || normalizeDateForCompare(r[TX_COL.DATE]) < fromKey) return;
     const id = String(r[TX_COL.MESSAGE_ID] || '');
     if (!id || /^manual:/.test(id)) return;   // typed by hand: no alert email to look up
+    if (isStatementRef(r[TX_COL.TX_REF])) return;   // v1.1.72: a card statement's row is what was charged, not an alert
     rides.push({ i: i, gmailId: id.replace(/_\d+$/, ''), day: dayNumber(r[TX_COL.DATE]), state: rideRowState(r[TX_COL.DESCRIPTION]) });
   });
   const open = rides.filter(x => !x.state);

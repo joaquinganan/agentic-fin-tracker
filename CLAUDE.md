@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.71** (14 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.72** (21 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.71)
+## 2. Estado actual (v1.1.72)
 
-- **303 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **315 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -59,7 +59,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 | POPULAR | Consumos (el comercio puede caer en la línea siguiente a la fecha: el texto se corta a ~76 columnas; v1.1.71), Código Cash | popularenlinea.com |
 | BDI | Consumos (tabla, solo filas APROBADA), transferencias interbancarias enviadas ("[Salida]") y recibidas ("Recibida"), pago de tarjeta desde la cuenta (también el comprobante "BDI Online", en columnas, v1.1.69), transferencia a otra cuenta BDI ("BDI Digital: Comprobante de Transacción", a menudo un cambio de moneda; v1.1.70) | bdi.com.do |
 | SCOTIABANK | Autorizaciones con tarjeta, Pagos al Instante recibidos, transferencias enviadas (a terceros; a cuentas propias: a la tarjeta es pago de tarjeta, a un préstamo es gasto, a otra cuenta es Exclude; v1.1.69) | alertas@scotiabank.com |
-| QIK | Consumos con tarjeta de crédito, retiros con Código CASH | notificaciones@qik.do, no-reply-qik@qik.com.do |
+| QIK | Consumos con tarjeta de crédito, retiros con Código CASH, **estado de cuenta de la tarjeta en PDF** (consumos sin alerta, pago a la tarjeta, cashback, reembolsos; lo ya guardado por su alerta no se repite, v1.1.72) | notificaciones@qik.do, no-reply-qik@qik.com.do |
 | BANRESERVAS | Transferencias enviadas (con impuesto aparte), retiros TuEfectivo, transferencias recibidas, pagos de préstamo desde la app y depósitos en oficina ("Dep de ahorros sin libreta"; propio si el depositante es el titular) (v1.1.69) | NotificacionesTuBancoApp@banreservas.com, notificaciones@banreservas.com |
 | HAPI (inversiones) | Órdenes (mercado y límite), dividendos, avisos de depósito | hapi.trade |
 | Uber (recibos, no es banco) | Recibo de viaje ("… trip with Uber"): lo cobrado a cada tarjeta y la hora del pedido; corrige los avisos de viajes del banco (v1.1.67) | noreply@uber.com |
@@ -264,6 +264,15 @@ git push
   tarjeta de débito de Banreservas, otros recibos de la app de Banreservas (pagos de servicio, entre cuentas propias),
   correos de BHD con varias transacciones agrupadas, consumos de BHD que se guardan sin comercio y transferencias
   recibidas en Popular que se leen como enviadas (vistos en otro archivo en oct. 2026; hace falta su `.eml`), acreditación de cashback, estado de cuenta de Banesco en dólares con el formato de sept. 2026 (`US$` en cada monto se supone, v1.1.68).
+- **Estado de cuenta de QIK (v1.1.72), por confirmar:** hay una sola muestra (sin reembolsos, todo en RD$). Un reembolso
+  se lee como cualquier crédito que no es pago ni cashback ("- RD$" con un comercio); falta ver uno real y en qué total
+  lo cuenta el banco (se aceptan ambos). Una fila en US$ manda el estado a Unrecognized. El "Cashback ganado" del
+  resumen no coincide con la suma de los abonos del período: se guardan los abonos (lo que entró). Un pago a la tarjeta
+  hecho desde otro banco puede aparecer dos veces en "💳 Credit card payments" (la transferencia del otro banco y el
+  *Card Payment* del estado), sin tocar el gasto. Las transferencias enviadas y recibidas de QIK necesitan el estado de
+  la **cuenta de ahorro** de QIK (falta su `.eml`). La conciliación busca la alerta de cada consumo ±3 días
+  (`CARD_STATEMENT_MATCH_DAYS`); si una alerta llega con más atraso, el consumo queda dos veces: confirmarlo en la hoja
+  real con el registro ("Only in the statement").
 - **Cashback por categorías** (topes, mínimos, días): el catálogo solo guarda el cashback base y una nota.
 - **El formato del Dashboard** tarda ~80 s en hojas grandes; vigilar el límite de 6 minutos si crecen los datos.
 - **IBKR:** pendiente leer su reporte (Flex Query) cuando haya operaciones.

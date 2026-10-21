@@ -150,6 +150,8 @@ const BANK_PATTERNS = {
     extractors: { consumo: extractQIKConsumoTransactions },   // v1.1.61: also Código CASH withdrawals
     // v1.1.62: a Código CASH CREATED is not money out yet; the withdrawal comes in its own email ("… utilizado")
     ignore: [/C[óo]digo CASH para ti creado|C[óo]digo CASH para ti ha sido creado/i],
+    // v1.1.72: the credit card statement (a PDF): purchases without an alert, the card payment, cashback, refunds
+    statement: { subject: /Estado de cuenta de tu Tarjeta de Cr[ée]dito/i, parse: parseQIKCardStatement },
     strict: true,                                        // v1.1.61
     keywords: ['QIK'],
     merchantPattern: /\ben\s+(.{3,50}?)\s+con tu tarjeta/i
@@ -1572,7 +1574,92 @@ function parseBanescoSavingsStatement(text) {
   return out;
 }
 
-/** A statement email: its PDF's incoming transfers as Incoming items (one per row, deduplicated per statement row). */
+/**
+ * v1.1.72: QIK credit card statement (text of its PDF) → { cut, rows, entries, problems }. Each row is
+ * "dd/mm/yyyy dd/mm/yyyy <description> [-] RD$ <amount>" (purchase date, posting date; a "-" before the amount is a
+ * credit), and a description can go on to the next line ("Recompensas Qik Rebate Modom"). The rows must follow the
+ * balance (previous − credits + purchases = balance at the cut) and the statement's own totals, or nothing is taken.
+ * Entries: every purchase (Transaction), the card payment (Card Payment), the cashback credited (Cashback) and any
+ * other credit — a merchant's refund — as a negative Transaction in its merchant's category. A purchase already saved
+ * from its alert is recognized when saved (findCardPair, 04_sheetsWriter.gs). Pure.
+ */
+const QIK_STMT_ROW_RE = /^(\d{2})\/(\d{2})\/(\d{4}) \d{2}\/\d{2}\/\d{4} (.+?) (-\s*)?(RD|US)\$\s?([\d,]+\.\d{2})$/;
+const QIK_STMT_NOT_DESCRIPTION_RE = /^(?:Fecha Entrada|www\.|Qik Banco|Av\.|Informaci[óo]n Adicional|Balance|Monto|Tu tasa)|\$|\d{2}\/\d{2}\/\d{4}|:/i;
+const SPANISH_MONTHS = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
+
+/** "Tienda Ejemplo Santo Domingododom" → "Tienda Ejemplo Santo Domingo": the card network glues the region and
+ *  the country code ("do" + "dom", "sd" + "dom", "pa" + "pan") to the city; a last word that is only those goes. */
+const CARD_REGION_COUNTRY_RE = /^(.*?)[A-Za-z]{2}(?:dom|usa|pan|col|esp|mex|pri|can|gbr|irl|nld|fra|deu|ita|prt|che|chl|per|bra|arg|cri|gtm|ecu)$/;
+function cleanCardStatementMerchant(description) {
+  const words = String(description || '').replace(/(?:\s+-)+$/, '').trim().split(/\s+/);
+  const m = words.length > 1 ? words[words.length - 1].match(CARD_REGION_COUNTRY_RE) : null;
+  if (m && m[1]) words[words.length - 1] = m[1]; else if (m) words.pop();
+  return words.join(' ');
+}
+
+function parseQIKCardStatement(text) {
+  const lines = String(text || '').replace(/ /g, ' ').split('\n').map(l => l.replace(/\s+/g, ' ').trim());
+  const flat = lines.join(' ');
+  const out = { holder: '', currency: 'DOP', cut: '', rows: [], incoming: [], entries: [], problems: [] };
+  const amounts = s => (String(s || '').match(/(-\s*)?(?:RD\$\s?)?[\d,]+\.\d{2}/g) || [])
+    .map(a => (/^-/.test(a) ? -1 : 1) * Number(a.replace(/[^\d.]/g, '')));
+  const between = (from, to) => { const m = flat.match(new RegExp(from + '(.*?)' + to, 'i')); return m ? amounts(m[1]) : []; };
+  const cut = flat.match(/Fecha de corte:\s*(\d{1,2}) ([a-z]{3})[a-z]* (\d{4})/i);
+  if (cut && SPANISH_MONTHS[cut[2].toLowerCase()]) {
+    out.cut = cut[3] + '-' + String(SPANISH_MONTHS[cut[2].toLowerCase()]).padStart(2, '0') + '-' + cut[1].padStart(2, '0');
+  }
+  const balances = between('Balance al corte anterior', 'Resumen de lo que pas');   // at the cut, minimum, previous
+  const summary = between('Cashback ganado', '(?:El valor del cashback|Fecha Entrada)');   // purchases, payments, cashback
+  if (!out.cut || balances.length < 3 || summary.length < 2) {
+    out.problems.push('the statement\'s cut date or totals (balances, purchases, payments) were not found');
+    return out;
+  }
+  const closing = balances[0], previous = balances[2], purchases = summary[0], payments = summary[1];
+  lines.forEach(line => {
+    const m = line.match(QIK_STMT_ROW_RE);
+    if (m) {
+      out.rows.push({ day: m[3] + '-' + m[2] + '-' + m[1], description: m[4].replace(/(?:\s+-)+$/, '').trim(),
+        amount: Number(m[7].replace(/,/g, '')), currency: m[6].toUpperCase() === 'US' ? 'USD' : 'DOP', direction: m[5] ? 'credit' : 'debit' });
+      return;
+    }
+    const last = out.rows[out.rows.length - 1];   // a description that goes on to the next line
+    if (last && !last.closed && line && !QIK_STMT_NOT_DESCRIPTION_RE.test(line)) last.description += ' ' + line;
+    if (last) last.closed = true;
+  });
+  out.rows.forEach(r => {
+    delete r.closed;
+    r.kind = r.direction === 'debit' ? 'purchase' : /^Pago\b/i.test(r.description) ? 'payment' :
+      /\bRebate\b|^Payment Return\/prepaid/i.test(r.description) ? 'cashback' : 'refund';
+  });
+  const sum = kinds => +out.rows.filter(r => kinds.indexOf(r.kind) !== -1).reduce((s, r) => s + r.amount, 0).toFixed(2);
+  const debits = sum(['purchase']), refunds = sum(['refund']), paid = sum(['payment', 'cashback']);
+  const near = (a, b) => Math.abs(a - b) < 0.01;
+  if (!out.rows.length) out.problems.push('no transactions found');
+  if (out.rows.some(r => r.currency !== 'DOP')) out.problems.push('a row in another currency (only RD$ statements are known)');
+  if (!near(previous - paid - refunds + debits, closing)) {
+    out.problems.push('the rows go from ' + previous.toFixed(2) + ' to ' + (previous - paid - refunds + debits).toFixed(2) + ', the statement says ' + closing.toFixed(2));
+  }
+  // a refund is not known to be in "purchases" (net) or in "payments": either way adds up
+  if (!(near(debits, purchases) && near(paid + refunds, payments)) && !(near(debits - refunds, purchases) && near(paid, payments))) {
+    out.problems.push('purchases add up to ' + debits.toFixed(2) + ' and payments to ' + (paid + refunds).toFixed(2) +
+      ', the statement says ' + purchases.toFixed(2) + ' and ' + payments.toFixed(2));
+  }
+  if (out.problems.length) return out;
+  const seen = {};
+  out.rows.forEach(r => {
+    const type = r.kind === 'payment' ? 'Card Payment' : r.kind === 'cashback' ? 'Cashback' : 'Transaction';
+    const merchant = r.kind === 'payment' ? r.description : r.kind === 'cashback' ? 'QIK cashback (statement)' : cleanCardStatementMerchant(r.description);
+    const sign = r.kind === 'refund' ? -1 : 1;
+    const key = r.day + ':' + { purchase: 'P', payment: 'Y', cashback: 'C', refund: 'R' }[r.kind] + ':' + Math.round(r.amount * 100);
+    seen[key] = (seen[key] || 0) + 1;   // two equal rows on one day (two metro rides) are two rows
+    out.entries.push({ day: r.day, amount: sign * r.amount, currency: r.currency, merchant: merchant || r.description, type: type,
+      refund: r.kind === 'refund', ref: out.cut.replace(/-/g, '') + ':' + key + ':' + seen[key] });
+  });
+  return out;
+}
+
+/** A statement email: its PDF's incoming transfers as Incoming items (one per row, deduplicated per statement row).
+ *  v1.1.72: or, when the reader gives `entries` (a card statement), each entry as the item it says. */
 function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
   const subject = message.getSubject() || '';
   const pdf = (message.getAttachments() || []).find(a => /pdf/i.test(a.getContentType() || '') || /\.pdf$/i.test(a.getName() || ''));
@@ -1589,8 +1676,24 @@ function parseStatementEmail(message, bank, statement, rawCustomRules, stats) {
     return { items: [], status: 'failed', bank: bank, reason: "Statement doesn't add up — nothing taken from it: " + parsed.problems.slice(0, 2).join('; '),
       snippet: subject + ' · ' + parsed.rows.length + ' row(s) read' };
   }
-  if (!parsed.incoming.length) return { items: [], status: 'filtered' };   // nothing received by transfer this month
   const baseMessageId = message.getId();
+  if (parsed.entries) {   // v1.1.72: a card statement — the rows already saved from their alerts are left out when saved
+    const items = parsed.entries.map(x => {
+      let category = findCustomRuleOverride(x.merchant, rawCustomRules);
+      if (!category && x.type === 'Transaction') category = categorizeTransaction(x.merchant);   // a refund too: it nets
+      if (x.type === 'Card Payment') category = EXCLUDE_CATEGORY;
+      const p = x.day.split('-').map(Number);
+      return { date: new Date(p[0], p[1] - 1, p[2], 12), bank: bank, merchant: x.merchant, amount: x.amount, currency: x.currency,
+        category: category || '', type: x.type, description: x.merchant, reversal: false, timeKey: '',
+        txRef: bank + ':STMT:' + x.ref, subject: subject, timestamp: new Date().toISOString(),
+        isCredit: x.amount < 0 || x.type !== 'Transaction', isCashback: x.type === 'Cashback',
+        messageId: baseMessageId + '_' + x.ref.replace(/:/g, '-') };
+    });
+    Logger.log('Statement read | ' + bank + ' | cut ' + parsed.cut + ' | ' + parsed.rows.length + ' rows: ' +
+      ['Transaction', 'Card Payment', 'Cashback'].map(t => items.filter(i => i.type === t).length + ' ' + t).join(', '));
+    return { items: items, status: items.length ? 'ok' : 'filtered' };
+  }
+  if (!parsed.incoming.length) return { items: [], status: 'filtered' };   // nothing received by transfer this month
   const items = parsed.incoming.map(x => {
     let category = findCustomRuleOverride(x.merchant, rawCustomRules);
     if (x.own) category = EXCLUDE_CATEGORY;

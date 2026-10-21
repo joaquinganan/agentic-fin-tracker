@@ -2,6 +2,32 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.72 (Oct 21, 2026) — QIK credit card statement: what the alerts missed, the card payment, cashback and refunds
+- **Why:** QIK only notifies purchases and Código CASH withdrawals by email. The card payment, the cashback QIK credits
+  ("Payment Return/prepaid … Recompensas Qik Rebate") and any merchant refund never reached the sheet, and a purchase
+  whose alert didn't arrive was simply missing. The monthly statement (a PDF, "Estado de cuenta de tu Tarjeta de
+  Crédito QIK", shared as a real `.eml`) lists all of them. Its body is advertising; the PDF has no password and the
+  tracker's own reader (09_pdfText.gs) reads it as is.
+- **Reader** (`parseQIKCardStatement`): rows "purchase date, posting date, description, [-] RD$ amount" (a "-" before
+  the amount is a credit), a description that goes on to the next line, the cut date, the previous and current balance
+  and the two totals ("Compras y retiros", "Pagos realizados en el mes"). All or nothing, as with Banesco: the rows must
+  take the previous balance to the one at the cut and add up to both totals (a refund may be counted in either), and
+  only RD$ rows are known; otherwise the statement goes to Unrecognized with the reason.
+- **Each row as what it is:** purchases are Transactions categorized by their merchant (the region and country code the
+  card network glues to the city — "Santo Domingododom" — are taken off); the payment is a *Card Payment* (Exclude);
+  the cashback credited is *Cashback*; any other credit is a refund, a negative Transaction in its merchant's category.
+- **Not counted twice** (`findCardPair`, 04_sheetsWriter.gs): a statement row and a notified one (alert or typed by
+  hand) of the same bank, Type and sign, at most 3 days apart (`CARD_STATEMENT_MATCH_DAYS`), are the same money when
+  amount and currency match — or, for a purchase abroad (alert in USD, statement in RD$), when the merchant's first word
+  does. An alert dated after the cut plus a day can't be in the statement. Each row pairs once (two metro rides on one
+  day, one notified, save one). Works in either order (statement first, alert later) and the statement is read again
+  every run without saving anything more. An Uber hold (v1.1.67) was never charged, so it pairs with nothing. The
+  execution log names every purchase found only in the statement ("Only in the statement (no alert saved)").
+- **Uber:** a ride saved from the statement is what was charged; the receipt check (v1.1.67) leaves it alone —
+  otherwise every run would search Gmail for receipts of a row that has no alert to compare.
+- Fixture `statements/qik_card.txt`: the real statement's text structure, data made up. Checked in memory with the real
+  `.eml` (the PDF read by `pdfToText`, the whole email by `parseEmailMessage`): 18 rows, every total adds up.
+
 ### v1.1.71 (Oct 14, 2026) — POPULAR purchases keep their merchant; merchants left in Unclassified recognized for every user
 - **POPULAR "Notificación de Consumo" saved without its merchant** (reported with a real `.eml`): the
   email's text part is cut at ~76 columns, so the merchant lands on the line after the date ("RD$… [tab] Peso dominicano
