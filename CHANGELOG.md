@@ -2,6 +2,21 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.73 (Oct 22, 2026) — Daily summary: investments as of 12:00 AM (crypto included)
+- **Why:** asked that the daily summary be based only on what happened the day before, up to 12:00 AM. Checked first:
+  every spending figure (yesterday, month to date, last 7 days, open transfers, card tips) already counts by the
+  transaction's own date, so a purchase made today is left out even when the morning run has already saved it (now
+  pinned by a test). Investments were the exception for crypto: the 6 AM snapshot has stocks at their last close, but
+  crypto trades around the clock and its Coinbase spot price at 6 AM had six hours of today in it.
+- **Crypto at 12:00 AM** (`fetchCryptoMidnightPrices`, `valueCryptoAtMidnight`, 07_investments.gs): for the daily
+  brief, the crypto of the last two snapshots is valued at 12:00 AM of each snapshot's day — the end of the day before —
+  with the open of Coinbase's public hourly candle that starts then (no key). Only a candle that starts exactly at
+  midnight is used. The TOTAL rows are adjusted, so the portfolio, the change and the biggest moves all go midnight to
+  midnight. Portfolio History itself keeps the spot price of the update.
+- **Said in the email:** "Crypto at its 12:00 AM price (end of …), stocks at their last close." Without a midnight price
+  (Coinbase down, a coin not on its exchange) the position keeps the update's price and the email says how many.
+- Verified against the live Coinbase API: the candle that opens at 04:00 UTC (12:00 AM in Santo Domingo) comes back.
+
 ### v1.1.72 (Oct 21, 2026) — QIK credit card statement: what the alerts missed, the card payment, cashback and refunds
 - **Why:** QIK only notifies purchases and Código CASH withdrawals by email. The card payment, the cashback QIK credits
   ("Payment Return/prepaid … Recompensas Qik Rebate") and any merchant refund never reached the sheet, and a purchase

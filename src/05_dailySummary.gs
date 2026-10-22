@@ -633,6 +633,14 @@ function buildDailySummaryEmail(s, opts) {
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
         ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
+    if (iv.cryptoAt && (iv.cryptoAt.repriced || iv.cryptoAt.missing)) {   // v1.1.73
+      const end = keyToDate(iv.day);
+      const dayBefore = summaryShortDate(new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1, 12));
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' +
+        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), stocks at their last close.' : '') +
+        (iv.cryptoAt.missing ? (iv.cryptoAt.repriced ? ' ' : '') + iv.cryptoAt.missing +
+          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') + '</div>';
+    }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));
   }

@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.72 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.73 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.72"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.73"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -7278,6 +7278,14 @@ function buildDailySummaryEmail(s, opts) {
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
         ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
+    if (iv.cryptoAt && (iv.cryptoAt.repriced || iv.cryptoAt.missing)) {   // v1.1.73
+      const end = keyToDate(iv.day);
+      const dayBefore = summaryShortDate(new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1, 12));
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' +
+        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), stocks at their last close.' : '') +
+        (iv.cryptoAt.missing ? (iv.cryptoAt.repriced ? ' ' : '') + iv.cryptoAt.missing +
+          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') + '</div>';
+    }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));
   }
@@ -7917,6 +7925,81 @@ function fetchCryptoPrices(tickers) {
     }
   });
   return out;
+}
+
+/*
+ * v1.1.73: the daily summary reports yesterday as it ended, at 12:00 AM. Stocks already are: the 6 AM snapshot has
+ * their last close. Crypto trades around the clock, so its 6 AM spot price had six hours of today in it. For the
+ * summary, each snapshot's crypto is valued at 12:00 AM of the snapshot's day (the end of the day before), with the
+ * open of Coinbase's hourly candle that starts then (public, no key). Portfolio History itself keeps the spot price.
+ */
+const CRYPTO_CANDLE_URL = (pair, startMs) => 'https://api.exchange.coinbase.com/products/' + pair +
+  '/candles?granularity=3600&start=' + new Date(startMs).toISOString() + '&end=' + new Date(startMs + 3600000).toISOString();
+function localMidnightMs(dayKey) {
+  const p = String(dayKey).split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2], 0, 0, 0).getTime();
+}
+
+/** Coinbase prices at 12:00 AM of each day in `dayKeys` → { dayKey: { TICKER: price } }; missing on any failure. */
+function fetchCryptoMidnightPrices(tickers, dayKeys) {
+  const pairs = tickers.filter(isCryptoPair).filter((t, i, a) => a.indexOf(t) === i);
+  const out = {};
+  const asks = [];
+  dayKeys.forEach(day => { out[day] = {}; pairs.forEach(t => asks.push({ day: day, ticker: t, start: localMidnightMs(day) })); });
+  if (!asks.length) return out;
+  let responses;
+  try {
+    responses = UrlFetchApp.fetchAll(asks.map(a => ({ url: CRYPTO_CANDLE_URL(a.ticker.slice(0, -3) + '-USD', a.start), muteHttpExceptions: true })));
+  } catch (error) {
+    Logger.log('Crypto prices at 12:00 AM unavailable: ' + error);
+    return out;
+  }
+  responses.forEach((response, i) => {
+    const a = asks[i];
+    try {
+      if (response.getResponseCode() !== 200) return;
+      // each candle is [time, low, high, open, close, volume]; the one that starts at midnight opens at its price
+      const candle = JSON.parse(response.getContentText()).filter(c => c[0] * 1000 === a.start)[0];
+      if (candle && Number(candle[3]) > 0) out[a.day][a.ticker] = Number(candle[3]);
+    } catch (error) {
+      Logger.log('Crypto price at 12:00 AM for ' + a.ticker + ' unreadable: ' + error);
+    }
+  });
+  return out;
+}
+
+/**
+ * Portfolio History with the crypto rows of the days in `prices` revalued at those prices, and their TOTAL rows
+ * adjusted. Returns { history, repriced, missing } — the counts are for `countDay`. Pure.
+ */
+function valueCryptoAtMidnight(historyValues, prices, countDay) {
+  const delta = {};
+  let repriced = 0, missing = 0;
+  const out = historyValues.map((r, i) => {
+    if (i === 0 || !r[0] || !isCryptoPair(String(r[2] || '')) || r[1] === HISTORY_TOTAL) return r;
+    const day = normalizeDateForCompare(r[0]);
+    if (!(day in prices)) return r;
+    const qty = invNumber(r[3]);
+    if (!(qty > 0)) return r;
+    const price = prices[day][String(r[2])];
+    if (!(price > 0)) { if (day === countDay) missing++; return r; }
+    if (day === countDay) repriced++;
+    const value = +(qty * price).toFixed(2);
+    delta[day] = (delta[day] || 0) + value - invNumber(r[5]);
+    const row = r.slice();
+    row[4] = +Number(price).toPrecision(10);
+    row[5] = value;
+    return row;
+  });
+  const history = out.map((r, i) => {
+    if (i === 0 || !r[0] || r[1] !== HISTORY_TOTAL) return r;
+    const day = normalizeDateForCompare(r[0]);
+    if (!delta[day]) return r;
+    const row = r.slice();
+    row[5] = +(invNumber(r[5]) + delta[day]).toFixed(2);
+    return row;
+  });
+  return { history: history, repriced: repriced, missing: missing };
 }
 
 // prices under a cent (e.g. SHIB) keep 8 decimals instead of showing US$0.00
@@ -9021,17 +9104,35 @@ function writePerformanceBlock(sheet, startRow, returns, historyValues, allocati
 function investmentsReportData(kind, opts) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ledgerSheet = ss.getSheetByName(INVESTMENT_LEDGER_SHEET);
-  const history = readHistory();
+  let history = readHistory();
   if (!ledgerSheet || history.length < 2) return null;
   const ledger = ledgerSheet.getDataRange().getValues();
   const usdRate = opts.rates && opts.rates.USD || 0;
+  let cryptoAt = null;
+  if (kind === 'daily') {   // v1.1.73: crypto at 12:00 AM of the last two snapshots (the ends of the days compared)
+    const days = history.slice(1).filter(r => r[0] && r[1] === HISTORY_TOTAL).map(r => normalizeDateForCompare(r[0]))
+      .sort().slice(-2);
+    const tickers = history.slice(1).filter(r => r[0] && days.indexOf(normalizeDateForCompare(r[0])) !== -1)
+      .map(r => String(r[2] || '')).filter(isCryptoPair);
+    if (tickers.length) {
+      let prices = {};
+      try { prices = fetchCryptoMidnightPrices(tickers, days); } catch (error) { Logger.log('Crypto prices at 12:00 AM: ' + error); }
+      const valued = valueCryptoAtMidnight(history, prices, days[days.length - 1]);
+      history = valued.history;
+      cryptoAt = { repriced: valued.repriced, missing: valued.missing };
+    }
+  }
   const rows = history.slice(1).filter(r => r[0]);
   const latest = rows.map(r => normalizeDateForCompare(r[0])).sort().pop();
   const current = {};
   rows.filter(r => normalizeDateForCompare(r[0]) === latest && r[1] !== HISTORY_TOTAL)
     .forEach(r => { current[r[1]] = (current[r[1]] || 0) + invNumber(r[5]); });
   const returns = computeReturns(ledger, current, { usdRate: usdRate, today: latest }).total;
-  if (kind === 'daily') return investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns });
+  if (kind === 'daily') {
+    const brief = investmentsDailyBrief(history, ledger, { usdRate: usdRate, returns: returns });
+    if (brief) brief.cryptoAt = cryptoAt;
+    return brief;
+  }
   const monthly = investmentsMonthlyBrief(history, ledger, { usdRate: usdRate, returns: returns, month: opts.month });
   if (monthly) return monthly;
   // v1.1.49: a month before the history began used to leave the section out without a word (reported: "nothing about

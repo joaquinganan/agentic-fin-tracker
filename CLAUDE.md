@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.72** (21 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.73** (22 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.72)
+## 2. Estado actual (v1.1.73)
 
-- **315 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **320 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -273,6 +273,12 @@ git push
   la **cuenta de ahorro** de QIK (falta su `.eml`). La conciliación busca la alerta de cada consumo ±3 días
   (`CARD_STATEMENT_MATCH_DAYS`); si una alerta llega con más atraso, el consumo queda dos veces: confirmarlo en la hoja
   real con el registro ("Only in the statement").
+- **Resumen diario "hasta las 12 AM" (v1.1.73):** el gasto ya se cuenta por la fecha de la transacción (lo de hoy no
+  entra aunque ya esté guardado). En inversiones, la cripto de las dos últimas fotos se valora a las 12:00 AM del día de
+  cada foto con la vela por hora de Coinbase (`api.exchange.coinbase.com`, `fetchCryptoMidnightPrices`); las acciones
+  quedan con su último cierre. Por confirmar en Apps Script real que `UrlFetchApp` recibe las velas (en Node sí). Límites:
+  una corrida a mano en horario de bolsa reemplaza la foto del día con precios del momento (cada día guarda una sola
+  foto), y un resumen programado antes de la corrida de las 6 AM usa los datos de la del día anterior.
 - **Cashback por categorías** (topes, mínimos, días): el catálogo solo guarda el cashback base y una nota.
 - **El formato del Dashboard** tarda ~80 s en hojas grandes; vigilar el límite de 6 minutos si crecen los datos.
 - **IBKR:** pendiente leer su reporte (Flex Query) cuando haya operaciones.
