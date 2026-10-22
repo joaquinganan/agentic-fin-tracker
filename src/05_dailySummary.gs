@@ -456,6 +456,12 @@ function ekShell(o) {
 function summaryLongDate(d) {
   return SUMMARY_DAYS_FULL[d.getDay()] + ' ' + d.getDate() + ' ' + SUMMARY_MONTHS_FULL[d.getMonth()] + ' ' + d.getFullYear();
 }
+/** v1.1.74: "20 → 21 Oct" for the change of the day of `dayKey` (the end of the day before → its end). */
+function summaryDayChangeLabel(dayKey) {
+  const to = keyToDate(dayKey), from = keyToDate(addDaysKey(dayKey, -1));
+  return from.getDate() + (from.getMonth() === to.getMonth() ? '' : ' ' + SUMMARY_MONTHS[from.getMonth()]) +
+    ' → ' + to.getDate() + ' ' + SUMMARY_MONTHS[to.getMonth()];
+}
 function summaryShortDate(d) {
   return SUMMARY_DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + SUMMARY_MONTHS[d.getMonth()];
 }
@@ -614,11 +620,14 @@ function buildDailySummaryEmail(s, opts) {
   // ---- investments (v1.1.32)
   if (sec.investments && s.investments) {
     const iv = s.investments;
-    const since = iv.prevDay ? summaryShortDate(keyToDate(iv.prevDay)) : null;
+    // v1.1.74: the snapshot of a day holds the end of the day before, so on the 22nd the change is the end of the 20th
+    // against the end of the 21st — named "20 → 21 Oct", not "Since Wed 21 Oct" (read as "from the 21st to today")
+    const since = iv.prevDay ? summaryDayChangeLabel(iv.prevDay) : null;
     let inner = ekKpis([
       { label: 'Portfolio', value: summaryUsd(iv.total), sub: iv.totalDop ? summaryMoney(iv.totalDop) : '' },
-      { label: since ? 'Since ' + since : 'Change', value: iv.change === null ? '—' : summarySignedUsd(iv.change),
-        sub: iv.change === null ? 'first day recorded' : summarySignedPctFine(iv.changePct || 0) + (iv.deposits ? ' · deposits left out' : '') +
+      { label: since || 'Change', value: iv.change === null ? '—' : summarySignedUsd(iv.change),
+        sub: iv.change === null ? (iv.missingDay ? 'no update on ' + summaryShortDate(keyToDate(iv.missingDay)) : 'first day recorded') :
+          summarySignedPctFine(iv.changePct || 0) + (iv.deposits ? ' · deposits left out' : '') +
           (iv.added && iv.added.length ? ' · new account(s) not counted' : ''),
         tone: iv.change > 0 ? 'good' : iv.change < 0 ? 'bad' : null },
       { label: 'Since tracking began', value: iv.returns && iv.returns.periodReturn !== null ? summarySignedPctFine(iv.returns.periodReturn) : '—',
@@ -626,7 +635,7 @@ function buildDailySummaryEmail(s, opts) {
     ]);
     if (iv.movers.length) {
       inner += '<div style="height:10px;font-size:0">&nbsp;</div>' + ekList(iv.movers.map(m => ({
-        title: m.ticker, meta: m.account + (m.session ? ' · last session' : ' · since ' + (since || 'the last update')),   // v1.1.56
+        title: m.ticker, meta: m.account + (m.session ? ' · last session' : ' · ' + since),   // v1.1.56; a price move needs the day before (v1.1.74)
         right: summarySignedPctFine(m.change), rightTone: m.change >= 0 ? 'good' : 'bad' })));
     }
     if (iv.stale) {   // v1.1.56
@@ -642,7 +651,7 @@ function buildDailySummaryEmail(s, opts) {
           ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') + '</div>';
     }
     rows.push(ekSection('Investments', inner));
-    T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ' since ' + since + ')' : ''));
+    T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ', ' + since + ')' : ''));
   }
 
   // ---- data health (always)

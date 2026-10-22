@@ -11,9 +11,11 @@ const L = (h, rows) => [['Date', 'Account', 'Type', 'Ticker', 'Quantity', 'Price
 
 test('daily change: accounts added since the previous day are not gain (reported: +US$17,104 the day two were added)', () => {
   const h = load();
+  // v1.1.74: the day before is the 27th (it was the 26th): only a snapshot of the day before gives a change. And the
+  // change is quantity × price move, so GOOGL's quantity and price now match its value (it was 2 × 300 = 8,000)
   const history = hist(h, [
-    [[2026, 9, 26], 'HAPI', 'GOOGL', 2, 300, 8000], [[2026, 9, 26], 'HAPI', 'CASH', '', '', 411], [[2026, 9, 26], 'TOTAL', '', '', '', 8411],
-    [[2026, 9, 28], 'HAPI', 'GOOGL', 2, 302.5, 8100], [[2026, 9, 28], 'HAPI', 'CASH', '', '', 411],
+    [[2026, 9, 27], 'HAPI', 'GOOGL', 20, 400, 8000], [[2026, 9, 27], 'HAPI', 'CASH', '', '', 411], [[2026, 9, 27], 'TOTAL', '', '', '', 8411],
+    [[2026, 9, 28], 'HAPI', 'GOOGL', 20, 405, 8100], [[2026, 9, 28], 'HAPI', 'CASH', '', '', 411],
     [[2026, 9, 28], 'Pension fund', '', '', '', 15008], [[2026, 9, 28], 'Liquidity fund', '', 54.6, '', 2091], [[2026, 9, 28], 'TOTAL', '', '', '', 25610]]);
   const b = h.plain(h.ctx.investmentsDailyBrief(history, L(h, []), { usdRate: 60 }));
   assert.equal(b.total, 25610, 'the portfolio is still everything');

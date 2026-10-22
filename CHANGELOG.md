@@ -2,6 +2,28 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.74 (Oct 22, 2026) — Daily summary: the previous day's investment change, from market moves, labelled with both days
+- **Why:** asked whether "Since Wed 21 Oct" was the change from the 20th to the 21st or from the 21st to today. It was
+  the 21st's (a snapshot holds the end of the day before: the 22nd's has the end of the 21st), but the label read the
+  other way. And after a day without an update, the change spanned every day since under the same label.
+- **Label:** both ends of the change ("20 → 21 Oct": the end of the 20th against the end of the 21st), in the KPI, the
+  crypto moves ("Wallet · 20 → 21 Oct") and the plain text ("+US$40.00, 20 → 21 Oct").
+- **One day only** (`investmentsDailyBrief`): the change is against the snapshot of the day before, or none. Without it
+  the change is "—" with "no update on …" — not several days counted as one. `tests/v137.test.js` compared the 26th with
+  the 28th; its first day is now the 27th (the test is about accounts added, not the gap).
+- **Reported: "yesterday was a very positive day and it says I lost"** (a small loss). Checked in memory with the real
+  sheet: a run during market hours on the 21st replaced that day's snapshot (the 20th's close) with midday prices, so
+  the email compared midday on the 21st with its close. The stocks' real day, from the 22nd's Day change column, was a
+  clear gain. The same sheet showed the other half of the problem: a mid-morning run on the 16th took in that day's
+  deposit and buy, so a deposit's date can't say which snapshot has it.
+- **The change is now what the market moved in what was held** (`investmentsDailyBrief`), position by position with the
+  previous snapshot's quantity: a stock, quantity × (price − price ÷ (1 + day change)), 0 when its price has not moved
+  since the previous snapshot (a weekend, a holiday); crypto (at its midnight prices) or a stock without a day change,
+  quantity × the price move; cash, 0. A balance without a ticker (a fund, a pension) still changes by its balance less
+  its deposits. Neither the hour of a run nor deposits and buys change the result. On the real sheet: 20 → 21 Oct
+  the gain the stocks made that day, 16 → 17 Oct (a Saturday) only crypto's move. `tests/v137.test.js`: GOOGL's quantity and price now
+  match its value (it had 2 × 300 = 8,000, which a quantity × price move can't read).
+
 ### v1.1.73 (Oct 22, 2026) — Daily summary: investments as of 12:00 AM (crypto included)
 - **Why:** asked that the daily summary be based only on what happened the day before, up to 12:00 AM. Checked first:
   every spending figure (yesterday, month to date, last 7 days, open transfers, card tips) already counts by the

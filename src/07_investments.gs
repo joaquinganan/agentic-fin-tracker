@@ -63,6 +63,10 @@ function daysBetween(fromKey, toKey) {
   const d = k => { const p = String(k).split('-').map(Number); return Date.UTC(p[0], p[1] - 1, p[2]); };
   return Math.round((d(toKey) - d(fromKey)) / 86400000);
 }
+function addDaysKey(key, n) {
+  const p = String(key).split('-').map(Number);
+  return normalizeDateForCompare(new Date(p[0], p[1] - 1, p[2] + n, 12));
+}
 
 /** Coinbase spot prices for the crypto pairs among `tickers` → { TICKER: price }; missing on any failure. */
 function fetchCryptoPrices(tickers) {
@@ -1079,13 +1083,17 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
   opts = opts || {};
   const usdRate = Number(opts.usdRate) || 0;
   const rows = historyValues.slice(1).filter(r => r[0]).map(r => ({ day: normalizeDateForCompare(r[0]), account: r[1],
-    ticker: String(r[2] || ''), price: invNumber(r[4]), value: invNumber(r[5]),
+    ticker: String(r[2] || ''), qty: invNumber(r[3]), price: invNumber(r[4]), value: invNumber(r[5]),
     dayChange: r[6] === '' || r[6] === null || r[6] === undefined ? null : Number(r[6]) }));
   const days = rows.filter(r => r.account === HISTORY_TOTAL).map(r => r.day).sort();
   if (!days.length) return null;
-  const today = days[days.length - 1], prev = days.length > 1 ? days[days.length - 2] : null;
+  // v1.1.74: only the change of one day — the snapshot of the day before, or none. After a day without an update the
+  // change spanned every day since, under the same label.
+  const today = days[days.length - 1];
+  const prev = days.length > 1 && daysBetween(days[days.length - 2], today) === 1 ? days[days.length - 2] : null;
   const totalOn = d => rows.filter(r => r.day === d && r.account === HISTORY_TOTAL).reduce((s, r) => s + r.value, 0);
   const brief = { day: today, total: totalOn(today), totalDop: usdRate > 0 ? totalOn(today) * usdRate : null, prevDay: prev,
+    missingDay: days.length > 1 && !prev ? addDaysKey(today, -1) : null,
     change: null, changePct: null, deposits: 0, movers: [], added: [], returns: opts.returns || null,
     // v1.1.56: positions that had no live price at the update (recorded without a price)
     stale: rows.filter(r => r.day === today && r.account !== HISTORY_TOTAL && r.ticker && r.ticker !== 'CASH' && !(r.price > 0) && r.value > 0).length };
@@ -1095,14 +1103,40 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
   if (prev) {
     // v1.1.37: compared account by account. An account added to the tracker since the previous day (a fund's first
     // balance, say) isn't gain — comparing totals counted it as one (+US$17,104 on the day two accounts were added).
-    const byAccount = d => {
+    // v1.1.74: what the market moved in what was held, position by position — not this snapshot's value minus the
+    // previous one's minus deposits. Reported: a run during market hours replaced the snapshot of the day (the close
+    // of the day before) with midday prices, and a clear gain for the stocks came out as a loss. A run during the day
+    // also takes in that day's deposits and buys, so a deposit's date can't say which snapshot has it. Now:
+    //  · a stock: quantity × (price − the close before its last session, price ÷ (1 + day change)); 0 when its price
+    //    has not moved since the previous snapshot (no session in between: a weekend, a holiday);
+    //  · crypto, or a stock without a day change: quantity × (price − the previous snapshot's price);
+    //  · cash: 0 — money deposited or spent on a buy is not gain;
+    //  · a balance without a ticker (a fund, a pension): its change, less that account's deposits, as before.
+    // The quantity is the previous snapshot's: what was held at the start of the day (a position bought since adds 0).
+    const accountsOn = d => {
       const m = {};
       rows.filter(r => r.day === d && r.account !== HISTORY_TOTAL).forEach(r => { m[r.account] = (m[r.account] || 0) + r.value; });
       return m;
     };
-    const now = byAccount(today), then = byAccount(prev);
+    const now = accountsOn(today), then = accountsOn(prev);
     const common = Object.keys(now).filter(a => a in then);
     brief.added = Object.keys(now).filter(a => !(a in then));
+    const latest = {};
+    rows.filter(r => r.day === today).forEach(r => { latest[r.account + '|' + r.ticker] = r; });
+    const balanceAccounts = {};
+    let change = 0;
+    rows.filter(r => r.day === prev && common.indexOf(r.account) !== -1).forEach(r => {
+      if (!r.ticker) { balanceAccounts[r.account] = true; return; }
+      const n = latest[r.account + '|' + r.ticker];
+      if (!n || !(n.price > 0)) return;   // cash has no price
+      if (!isCryptoPair(r.ticker) && n.dayChange !== null && isFinite(n.dayChange)) {
+        if (n.price !== r.price) change += r.qty * (n.price - n.price / (1 + n.dayChange));
+      } else if (r.price > 0) {
+        change += r.qty * (n.price - r.price);
+      }
+    });
+    rows.filter(r => !r.ticker && r.account !== HISTORY_TOTAL && balanceAccounts[r.account] && (r.day === today || r.day === prev))
+      .forEach(r => { change += r.day === today ? r.value : -r.value; });
     ledgerValues.slice(1).forEach(r => {
       if (!r[LG.DATE] || (r[LG.TYPE] !== 'Deposit' && r[LG.TYPE] !== 'Withdrawal')) return;
       if (common.indexOf(String(r[LG.ACCOUNT]).trim()) === -1) return;
@@ -1110,11 +1144,13 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
       if (k <= prev || k > today) return;
       const cur = String(r[LG.CURRENCY] || 'USD').toUpperCase();
       const amount = cur === 'DOP' ? (usdRate > 0 ? invNumber(r[LG.AMOUNT]) / usdRate : 0) : invNumber(r[LG.AMOUNT]);
-      brief.deposits += r[LG.TYPE] === 'Deposit' ? amount : -amount;
+      const signed = r[LG.TYPE] === 'Deposit' ? amount : -amount;
+      brief.deposits += signed;   // shown as "deposits left out"
+      if (balanceAccounts[String(r[LG.ACCOUNT]).trim()]) change -= signed;
     });
-    const before = common.reduce((t, a) => t + then[a], 0), after = common.reduce((t, a) => t + now[a], 0);
-    brief.change = after - before - brief.deposits;
-    brief.changePct = before > 0 ? brief.change / before : null;
+    const after = common.reduce((t, a) => t + now[a], 0), before = after - change - brief.deposits;
+    brief.change = change;
+    brief.changePct = before > 0 ? change / before : null;
     const prevPrice = {};
     rows.filter(r => r.day === prev && r.price > 0).forEach(r => { prevPrice[r.account + '|' + r.ticker] = r.price; });
     const bySession = {};
