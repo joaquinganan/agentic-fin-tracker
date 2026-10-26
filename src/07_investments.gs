@@ -1157,7 +1157,13 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
     session.forEach(m => { bySession[m.account + '|' + m.ticker] = true; });
     const byPrice = rows.filter(r => r.day === today && r.price > 0 && prevPrice[r.account + '|' + r.ticker] > 0 && !bySession[r.account + '|' + r.ticker])
       .map(r => ({ ticker: r.ticker, account: r.account, change: r.price / prevPrice[r.account + '|' + r.ticker] - 1 }));
-    brief.movers = session.concat(byPrice).filter(m => Math.abs(m.change) >= 0.0005)
+    // v1.1.75: a stock's session is a move of this day only if its price moved since the snapshot before, as in the
+    // change above. Reported: the email of Sunday the 25th ("23 → 24 Oct", a Saturday) listed Friday's session moves
+    // of three stocks while the change counted only crypto.
+    const moved = m => latest[m.account + '|' + m.ticker].price !== prevPrice[m.account + '|' + m.ticker];
+    const inDay = session.filter(m => prevPrice[m.account + '|' + m.ticker] > 0 && moved(m));
+    brief.stocksClosed = session.some(m => prevPrice[m.account + '|' + m.ticker] > 0) && !inDay.length;
+    brief.movers = inDay.concat(byPrice).filter(m => Math.abs(m.change) >= 0.0005)
       .sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);
   } else {
     brief.movers = session.filter(m => Math.abs(m.change) >= 0.0005).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);

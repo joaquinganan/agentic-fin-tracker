@@ -642,13 +642,18 @@ function buildDailySummaryEmail(s, opts) {
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
         ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
+    // v1.1.75: no market session that day (a weekend, a holiday): the stocks are said not to move
+    const stocksNote = iv.stocksClosed ? 'stocks unchanged (no market session).' : 'stocks at their last close.';
     if (iv.cryptoAt && (iv.cryptoAt.repriced || iv.cryptoAt.missing)) {   // v1.1.73
       const end = keyToDate(iv.day);
       const dayBefore = summaryShortDate(new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1, 12));
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' +
-        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), stocks at their last close.' : '') +
+        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), ' + stocksNote : '') +
         (iv.cryptoAt.missing ? (iv.cryptoAt.repriced ? ' ' : '') + iv.cryptoAt.missing +
-          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') + '</div>';
+          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') +
+        (iv.stocksClosed && !iv.cryptoAt.repriced ? ' Stocks unchanged (no market session).' : '') + '</div>';
+    } else if (iv.stocksClosed) {
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">Stocks unchanged (no market session).</div>';
     }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ', ' + since + ')' : ''));

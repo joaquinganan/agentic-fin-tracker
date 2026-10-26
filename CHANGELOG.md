@@ -2,6 +2,19 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.75 (Oct 26, 2026) — Daily summary: on a day without a market session, only crypto moves
+- **Reported:** the email of Sunday the 25th ("23 → 24 Oct", a Saturday) listed three stocks among the biggest moves,
+  each with Friday's session ("HAPI · last session"), while the day's change counted only crypto. The change
+  was right since v1.1.74 (a stock adds 0 when its price has not moved since the previous snapshot); the moves list
+  still took every stock's last day change, as v1.1.56 meant it ("a Monday shows Friday's moves"), which no longer
+  fits a change labelled with one day.
+- **Fix** (`investmentsDailyBrief`): a stock's session is listed only if its price moved since the snapshot before, the
+  same rule as the change. With no snapshot of the day before, the sessions are listed as before. `brief.stocksClosed`
+  says the stocks held had no session that day; the email's note then reads "stocks unchanged (no market session)"
+  instead of "stocks at their last close".
+- `tests/v156.test.js` fixed the old behaviour (Sunday's and Monday's snapshots at Friday's close, Friday's session
+  listed): its first day now has the prices before that session, so it still tests the session moves on a weekday.
+
 ### v1.1.74 (Oct 22, 2026) — Daily summary: the previous day's investment change, from market moves, labelled with both days
 - **Why:** asked whether "Since Wed 21 Oct" was the change from the 20th to the 21st or from the 21st to today. It was
   the 21st's (a snapshot holds the end of the day before: the 22nd's has the end of the 21st), but the label read the

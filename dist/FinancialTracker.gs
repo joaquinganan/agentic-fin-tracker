@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.74 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.75 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.74"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.75"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -7287,13 +7287,18 @@ function buildDailySummaryEmail(s, opts) {
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' + iv.stale +
         ' position(s) had no live price at the update — valued at their last known price.</div>';
     }
+    // v1.1.75: no market session that day (a weekend, a holiday): the stocks are said not to move
+    const stocksNote = iv.stocksClosed ? 'stocks unchanged (no market session).' : 'stocks at their last close.';
     if (iv.cryptoAt && (iv.cryptoAt.repriced || iv.cryptoAt.missing)) {   // v1.1.73
       const end = keyToDate(iv.day);
       const dayBefore = summaryShortDate(new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1, 12));
       inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">' +
-        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), stocks at their last close.' : '') +
+        (iv.cryptoAt.repriced ? 'Crypto at its 12:00 AM price (end of ' + dayBefore + '), ' + stocksNote : '') +
         (iv.cryptoAt.missing ? (iv.cryptoAt.repriced ? ' ' : '') + iv.cryptoAt.missing +
-          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') + '</div>';
+          ' crypto position(s) without a 12:00 AM price — valued at the update\'s price.' : '') +
+        (iv.stocksClosed && !iv.cryptoAt.repriced ? ' Stocks unchanged (no market session).' : '') + '</div>';
+    } else if (iv.stocksClosed) {
+      inner += '<div style="font-size:12px;color:' + EK.muted + ';margin-top:8px">Stocks unchanged (no market session).</div>';
     }
     rows.push(ekSection('Investments', inner));
     T.push('', 'Investments: ' + summaryUsd(iv.total) + (iv.change !== null ? ' (' + summarySignedUsd(iv.change) + ', ' + since + ')' : ''));
@@ -9005,7 +9010,13 @@ function investmentsDailyBrief(historyValues, ledgerValues, opts) {
     session.forEach(m => { bySession[m.account + '|' + m.ticker] = true; });
     const byPrice = rows.filter(r => r.day === today && r.price > 0 && prevPrice[r.account + '|' + r.ticker] > 0 && !bySession[r.account + '|' + r.ticker])
       .map(r => ({ ticker: r.ticker, account: r.account, change: r.price / prevPrice[r.account + '|' + r.ticker] - 1 }));
-    brief.movers = session.concat(byPrice).filter(m => Math.abs(m.change) >= 0.0005)
+    // v1.1.75: a stock's session is a move of this day only if its price moved since the snapshot before, as in the
+    // change above. Reported: the email of Sunday the 25th ("23 → 24 Oct", a Saturday) listed Friday's session moves
+    // of three stocks while the change counted only crypto.
+    const moved = m => latest[m.account + '|' + m.ticker].price !== prevPrice[m.account + '|' + m.ticker];
+    const inDay = session.filter(m => prevPrice[m.account + '|' + m.ticker] > 0 && moved(m));
+    brief.stocksClosed = session.some(m => prevPrice[m.account + '|' + m.ticker] > 0) && !inDay.length;
+    brief.movers = inDay.concat(byPrice).filter(m => Math.abs(m.change) >= 0.0005)
       .sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);
   } else {
     brief.movers = session.filter(m => Math.abs(m.change) >= 0.0005).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 3);

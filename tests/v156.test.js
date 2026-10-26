@@ -57,14 +57,16 @@ test('the history gains a Day change column — an older 6-column history too', 
 });
 
 const HIST = h => [['Date', 'Account', 'Ticker', 'Quantity', 'Price (US$)', 'Value (US$)', 'Day change'],
-  // Monday 6 AM vs Sunday 6 AM: both at Friday's close — the prices didn't move, the last session did
-  [h.date(2026, 9, 27), 'HAPI', 'GOOGL', 2, 150, 300, 0.012], [h.date(2026, 9, 27), 'HAPI', 'NVDA', 1, 180, 180, -0.031],
-  [h.date(2026, 9, 27), 'HAPI', 'ETHUSD', 0.5, 4000, 2000, ''], [h.date(2026, 9, 27), 'TOTAL', '', '', '', 2480, ''],
+  // a weekday: the session between the two snapshots moved the prices. Until v1.1.75 the snapshots were Sunday's and
+  // Monday's, both at Friday's close, and Friday's session was listed — reported: on a weekend the email listed stock
+  // moves while the day's change counted only crypto. Now a session counts only if the price moved (tests/v175.test.js).
+  [h.date(2026, 9, 27), 'HAPI', 'GOOGL', 2, 148.22, 296.44, 0.005], [h.date(2026, 9, 27), 'HAPI', 'NVDA', 1, 185.76, 185.76, 0.01],
+  [h.date(2026, 9, 27), 'HAPI', 'ETHUSD', 0.5, 4000, 2000, ''], [h.date(2026, 9, 27), 'TOTAL', '', '', '', 2482.2, ''],
   [h.date(2026, 9, 28), 'HAPI', 'GOOGL', 2, 150, 300, 0.012], [h.date(2026, 9, 28), 'HAPI', 'NVDA', 1, 180, 180, -0.031],
   [h.date(2026, 9, 28), 'HAPI', 'ETHUSD', 0.5, 4100, 2050, ''], [h.date(2026, 9, 28), 'HAPI', 'AMZN', 1, '', 220, ''],
   [h.date(2026, 9, 28), 'TOTAL', '', '', '', 2750, '']];
 
-test('biggest moves come from the last session (a Monday shows Friday\'s), crypto from its price; unpriced positions are counted', () => {
+test('biggest moves come from the last session, crypto from its price; unpriced positions are counted', () => {
   const h = load();
   const L = [['Date', 'Account', 'Type', 'Ticker', 'Quantity', 'Price', 'Amount', 'Fee', 'Currency', 'Source', 'Notes', 'Id']];
   const b = h.plain(h.ctx.investmentsDailyBrief(HIST(h), L, { usdRate: 60 }));

@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.74** (22 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.75** (26 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -26,9 +26,9 @@ envía un resumen diario y otro mensual por correo. También lleva inversiones (
 correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.74)
+## 2. Estado actual (v1.1.75)
 
-- **328 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **332 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -273,12 +273,14 @@ git push
   la **cuenta de ahorro** de QIK (falta su `.eml`). La conciliación busca la alerta de cada consumo ±3 días
   (`CARD_STATEMENT_MATCH_DAYS`); si una alerta llega con más atraso, el consumo queda dos veces: confirmarlo en la hoja
   real con el registro ("Only in the statement").
-- **Resumen diario "hasta las 12 AM" (v1.1.73–v1.1.74):** el gasto ya se cuenta por la fecha de la transacción (lo de
+- **Resumen diario "hasta las 12 AM" (v1.1.73–v1.1.75):** el gasto ya se cuenta por la fecha de la transacción (lo de
   hoy no entra aunque ya esté guardado). Inversiones: el correo del 22 muestra el cambio del 21 ("20 → 21 Oct"); sin la
   foto del día anterior sale "—" ("no update on …"). Desde v1.1.74 el cambio es **lo que movió el mercado** en lo que se
   tenía al empezar el día (cantidad de la foto anterior): acciones con precio ÷ (1 + Day change) como cierre anterior (0
   si el precio no cambió: fin de semana, feriado), cripto a las 12:00 AM de cada foto (vela por hora de Coinbase,
-  `fetchCryptoMidnightPrices`), efectivo 0, fondos y pensión por saldo menos depósitos. Así no importa a qué hora corrió
+  `fetchCryptoMidnightPrices`), efectivo 0, fondos y pensión por saldo menos depósitos. Desde v1.1.75 la lista de
+  "biggest moves" sigue la misma regla: una acción sale solo si su precio cambió entre las dos fotos (un sábado o domingo,
+  solo cripto; la nota dice "stocks unchanged (no market session)"). Así no importa a qué hora corrió
   el tracker (una corrida a media tarde reemplazó la foto del día y el correo dio pérdida en un día de ganancia clara) ni los
   depósitos. Límites: una acción comprada ese día suma 0 su primer día; si la foto más reciente es de media sesión (un
   *Send Daily Summary Now* después de correr a mano en horario de bolsa), muestra la sesión en curso; un resumen
