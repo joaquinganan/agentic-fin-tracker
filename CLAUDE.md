@@ -29,7 +29,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 ## 2. Estado actual (v1.1.75)
 
 - **332 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
-- **CI** (GitHub Actions, Node 20 y 22): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
+- **CI** (GitHub Actions, Node 22 y 24): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
 |---|---|

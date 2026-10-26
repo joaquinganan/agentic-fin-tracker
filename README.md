@@ -171,7 +171,7 @@ npm test            # node --test tests/*.test.js  (Node 18+)
   were reviewed rendered in Chromium at desktop and mobile widths.
 - **Privacy guards.** Tests fail if the code contains a personal email address, a numeric placeholder in the Setup
   Wizard, or a hard-coded statement date.
-- **CI.** GitHub Actions runs the suite on Node 20 and 22 on every push and pull request.
+- **CI.** GitHub Actions runs the suite on Node 22 and 24 on every push and pull request.
 
 | Suite | Focus |
 |---|---|
