@@ -2,6 +2,29 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.76 (Oct 27, 2026) — The day's investment snapshot no longer depends on recategorize finishing; a run cut off at the time limit is reported
+- **Reported:** the email of the 27th showed the investment change as "—" ("no update on Mon 26 Oct"). The 6 AM run of
+  the 26th hit Apps Script's 6-minute limit ("Exceeded maximum execution time") inside recategorize, 3½ minutes in:
+  reading took about a minute, saving 3 rows 105 s, and recategorize was still rebuilding the sheets when it was
+  killed. The investments step came after recategorize, so that day's Portfolio History snapshot was never taken, and
+  the next day's change had no previous day to compare with (one day only since v1.1.74). A snapshot can't be taken
+  afterwards: the prices of that morning are gone.
+- **And the email of the 26th didn't say so.** A killed run has no `finally`, so the outcome of the run is never
+  recorded: the email showed the previous morning's "Data updated Sun 25 Oct at 6:39 AM" in green. The stale warning
+  needed more than 26 hours, and the summary went out 25 hours after the previous update.
+- **Order:** investments now runs before recategorize. The snapshot can only be taken on its day; recategorize redoes
+  everything on the next run (new rows are already categorized when saved). A broker deposit written by hand in Bank
+  Transfers reaches the ledger one run later (Recategorize imports those rows).
+- **Run recorded as unfinished:** before each step, the run records itself as unfinished with the step it is on, and
+  replaces that with its outcome at the end. The daily email and 📘 Start here now say "did not finish: Apps Script
+  stopped it at its 6-minute limit during "recategorize"" (or "still running" if it started less than 6 minutes ago).
+  The outcome also keeps the steps left for the next run, shown in the email's line.
+- **Missed morning:** from 7:00 (the update's trigger runs at 6, within the hour), an email whose last update isn't
+  from today warns "No automatic update this morning — the last one was …". Before 7 the 26-hour rule stays, so a
+  summary scheduled before the update isn't flagged.
+- `tests/v143.test.js` fixed the order of the deferred steps ("sort, recategorize, investments"); it is now "sort,
+  investments, recategorize".
+
 ### v1.1.75 (Oct 26, 2026) — Daily summary: on a day without a market session, only crypto moves
 - **Reported:** the email of Sunday the 25th ("23 → 24 Oct", a Saturday) listed three stocks among the biggest moves,
   each with Friday's session ("HAPI · last session"), while the day's change counted only crypto. The change

@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.75"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.76"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -961,17 +961,20 @@ function runGmailMonitorCore(search, config) {
       ["sort", () => sortAllDataSheets()],
       // v1.1.67: Uber ride alerts checked against Uber's trip receipts — before Recategorize rebuilds the sheets
       ["uber receipts", () => { rides = reconcileRideReceipts(new Date(), search.range ? search.range.start : null); }],
+      // v1.1.29: broker emails → Investment Ledger, bank deposits → ledger, Holdings rebuilt.
+      // Isolated like every step here: an investments problem never affects the bank side.
+      // v1.1.76: before recategorize — the day's Portfolio History snapshot can only be taken that day, while
+      // recategorize redoes everything on the next run. Reported: the 6 AM run hit the 6-minute limit inside
+      // recategorize, the snapshot was never taken, and the next email had no daily change.
+      ["investments", () => {
+        safeToast("Updating investments...", "📊 Financial Tracker", -1);
+        investments = runInvestmentsStep(search.range);
+        styleInvestmentSheets();   // v1.1.43: only these — the full styling runs with recategorize
+      }],
       ["recategorize", () => {
         safeToast("Recategorizing...", "📊 Financial Tracker", -1);
         recatChanged = recategorizeAllTransactions(config.email);
         Logger.log("Auto-recategorize: " + recatChanged + " cell(s) updated");
-      }],
-      // v1.1.29: broker emails → Investment Ledger, bank deposits → ledger, Holdings rebuilt.
-      // Isolated like every step here: an investments problem never affects the bank side.
-      ["investments", () => {
-        safeToast("Updating investments...", "📊 Financial Tracker", -1);
-        investments = runInvestmentsStep(search.range);
-        styleInvestmentSheets();   // v1.1.43: only these — the full styling already ran with recategorize
       }],
       // v1.1.35: emails that couldn't be read (bank and broker) → Unrecognized; ones read cleanly now drop off it
       ["unrecognized", () => {
@@ -986,10 +989,17 @@ function runGmailMonitorCore(search, config) {
         if (dashboardSheet) SpreadsheetApp.setActiveSheet(dashboardSheet);
       }]
     ];
+    // v1.1.76: Apps Script kills a run at 6 minutes with no finally, so the outcome below is never written and the
+    // summary showed the previous day's update as if it were today's. Recorded as unfinished first, with the step it
+    // is on: a run cut off stays recorded as cut off, and where.
+    const inProgress = { at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
+      failed: results.failed, unfinished: true, step: '' };
     steps.forEach(([name, fn]) => {
       // v1.1.43: a stopped run leaves the heavy steps to the run that completes the range; and no step starts late
       if (stopped && DEFERRABLE_STEPS.indexOf(name) !== -1) { deferred.push(name); return; }
       if (runClock() - (RUN_STARTED_AT || runClock()) > RUN_STEPS_DEADLINE_MS) { deferred.push(name); return; }
+      inProgress.step = name;
+      recordLastRun(inProgress);
       const started = Date.now();
       try { fn(); Logger.log('⏱ ' + name + ': ' + Math.round((Date.now() - started) / 1000) + ' s'); } catch (error) {   // v1.1.44: timings
         errors.push(name + " — " + error);
@@ -1001,7 +1011,7 @@ function runGmailMonitorCore(search, config) {
   // v1.1.26: the summary emails report whether the morning update ran and how it went
   recordLastRun({ at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
     failed: results.failed, unparsed: stats.amountNotFound + stats.parseErrors + (investments ? investments.unparsed : 0),
-    errors: errors.length, unrecognized: unrecognizedOpen || 0, partial: !!stopped });
+    errors: errors.length, unrecognized: unrecognizedOpen || 0, partial: !!stopped, deferred: deferred });   // v1.1.76: deferred
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,

@@ -503,16 +503,35 @@ function summaryDataHealth(lastRun, now) {
   }
   const at = new Date(lastRun.at);
   const hours = (now - at) / 3600000;
-  const when = (hours < 24 && at.getDate() === now.getDate() ? 'today' : summaryShortDate(at)) + ' at ' + summaryTime(at);
-  if (hours > 26) {
-    return { tone: 'warn', text: 'No automatic update since ' + when + ' — numbers may be incomplete. Check Extensions › Apps Script › Executions.' };
+  const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  const when = (hours < 24 && sameDay ? 'today' : summaryShortDate(at)) + ' at ' + summaryTime(at);
+  // v1.1.76: a run Apps Script stopped at its 6-minute limit (recorded as unfinished before its last steps)
+  if (lastRun.unfinished) {
+    if (hours * 60 < SUMMARY_RUN_LIMIT_MINUTES) {
+      return { tone: 'note', text: 'An update started ' + when + ' is still running — numbers may change.' };
+    }
+    return { tone: 'warn', text: 'The update ' + when + ' did not finish: Apps Script stopped it at its 6-minute limit' +
+      (lastRun.step ? ' during "' + lastRun.step + '"' : '') + ' · ' + (lastRun.saved || 0) + ' new transaction(s) saved; ' +
+      'what comes after that step (investments, the Dashboard) may be out of date. The next run finishes it, or run Monitor Gmail Now.' };
+  }
+  // v1.1.76: the summary is sent after the 6 AM update. Reported: the morning update died at the time limit and the
+  // email showed the previous morning's "Data updated Sun 25 Oct at 6:39 AM" in green — only 25 hours, under 26.
+  if (hours > 26 || (!sameDay && now.getHours() >= SUMMARY_MORNING_RUN_DONE_HOUR)) {
+    return { tone: 'warn', text: 'No automatic update ' + (hours > 26 ? 'since ' : 'this morning — the last one was ') + when +
+      ' — numbers may be incomplete. Check Extensions › Apps Script › Executions.' };
   }
   let text = 'Data updated ' + when + ' · ' + (lastRun.saved || 0) + ' new transaction(s)';
   if (lastRun.unparsed) text += ' · ' + lastRun.unparsed + ' email(s) couldn\'t be read (left unread in Gmail)';
   if (lastRun.errors) text += ' · ' + lastRun.errors + ' error(s) in the log';
   if (lastRun.unrecognized) text += ' · ' + lastRun.unrecognized + ' email(s) in Unrecognized';   // v1.1.35
-  return { tone: lastRun.unparsed || lastRun.errors || lastRun.unrecognized ? 'warn' : 'good', text: text };
+  const deferred = lastRun.deferred || [];
+  if (deferred.length) text += ' · left for the next run (time limit): ' + deferred.join(', ');   // v1.1.76
+  return { tone: lastRun.unparsed || lastRun.errors || lastRun.unrecognized || deferred.length ? 'warn' : 'good', text: text };
 }
+// v1.1.76: the daily update's trigger runs at 6 AM (createTrigger(), within the hour); by 7 it has started and, with
+// Apps Script's limit, finished
+const SUMMARY_MORNING_RUN_DONE_HOUR = 7;
+const SUMMARY_RUN_LIMIT_MINUTES = 6;
 
 /** Subject, HTML and plain-text bodies of the daily email. Pure — see tests/. */
 function buildDailySummaryEmail(s, opts) {

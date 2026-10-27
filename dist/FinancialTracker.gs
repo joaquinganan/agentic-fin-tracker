@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.75 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.76 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.75"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.76"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -974,17 +974,20 @@ function runGmailMonitorCore(search, config) {
       ["sort", () => sortAllDataSheets()],
       // v1.1.67: Uber ride alerts checked against Uber's trip receipts — before Recategorize rebuilds the sheets
       ["uber receipts", () => { rides = reconcileRideReceipts(new Date(), search.range ? search.range.start : null); }],
+      // v1.1.29: broker emails → Investment Ledger, bank deposits → ledger, Holdings rebuilt.
+      // Isolated like every step here: an investments problem never affects the bank side.
+      // v1.1.76: before recategorize — the day's Portfolio History snapshot can only be taken that day, while
+      // recategorize redoes everything on the next run. Reported: the 6 AM run hit the 6-minute limit inside
+      // recategorize, the snapshot was never taken, and the next email had no daily change.
+      ["investments", () => {
+        safeToast("Updating investments...", "📊 Financial Tracker", -1);
+        investments = runInvestmentsStep(search.range);
+        styleInvestmentSheets();   // v1.1.43: only these — the full styling runs with recategorize
+      }],
       ["recategorize", () => {
         safeToast("Recategorizing...", "📊 Financial Tracker", -1);
         recatChanged = recategorizeAllTransactions(config.email);
         Logger.log("Auto-recategorize: " + recatChanged + " cell(s) updated");
-      }],
-      // v1.1.29: broker emails → Investment Ledger, bank deposits → ledger, Holdings rebuilt.
-      // Isolated like every step here: an investments problem never affects the bank side.
-      ["investments", () => {
-        safeToast("Updating investments...", "📊 Financial Tracker", -1);
-        investments = runInvestmentsStep(search.range);
-        styleInvestmentSheets();   // v1.1.43: only these — the full styling already ran with recategorize
       }],
       // v1.1.35: emails that couldn't be read (bank and broker) → Unrecognized; ones read cleanly now drop off it
       ["unrecognized", () => {
@@ -999,10 +1002,17 @@ function runGmailMonitorCore(search, config) {
         if (dashboardSheet) SpreadsheetApp.setActiveSheet(dashboardSheet);
       }]
     ];
+    // v1.1.76: Apps Script kills a run at 6 minutes with no finally, so the outcome below is never written and the
+    // summary showed the previous day's update as if it were today's. Recorded as unfinished first, with the step it
+    // is on: a run cut off stays recorded as cut off, and where.
+    const inProgress = { at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
+      failed: results.failed, unfinished: true, step: '' };
     steps.forEach(([name, fn]) => {
       // v1.1.43: a stopped run leaves the heavy steps to the run that completes the range; and no step starts late
       if (stopped && DEFERRABLE_STEPS.indexOf(name) !== -1) { deferred.push(name); return; }
       if (runClock() - (RUN_STARTED_AT || runClock()) > RUN_STEPS_DEADLINE_MS) { deferred.push(name); return; }
+      inProgress.step = name;
+      recordLastRun(inProgress);
       const started = Date.now();
       try { fn(); Logger.log('⏱ ' + name + ': ' + Math.round((Date.now() - started) / 1000) + ' s'); } catch (error) {   // v1.1.44: timings
         errors.push(name + " — " + error);
@@ -1014,7 +1024,7 @@ function runGmailMonitorCore(search, config) {
   // v1.1.26: the summary emails report whether the morning update ran and how it went
   recordLastRun({ at: new Date().toISOString(), saved: results.success, duplicates: results.duplicates,
     failed: results.failed, unparsed: stats.amountNotFound + stats.parseErrors + (investments ? investments.unparsed : 0),
-    errors: errors.length, unrecognized: unrecognizedOpen || 0, partial: !!stopped });
+    errors: errors.length, unrecognized: unrecognizedOpen || 0, partial: !!stopped, deferred: deferred });   // v1.1.76: deferred
   safeToast("Done.", "📊 Financial Tracker", 3);
   safeAlert(buildRunSummary({ search: search, threads: threads, transactions: transactions, stats: stats,
                               results: results, marked: marked, recatChanged: recatChanged, errors: errors,
@@ -7148,16 +7158,35 @@ function summaryDataHealth(lastRun, now) {
   }
   const at = new Date(lastRun.at);
   const hours = (now - at) / 3600000;
-  const when = (hours < 24 && at.getDate() === now.getDate() ? 'today' : summaryShortDate(at)) + ' at ' + summaryTime(at);
-  if (hours > 26) {
-    return { tone: 'warn', text: 'No automatic update since ' + when + ' — numbers may be incomplete. Check Extensions › Apps Script › Executions.' };
+  const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  const when = (hours < 24 && sameDay ? 'today' : summaryShortDate(at)) + ' at ' + summaryTime(at);
+  // v1.1.76: a run Apps Script stopped at its 6-minute limit (recorded as unfinished before its last steps)
+  if (lastRun.unfinished) {
+    if (hours * 60 < SUMMARY_RUN_LIMIT_MINUTES) {
+      return { tone: 'note', text: 'An update started ' + when + ' is still running — numbers may change.' };
+    }
+    return { tone: 'warn', text: 'The update ' + when + ' did not finish: Apps Script stopped it at its 6-minute limit' +
+      (lastRun.step ? ' during "' + lastRun.step + '"' : '') + ' · ' + (lastRun.saved || 0) + ' new transaction(s) saved; ' +
+      'what comes after that step (investments, the Dashboard) may be out of date. The next run finishes it, or run Monitor Gmail Now.' };
+  }
+  // v1.1.76: the summary is sent after the 6 AM update. Reported: the morning update died at the time limit and the
+  // email showed the previous morning's "Data updated Sun 25 Oct at 6:39 AM" in green — only 25 hours, under 26.
+  if (hours > 26 || (!sameDay && now.getHours() >= SUMMARY_MORNING_RUN_DONE_HOUR)) {
+    return { tone: 'warn', text: 'No automatic update ' + (hours > 26 ? 'since ' : 'this morning — the last one was ') + when +
+      ' — numbers may be incomplete. Check Extensions › Apps Script › Executions.' };
   }
   let text = 'Data updated ' + when + ' · ' + (lastRun.saved || 0) + ' new transaction(s)';
   if (lastRun.unparsed) text += ' · ' + lastRun.unparsed + ' email(s) couldn\'t be read (left unread in Gmail)';
   if (lastRun.errors) text += ' · ' + lastRun.errors + ' error(s) in the log';
   if (lastRun.unrecognized) text += ' · ' + lastRun.unrecognized + ' email(s) in Unrecognized';   // v1.1.35
-  return { tone: lastRun.unparsed || lastRun.errors || lastRun.unrecognized ? 'warn' : 'good', text: text };
+  const deferred = lastRun.deferred || [];
+  if (deferred.length) text += ' · left for the next run (time limit): ' + deferred.join(', ');   // v1.1.76
+  return { tone: lastRun.unparsed || lastRun.errors || lastRun.unrecognized || deferred.length ? 'warn' : 'good', text: text };
 }
+// v1.1.76: the daily update's trigger runs at 6 AM (createTrigger(), within the hour); by 7 it has started and, with
+// Apps Script's limit, finished
+const SUMMARY_MORNING_RUN_DONE_HOUR = 7;
+const SUMMARY_RUN_LIMIT_MINUTES = 6;
 
 /** Subject, HTML and plain-text bodies of the daily email. Pure — see tests/. */
 function buildDailySummaryEmail(s, opts) {
@@ -9711,9 +9740,13 @@ function startHereStatus(now) {
     const at = new Date(last.at), hours = (now - at) / 3600000;
     const bits = ['Last update: ' + Utilities.formatDate(at, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') + ' · ' + (last.saved || 0) + ' saved.'];
     if (last.partial) bits.push('It stopped early to stay within the time limit — run it again to finish.');
+    // v1.1.76: cut off by Apps Script at 6 minutes (still running if it started less than that ago)
+    const cutOff = last.unfinished && hours * 60 >= SUMMARY_RUN_LIMIT_MINUTES;
+    if (cutOff) bits.push('It did not finish: Apps Script stopped it at its 6-minute limit' + (last.step ? ' during "' + last.step + '"' : '') +
+      '. The next run finishes it, or run Monitor Gmail Now.');
     if (last.errors) bits.push(last.errors + ' error(s): see Extensions › Apps Script › Executions.');
     if (hours > START_HERE_STALE_RUN_HOURS) bits.push('That is more than a day ago — is the daily update running?');
-    add('Your data', 'lastRun', 'Bank emails up to date', last.partial || last.errors || hours > START_HERE_STALE_RUN_HOURS ? 'warn' : 'done',
+    add('Your data', 'lastRun', 'Bank emails up to date', last.partial || cutOff || last.errors || hours > START_HERE_STALE_RUN_HOURS ? 'warn' : 'done',
       bits.join(' '), last.partial ? { label: 'Monitor by Date Range', fn: 'openDateRangeDialog' } : null);
   }
   const unrec = ss.getSheetByName(UNRECOGNIZED_SHEET);

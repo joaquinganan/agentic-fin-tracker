@@ -50,7 +50,8 @@ test('a stopped run leaves the heavy steps to the next one; the next run does th
   h.ctx.runGmailMonitorForDateRange('2026-09-01', '2026-09-30');
   const first = mock.ui.alerts[mock.ui.alerts.length - 1];
   assert.match(first, /⏸ Stopped reading early/);
-  assert.match(first, /⏭ Left for the next run: sort, recategorize, investments/);
+  // v1.1.76: investments runs before recategorize (the day's snapshot can't be taken later)
+  assert.match(first, /⏭ Left for the next run: sort, investments, recategorize/);
   assert.ok(!h.logs.some(l => /Auto-recategorize/.test(l)), 'recategorize didn\'t run');
   assert.equal(mock.ss.getSheetByName('Transactions')._rows(15).length, 1, 'what was read is saved');
   h.get('runClock = () => Date.now()');

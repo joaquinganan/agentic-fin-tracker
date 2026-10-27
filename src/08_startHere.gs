@@ -80,9 +80,13 @@ function startHereStatus(now) {
     const at = new Date(last.at), hours = (now - at) / 3600000;
     const bits = ['Last update: ' + Utilities.formatDate(at, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') + ' · ' + (last.saved || 0) + ' saved.'];
     if (last.partial) bits.push('It stopped early to stay within the time limit — run it again to finish.');
+    // v1.1.76: cut off by Apps Script at 6 minutes (still running if it started less than that ago)
+    const cutOff = last.unfinished && hours * 60 >= SUMMARY_RUN_LIMIT_MINUTES;
+    if (cutOff) bits.push('It did not finish: Apps Script stopped it at its 6-minute limit' + (last.step ? ' during "' + last.step + '"' : '') +
+      '. The next run finishes it, or run Monitor Gmail Now.');
     if (last.errors) bits.push(last.errors + ' error(s): see Extensions › Apps Script › Executions.');
     if (hours > START_HERE_STALE_RUN_HOURS) bits.push('That is more than a day ago — is the daily update running?');
-    add('Your data', 'lastRun', 'Bank emails up to date', last.partial || last.errors || hours > START_HERE_STALE_RUN_HOURS ? 'warn' : 'done',
+    add('Your data', 'lastRun', 'Bank emails up to date', last.partial || cutOff || last.errors || hours > START_HERE_STALE_RUN_HOURS ? 'warn' : 'done',
       bits.join(' '), last.partial ? { label: 'Monitor by Date Range', fn: 'openDateRangeDialog' } : null);
   }
   const unrec = ss.getSheetByName(UNRECOGNIZED_SHEET);
