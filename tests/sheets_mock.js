@@ -258,7 +258,7 @@ function makeServices(options) {
   const ss = new FakeSpreadsheet();
   const gmail = { threads: opts.threads || [], queries: [], markedRead: [], labels: {}, sent: [] };
   const lock = { held: false, refuse: !!opts.lockBusy };
-  const ui = { dialogs: [], alerts: [], menus: [] };
+  const ui = { dialogs: [], alerts: [], menus: [], alertsLocked: [] };   // alertsLocked[i]: run lock held during alerts[i] (v1.1.77)
   const triggers = [];
   const props = {};
   const http = { responses: {}, requests: [] };   // UrlFetchApp: http.responses[url] = { code, body }
@@ -307,6 +307,7 @@ function makeServices(options) {
         const alert = (a, b, c) => {                         // alert(prompt[, buttons]) or alert(title, prompt[, buttons])
           const titled = b !== undefined && !isSet(b);
           ui.alerts.push(titled ? a + '\n' + b : a);
+          ui.alertsLocked.push(lock.held);
           const set = titled ? c : b;
           return set && set !== ButtonSet.OK ? (ui.nextButton || Button.YES) : Button.OK;
         };

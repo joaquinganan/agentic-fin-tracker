@@ -2,6 +2,19 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.77 (Oct 29, 2026) — A result window left open no longer holds the run lock
+- **Reported:** a manual 🔁 Recategorize showed as "Timed Out" in Executions ("Exceeded maximum execution time" at 6
+  minutes), although its log said "✅ Recategorized — … | Rebuilt: …" one minute in. Its work was done; the "✅ Done"
+  window was closed several minutes later. An alert waits until someone closes it, and Executions counts that wait.
+- **The real problem:** the window was shown inside `withRunLock()`, so the run lock stayed held while it waited. A
+  6 AM run starting in that time would have been skipped ("Another run is in progress"). The same happened with every
+  action that ends in a window under the lock: Monitor Gmail Now, Monitor by Date Range (the run summary), Refresh
+  Investments, the Setup Wizard, balance and snapshot entries, and their error windows.
+- **Change:** `safeAlert()` called inside `withRunLock()` keeps the message, and `withRunLock()` shows it after
+  releasing the lock (in order, also after an error). Recategorize now uses `safeAlert()` for its result. Before such a
+  window the log says "Run finished; waiting for its window to be closed…", so a later "Timed Out" is explained.
+  Nothing changes for the 6 AM trigger (no UI: the message is logged, as before).
+
 ### v1.1.76 (Oct 27, 2026) — The day's investment snapshot no longer depends on recategorize finishing; a run cut off at the time limit is reported
 - **Reported:** the email of the 27th showed the investment change as "—" ("no update on Mon 26 Oct"). The 6 AM run of
   the 26th hit Apps Script's 6-minute limit ("Exceeded maximum execution time") inside recategorize, 3½ minutes in:

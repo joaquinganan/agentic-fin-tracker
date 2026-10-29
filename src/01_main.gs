@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.76"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.77"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -108,13 +108,25 @@ function withRunLock(fn) {
     return undefined;
   }
   RUN_STARTED_AT = runClock();   // v1.1.36
+  RUN_LOCK_ALERTS = [];          // v1.1.77
   try {
     return fn();
   } finally {
     if (PROGRESS_TOAST_OPEN) safeToast("Finished.", "📊 Financial Tracker", 3);   // v1.1.33
     lock.releaseLock();
+    const alerts = RUN_LOCK_ALERTS;
+    RUN_LOCK_ALERTS = null;
+    alerts.forEach(message => safeAlert(message, true));
   }
 }
+
+/**
+ * v1.1.77: an alert waits until someone closes it, and one shown inside withRunLock() kept the run lock that whole
+ * time. Reported: the "✅ Done" of a manual Recategorize was closed minutes later and Executions showed the run as
+ * "Timed Out" at 6 minutes, its work long finished; a 6 AM run in that window would have been skipped ("Another run
+ * is in progress"). Alerts raised inside the lock are now kept here and shown after the lock is released.
+ */
+let RUN_LOCK_ALERTS = null;
 
 /**
  * v1.1.19 (M11): config for an entry point, or null after telling the user
@@ -883,9 +895,13 @@ function initializeTransactionsSheet() {
  * trigger can reach, since a menu click always has a UI and doesn't need
  * the fallback, but a triggered run never does.
  */
-function safeAlert(message) {
+function safeAlert(message, afterRun) {
+  if (RUN_LOCK_ALERTS) { RUN_LOCK_ALERTS.push(message); return; }   // v1.1.77: shown once the run lock is released
   try {
-    SpreadsheetApp.getUi().alert(message);
+    const ui = SpreadsheetApp.getUi();
+    // v1.1.77: so a window closed late explains the "Exceeded maximum execution time" that follows in Executions
+    if (afterRun) Logger.log("Run finished; waiting for its window to be closed (left open 6 minutes, Executions shows \"Timed Out\" — nothing was lost).");
+    ui.alert(message);
   } catch (e) {
     Logger.log("[No UI available — trigger-based run] " + message);
   }
@@ -1287,9 +1303,9 @@ function recategorizeAllTransactionsPrompt() {
       const changed = recategorizeAllTransactions(config.email);
       ensureSheetOrder();   // v1.1.38: this menu item didn't reorder tabs
       SpreadsheetApp.getActiveSpreadsheet().toast("Done.", "📊 Financial Tracker", 3);
-      ui.alert("✅ Done — " + changed + " cell(s) updated.");
+      safeAlert("✅ Done — " + changed + " cell(s) updated.");   // v1.1.77: after the run lock is released
     } catch (error) {
-      ui.alert("❌ Error: " + error.toString());
+      safeAlert("❌ Error: " + error.toString());
     }
   });
 }
