@@ -305,7 +305,8 @@ function summaryTypicalView(s) {
 /** Card tips for yesterday's purchases, only for banks with a cashback rate in the card table. */
 function summaryCardTips(items, cards) {
   const rateByBank = {}, nameByBank = {};
-  cards.forEach(c => { if (c.rate > 0) { rateByBank[c.bank] = c.rate; nameByBank[c.bank] = c.name || ''; } });
+  // v1.1.78: with several cards from one bank, the one with the best rate
+  cards.forEach(c => { if (c.rate > (rateByBank[c.bank] || 0)) { rateByBank[c.bank] = c.rate; nameByBank[c.bank] = c.name || ''; } });
   const tips = [];
   const seen = {};
   items.forEach(it => {

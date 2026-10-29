@@ -30,7 +30,8 @@ function computeMonthlySummary(values, opts) {
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const toDop = (amount, cur) => (Number(amount) || 0) * ({ USD: rates.USD, EUR: rates.EUR, COP: rates.COP }[cur] || 1);
   const cardRate = {}, cardName = {};
-  (opts.cards || []).forEach(c => { if (c.rate > 0) { cardRate[c.bank] = c.rate; cardName[c.bank] = c.name || ''; } });
+  // v1.1.78: with several cards from one bank, the one with the best rate
+  (opts.cards || []).forEach(c => { if (c.rate > (cardRate[c.bank] || 0)) { cardRate[c.bank] = c.rate; cardName[c.bank] = c.name || ''; } });
 
   const m = {
     month: month, monthKey: monthKey, prevMonth: prevMonth, daysInMonth: daysInMonth,

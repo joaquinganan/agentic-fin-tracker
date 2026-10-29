@@ -18,7 +18,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.77"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.78"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -128,6 +128,9 @@ function withRunLock(fn) {
  */
 let RUN_LOCK_ALERTS = null;
 
+// v1.1.78: the Setup Wizard takes several credit cards per bank (one row each, "+ Another <BANK> card")
+const MAX_CARDS_PER_BANK = 4;
+
 /**
  * v1.1.19 (M11): config for an entry point, or null after telling the user
  * why. A broken banksToTrack value used to surface as the misleading "Setup
@@ -233,6 +236,8 @@ function openSetupWizard() {
           font-size: 11px; font-weight: 600; color: #777; text-transform: uppercase; letter-spacing: .4px; }
         .c-other .c-label { font-size: 12px; color: #777; }
         .card-row input, .card-row select { padding: 9px; }
+        .card-group { margin-bottom: 10px; }
+        .c-add { display: inline-block; margin: -2px 0 0 92px; font-size: 12px; color: #4472C4; cursor: pointer; text-decoration: underline; }
         button:disabled { opacity: 0.6; cursor: default; transform: none; }
       </style>
     </head>
@@ -315,8 +320,9 @@ function openSetupWizard() {
           </div>
 
           <div class="section-title">💳 Credit Cards</div>
-          <div class="hint" style="margin:-4px 0 10px">The credit card you have with each bank (if any), and the day its statement
-            closes and the day payment is due. They feed the Dashboard's card table and the cashback tips.</div>
+          <div class="hint" style="margin:-4px 0 10px">The credit cards you have with each bank (if any), and the day each statement
+            closes and the day payment is due. They feed the Dashboard's card table and the cashback tips.
+            More than one card from a bank: "+ Another card". To remove one, pick "No credit card".</div>
           <div id="cardsBox"></div>
 
           <div class="section-title">📬 Summary Emails</div>
@@ -414,6 +420,7 @@ function openSetupWizard() {
 
         const CATALOG = ${catalogJson};
         const BANKS = ${JSON.stringify(BANK_ORDER)};   // v1.1.60
+        const MAX_CARDS_PER_BANK = ${MAX_CARDS_PER_BANK};   // v1.1.78
         function cardRows() { return Array.prototype.slice.call(document.querySelectorAll('.card-row')); }
         function readCards() {
           return cardRows().map(function(r) {
@@ -423,12 +430,17 @@ function openSetupWizard() {
               name: q('.c-name').value.trim(), cashback: parseFloat(q('.c-cashback').value) || 0 };
           });
         }
+        // v1.1.78: several cards per bank. Each card fills the next row of its bank; a row is added when needed.
         function applyCards(list) {
+          const used = {};
           (list || []).forEach(function(c) {
-            const r = document.querySelector('.card-row[data-bank="' + c.bank + '"]');
+            if (!c || !c.product || c.product === 'none') return;
+            const rows = bankCardRows(c.bank);
+            const r = rows[used[c.bank] || 0] || addCardRow(c.bank);
             if (!r) return;
+            used[c.bank] = (used[c.bank] || 0) + 1;
             const q = function(x) { return r.querySelector(x); };
-            if (c.product) q('.c-product').value = c.product;
+            q('.c-product').value = c.product;
             if (c.closeDay) q('.c-close').value = c.closeDay;
             if (c.dueDay) q('.c-due').value = c.dueDay;
             if (c.name) q('.c-name').value = c.name;
@@ -436,28 +448,51 @@ function openSetupWizard() {
             refreshCardRow(q('.c-product'));
           });
         }
+        function bankCardRows(bank) {
+          return cardRows().filter(function(r) { return r.getAttribute('data-bank') === bank; });
+        }
+        function cardRowHtml(b, first) {
+          const opts = ['<option value="none">No credit card</option>']
+            .concat(CATALOG.filter(function(c) { return c.bank === b; })
+              .map(function(c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }))
+            .concat(['<option value="other">Other card…</option>']).join('');
+          return '<div class="card-row" data-bank="' + b + '"><div class="card-bank">' + (first ? b : '') + '</div>' +
+            '<select class="c-product" onchange="refreshCardRow(this)">' + opts + '</select>' +
+            '<input class="c-close" type="number" min="1" max="31" placeholder="Closes (day)" title="Statement closes (day of month)">' +
+            '<input class="c-due" type="number" min="1" max="31" placeholder="Due (day)" title="Payment due (day of month)">' +
+            '<div class="c-other"><span class="c-label">↳ name / %</span><input class="c-name" placeholder="Card name" title="Card name">' +
+            '<input class="c-cashback" type="number" min="0" max="100" step="0.1" placeholder="% cashback" title="% cashback"></div></div>';
+        }
+        function addCardRow(bank) {
+          const group = document.querySelector('.card-group[data-bank="' + bank + '"]');
+          if (!group || bankCardRows(bank).length >= MAX_CARDS_PER_BANK) return null;
+          const box = document.createElement('div');
+          box.innerHTML = cardRowHtml(bank, false);
+          const row = box.firstChild;
+          group.insertBefore(row, group.querySelector('.c-add'));
+          refreshCardRow(row.querySelector('.c-product'));
+          return row;
+        }
         function refreshCardRow(sel) {
           const r = sel.parentNode;
           const has = sel.value !== 'none';
           r.querySelector('.c-close').style.visibility = has ? 'visible' : 'hidden';
           r.querySelector('.c-due').style.visibility = has ? 'visible' : 'hidden';
           r.querySelector('.c-other').style.display = sel.value === 'other' ? 'grid' : 'none';
+          // v1.1.78: "+ Another card" once every row of the bank has a card, up to MAX_CARDS_PER_BANK
+          const bank = r.getAttribute('data-bank');
+          const link = document.querySelector('.c-add[data-bank="' + bank + '"]');
+          const rows = bankCardRows(bank);
+          if (link) link.style.display = rows.length < MAX_CARDS_PER_BANK &&
+            rows.every(function(x) { return x.querySelector('.c-product').value !== 'none'; }) ? 'inline-block' : 'none';
         }
         function renderCards() {
           const keep = readCards();
           let html = '';
           BANKS.forEach(function(b) {
             if (!el('bank_' + b.toLowerCase()).checked) return;
-            const opts = ['<option value="none">No credit card</option>']
-              .concat(CATALOG.filter(function(c) { return c.bank === b; })
-                .map(function(c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }))
-              .concat(['<option value="other">Other card…</option>']).join('');
-            html += '<div class="card-row" data-bank="' + b + '"><div class="card-bank">' + b + '</div>' +
-              '<select class="c-product" onchange="refreshCardRow(this)">' + opts + '</select>' +
-              '<input class="c-close" type="number" min="1" max="31" placeholder="Closes (day)" title="Statement closes (day of month)">' +
-              '<input class="c-due" type="number" min="1" max="31" placeholder="Due (day)" title="Payment due (day of month)">' +
-              '<div class="c-other"><span class="c-label">↳ name / %</span><input class="c-name" placeholder="Card name" title="Card name">' +
-              '<input class="c-cashback" type="number" min="0" max="100" step="0.1" placeholder="% cashback" title="% cashback"></div></div>';
+            html += '<div class="card-group" data-bank="' + b + '">' + cardRowHtml(b, true) +
+              '<a class="c-add" data-bank="' + b + '">+ Another ' + b + ' card</a></div>';
           });
           el('cardsBox').innerHTML = html
             ? '<div class="card-head"><div>Bank</div><div>Card</div><div>Closes (day)</div><div>Due (day)</div></div>' + html
@@ -465,6 +500,10 @@ function openSetupWizard() {
           cardRows().forEach(function(r) { refreshCardRow(r.querySelector('.c-product')); });
           applyCards(keep);
         }
+        el('cardsBox').addEventListener('click', function(e) {
+          const t = e.target;
+          if (t && t.className === 'c-add') { e.preventDefault(); addCardRow(t.getAttribute('data-bank')); }
+        });
 
         // v1.1.59: other incomes / deductions as lines
         function addLine(kind, item) {
@@ -547,6 +586,9 @@ function openSetupWizard() {
           if (badDay) return fail(badDay.bank + ': statement and payment days must be between 1 and 31.');
           const noName = cards.find(function(c) { return c.product === 'other' && !c.name; });
           if (noName) return fail(noName.bank + ': give the other card a name.');
+          const cardKey = function(c) { return c.bank + '|' + (c.product === 'other' ? 'other:' + c.name.toUpperCase() : c.product); };
+          const twice = cards.find(function(c, i) { return cards.some(function(d, j) { return j < i && cardKey(d) === cardKey(c); }); });
+          if (twice) return fail(twice.bank + ': the same card is listed twice.');
           const config = {
             email: el('email').value.trim(),
             incomeCurrency: cur,
@@ -702,10 +744,17 @@ function validateSetupInput(config) {
   };
   const cards = config.cards || [];
   if (!Array.isArray(cards)) return "Cards must be a list.";
+  const seenCards = {};   // v1.1.78: several cards per bank — each one once
   for (const c of cards) {
     if (!c || c.product === 'none') continue;          // "No credit card" — nothing to check
     if (c.product !== 'other' && !CARD_PRODUCTS[c.product]) return c.bank + ": unknown card.";
     if (c.product === 'other' && !String(c.name || '').trim()) return c.bank + ": give the other card a name.";
+    const cardKey = c.bank + '|' + (c.product === 'other' ? 'other:' + String(c.name).trim().toUpperCase() : c.product);
+    if (seenCards[cardKey]) return c.bank + ": the same card is listed twice.";
+    seenCards[cardKey] = true;
+    if (cards.filter(d => d && d.product !== 'none' && d.bank === c.bank).length > MAX_CARDS_PER_BANK) {
+      return c.bank + ": at most " + MAX_CARDS_PER_BANK + " cards per bank.";
+    }
     for (const d of [c.closeDay, c.dueDay]) {
       if (d !== null && d !== undefined && d !== '' && !(Number(d) >= 1 && Number(d) <= 31)) {
         return c.bank + ": statement and payment days must be between 1 and 31.";

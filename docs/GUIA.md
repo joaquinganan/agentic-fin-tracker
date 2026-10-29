@@ -33,7 +33,8 @@ Abre **📊 Tracker › 🔧 Setup Wizard**. Te pide:
 - **Tus descuentos:** ARS, AFP e ISR (automáticos con las reglas de nómina dominicanas, o con tus montos), y **otros
   descuentos** (un préstamo, una cooperativa, un seguro…), cada uno con su moneda, con **+ Add a deduction**. Con todo
   eso, el tracker compara tu gasto contra lo que realmente te queda.
-- Tus **tarjetas de crédito**, con su día de corte y de pago.
+- Tus **tarjetas de crédito**, con su día de corte y de pago. Si tienes más de una del mismo banco, **+ Another card**
+  agrega otra fila (hasta 4 por banco); para quitar una, elige *No credit card*.
 - Los **correos de resumen** que quieres recibir: diario, mensual o ambos, y a qué hora.
 
 Al guardar, el tracker crea las hojas y programa la **actualización diaria a las 6 AM**. Termina con "Next: 📘 Start
@@ -228,6 +229,10 @@ Los correos de un banco que el tracker aún no sabe leer aparecen en **Unrecogni
 2. En Gmail: **⋮ › Show original › Download original**. Eso descarga un archivo `.eml`.
 3. Envíalo a quien mantiene el tracker, con un ejemplo de **cada tipo** de alerta de ese banco (consumo, transferencia,
    retiro…). Para el cashback de una tarjeta, agrega el **reglamento oficial** del programa.
+
+**Cambiar de tarjeta** (por ejemplo, de la Clásica a la Visa Gold de LAFISE) no requiere empezar de cero: abre el
+**Setup Wizard** (viene lleno con tu configuración), cambia la tarjeta en la fila del banco y guarda. El Dashboard se
+reconstruye con la tarjeta nueva, y "Which card for what" muestra los términos de la tarjeta LAFISE que tengas.
 
 Los `.eml` tienen tus datos: compártelos solo en privado, **nunca** en el repositorio público.
 

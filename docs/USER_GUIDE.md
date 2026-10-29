@@ -49,7 +49,9 @@ full, deductions taken off your net income.
    - Email, income currency, monthly gross salary and any other monthly income (no deductions)
    - Deductions: automatic (DOP salary, DR payroll rules) or entered manually
    - Banks to track (LAFISE, BANESCO, BHD, BDI, POPULAR, Scotiabank, QIK, Banreservas; a bank added in a newer version
-     starts unticked in a saved setup, and a run that finds its emails says so) and, for each, your credit card with its statement and payment days
+     starts unticked in a saved setup, and a run that finds its emails says so) and, for each, your credit cards with their statement and payment days (**+ Another card** for a second card
+     from the same bank, up to 4; pick *No credit card* to remove one). Changing cards later (say, LAFISE Clásica →
+     Visa Gold) is just this: open the wizard — it opens with your saved setup — change the card and save.
    - Optionally, summary emails: daily and/or monthly (on the 1st), recipient, hour, and what the daily one includes.
      The daily one compares yesterday with a **typical day** (the median of your last 60 days, bills and fixed costs
      left out), warns only when it was one of your highest days (the top 10%), and names a big one-off purchase, such
@@ -88,7 +90,7 @@ rebuilt from it on every run (your **Notes** in `Raw_<BANK>` column G are preser
 
 | Sheet | What it holds |
 |---|---|
-| Dashboard | Month by name (**Current month** follows today) and year, exchange rates with the date they were last edited, KPI cards (net income · spent · remaining · % of income · transfers to review), categories for the month with in-cell bars — each group with its subtotal, its categories below (v1.1.70) — income & deductions, fixed vs. variable, spend by bank, **Not spending** (card payments, between your accounts, investments & savings, money received, purchases left out — v1.1.70), month-by-month table + chart, the year as a heat map, credit cards, and "Which card for what" (the LAFISE, BANESCO and BHD cashback programs side by side). Yellow cells are yours; they live in named ranges (`DASH_MONTH`, `DASH_YEAR`, `RATE_USD/EUR/COP`, `RATE_UPDATED`, `DASH_CARDS`) and survive every rebuild. |
+| Dashboard | Month by name (**Current month** follows today) and year, exchange rates with the date they were last edited, KPI cards (net income · spent · remaining · % of income · transfers to review), categories for the month with in-cell bars — each group with its subtotal, its categories below (v1.1.70) — income & deductions, fixed vs. variable, spend by bank, **Not spending** (card payments, between your accounts, investments & savings, money received, purchases left out — v1.1.70), month-by-month table + chart, the year as a heat map, credit cards, and "Which card for what" (the LAFISE, BANESCO and BHD cashback programs side by side; the LAFISE column follows the LAFISE card you set up — Clásica, Visa Gold or both, v1.1.78). Yellow cells are yours; they live in named ranges (`DASH_MONTH`, `DASH_YEAR`, `RATE_USD/EUR/COP`, `RATE_UPDATED`, `DASH_CARDS`) and survive every rebuild. |
 | Transactions | `Date · Bank · Merchant · Amount · Currency · Category · Description · Email Subject · Timestamp (hidden) · IsCredit · IsCashback (hidden) · Type · MessageId (hidden) · TxRef (hidden — the bank's own transaction id)` |
 | Bank Transfers | Every Type = Transfer row |
 | Raw_<BANK> | Every Type = Transaction row for that bank, plus your Notes |

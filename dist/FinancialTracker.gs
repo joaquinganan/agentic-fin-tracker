@@ -1,5 +1,5 @@
 /**
- * Financial Tracker v1.1.77 — https://github.com/joaquinganan/agentic-fin-tracker
+ * Financial Tracker v1.1.78 — https://github.com/joaquinganan/agentic-fin-tracker
  *
  * ONE file: in Extensions › Apps Script, this is the only code file of the project.
  * To update: select everything in this file (Ctrl+A), paste the new version, save (Ctrl+S).
@@ -31,7 +31,7 @@
 // it's possible to tell at a glance whether a specific run used the latest
 // deployed code, instead of guessing after the fact. Bump this whenever you
 // paste in an update.
-const SCRIPT_VERSION = "1.1.77"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
+const SCRIPT_VERSION = "1.1.78"; // bump on every release (v1.1.19 fixed it being stuck at 1.1.12)
 const SHEET_NAME = "Financial Tracker";
 // v1.1.4: renamed "Config" → "Configuration" and (below) "CustomRules" →
 // "Custom Rules", to match the requested sheet naming/order and keep
@@ -141,6 +141,9 @@ function withRunLock(fn) {
  */
 let RUN_LOCK_ALERTS = null;
 
+// v1.1.78: the Setup Wizard takes several credit cards per bank (one row each, "+ Another <BANK> card")
+const MAX_CARDS_PER_BANK = 4;
+
 /**
  * v1.1.19 (M11): config for an entry point, or null after telling the user
  * why. A broken banksToTrack value used to surface as the misleading "Setup
@@ -246,6 +249,8 @@ function openSetupWizard() {
           font-size: 11px; font-weight: 600; color: #777; text-transform: uppercase; letter-spacing: .4px; }
         .c-other .c-label { font-size: 12px; color: #777; }
         .card-row input, .card-row select { padding: 9px; }
+        .card-group { margin-bottom: 10px; }
+        .c-add { display: inline-block; margin: -2px 0 0 92px; font-size: 12px; color: #4472C4; cursor: pointer; text-decoration: underline; }
         button:disabled { opacity: 0.6; cursor: default; transform: none; }
       </style>
     </head>
@@ -328,8 +333,9 @@ function openSetupWizard() {
           </div>
 
           <div class="section-title">💳 Credit Cards</div>
-          <div class="hint" style="margin:-4px 0 10px">The credit card you have with each bank (if any), and the day its statement
-            closes and the day payment is due. They feed the Dashboard's card table and the cashback tips.</div>
+          <div class="hint" style="margin:-4px 0 10px">The credit cards you have with each bank (if any), and the day each statement
+            closes and the day payment is due. They feed the Dashboard's card table and the cashback tips.
+            More than one card from a bank: "+ Another card". To remove one, pick "No credit card".</div>
           <div id="cardsBox"></div>
 
           <div class="section-title">📬 Summary Emails</div>
@@ -427,6 +433,7 @@ function openSetupWizard() {
 
         const CATALOG = ${catalogJson};
         const BANKS = ${JSON.stringify(BANK_ORDER)};   // v1.1.60
+        const MAX_CARDS_PER_BANK = ${MAX_CARDS_PER_BANK};   // v1.1.78
         function cardRows() { return Array.prototype.slice.call(document.querySelectorAll('.card-row')); }
         function readCards() {
           return cardRows().map(function(r) {
@@ -436,12 +443,17 @@ function openSetupWizard() {
               name: q('.c-name').value.trim(), cashback: parseFloat(q('.c-cashback').value) || 0 };
           });
         }
+        // v1.1.78: several cards per bank. Each card fills the next row of its bank; a row is added when needed.
         function applyCards(list) {
+          const used = {};
           (list || []).forEach(function(c) {
-            const r = document.querySelector('.card-row[data-bank="' + c.bank + '"]');
+            if (!c || !c.product || c.product === 'none') return;
+            const rows = bankCardRows(c.bank);
+            const r = rows[used[c.bank] || 0] || addCardRow(c.bank);
             if (!r) return;
+            used[c.bank] = (used[c.bank] || 0) + 1;
             const q = function(x) { return r.querySelector(x); };
-            if (c.product) q('.c-product').value = c.product;
+            q('.c-product').value = c.product;
             if (c.closeDay) q('.c-close').value = c.closeDay;
             if (c.dueDay) q('.c-due').value = c.dueDay;
             if (c.name) q('.c-name').value = c.name;
@@ -449,28 +461,51 @@ function openSetupWizard() {
             refreshCardRow(q('.c-product'));
           });
         }
+        function bankCardRows(bank) {
+          return cardRows().filter(function(r) { return r.getAttribute('data-bank') === bank; });
+        }
+        function cardRowHtml(b, first) {
+          const opts = ['<option value="none">No credit card</option>']
+            .concat(CATALOG.filter(function(c) { return c.bank === b; })
+              .map(function(c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }))
+            .concat(['<option value="other">Other card…</option>']).join('');
+          return '<div class="card-row" data-bank="' + b + '"><div class="card-bank">' + (first ? b : '') + '</div>' +
+            '<select class="c-product" onchange="refreshCardRow(this)">' + opts + '</select>' +
+            '<input class="c-close" type="number" min="1" max="31" placeholder="Closes (day)" title="Statement closes (day of month)">' +
+            '<input class="c-due" type="number" min="1" max="31" placeholder="Due (day)" title="Payment due (day of month)">' +
+            '<div class="c-other"><span class="c-label">↳ name / %</span><input class="c-name" placeholder="Card name" title="Card name">' +
+            '<input class="c-cashback" type="number" min="0" max="100" step="0.1" placeholder="% cashback" title="% cashback"></div></div>';
+        }
+        function addCardRow(bank) {
+          const group = document.querySelector('.card-group[data-bank="' + bank + '"]');
+          if (!group || bankCardRows(bank).length >= MAX_CARDS_PER_BANK) return null;
+          const box = document.createElement('div');
+          box.innerHTML = cardRowHtml(bank, false);
+          const row = box.firstChild;
+          group.insertBefore(row, group.querySelector('.c-add'));
+          refreshCardRow(row.querySelector('.c-product'));
+          return row;
+        }
         function refreshCardRow(sel) {
           const r = sel.parentNode;
           const has = sel.value !== 'none';
           r.querySelector('.c-close').style.visibility = has ? 'visible' : 'hidden';
           r.querySelector('.c-due').style.visibility = has ? 'visible' : 'hidden';
           r.querySelector('.c-other').style.display = sel.value === 'other' ? 'grid' : 'none';
+          // v1.1.78: "+ Another card" once every row of the bank has a card, up to MAX_CARDS_PER_BANK
+          const bank = r.getAttribute('data-bank');
+          const link = document.querySelector('.c-add[data-bank="' + bank + '"]');
+          const rows = bankCardRows(bank);
+          if (link) link.style.display = rows.length < MAX_CARDS_PER_BANK &&
+            rows.every(function(x) { return x.querySelector('.c-product').value !== 'none'; }) ? 'inline-block' : 'none';
         }
         function renderCards() {
           const keep = readCards();
           let html = '';
           BANKS.forEach(function(b) {
             if (!el('bank_' + b.toLowerCase()).checked) return;
-            const opts = ['<option value="none">No credit card</option>']
-              .concat(CATALOG.filter(function(c) { return c.bank === b; })
-                .map(function(c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }))
-              .concat(['<option value="other">Other card…</option>']).join('');
-            html += '<div class="card-row" data-bank="' + b + '"><div class="card-bank">' + b + '</div>' +
-              '<select class="c-product" onchange="refreshCardRow(this)">' + opts + '</select>' +
-              '<input class="c-close" type="number" min="1" max="31" placeholder="Closes (day)" title="Statement closes (day of month)">' +
-              '<input class="c-due" type="number" min="1" max="31" placeholder="Due (day)" title="Payment due (day of month)">' +
-              '<div class="c-other"><span class="c-label">↳ name / %</span><input class="c-name" placeholder="Card name" title="Card name">' +
-              '<input class="c-cashback" type="number" min="0" max="100" step="0.1" placeholder="% cashback" title="% cashback"></div></div>';
+            html += '<div class="card-group" data-bank="' + b + '">' + cardRowHtml(b, true) +
+              '<a class="c-add" data-bank="' + b + '">+ Another ' + b + ' card</a></div>';
           });
           el('cardsBox').innerHTML = html
             ? '<div class="card-head"><div>Bank</div><div>Card</div><div>Closes (day)</div><div>Due (day)</div></div>' + html
@@ -478,6 +513,10 @@ function openSetupWizard() {
           cardRows().forEach(function(r) { refreshCardRow(r.querySelector('.c-product')); });
           applyCards(keep);
         }
+        el('cardsBox').addEventListener('click', function(e) {
+          const t = e.target;
+          if (t && t.className === 'c-add') { e.preventDefault(); addCardRow(t.getAttribute('data-bank')); }
+        });
 
         // v1.1.59: other incomes / deductions as lines
         function addLine(kind, item) {
@@ -560,6 +599,9 @@ function openSetupWizard() {
           if (badDay) return fail(badDay.bank + ': statement and payment days must be between 1 and 31.');
           const noName = cards.find(function(c) { return c.product === 'other' && !c.name; });
           if (noName) return fail(noName.bank + ': give the other card a name.');
+          const cardKey = function(c) { return c.bank + '|' + (c.product === 'other' ? 'other:' + c.name.toUpperCase() : c.product); };
+          const twice = cards.find(function(c, i) { return cards.some(function(d, j) { return j < i && cardKey(d) === cardKey(c); }); });
+          if (twice) return fail(twice.bank + ': the same card is listed twice.');
           const config = {
             email: el('email').value.trim(),
             incomeCurrency: cur,
@@ -715,10 +757,17 @@ function validateSetupInput(config) {
   };
   const cards = config.cards || [];
   if (!Array.isArray(cards)) return "Cards must be a list.";
+  const seenCards = {};   // v1.1.78: several cards per bank — each one once
   for (const c of cards) {
     if (!c || c.product === 'none') continue;          // "No credit card" — nothing to check
     if (c.product !== 'other' && !CARD_PRODUCTS[c.product]) return c.bank + ": unknown card.";
     if (c.product === 'other' && !String(c.name || '').trim()) return c.bank + ": give the other card a name.";
+    const cardKey = c.bank + '|' + (c.product === 'other' ? 'other:' + String(c.name).trim().toUpperCase() : c.product);
+    if (seenCards[cardKey]) return c.bank + ": the same card is listed twice.";
+    seenCards[cardKey] = true;
+    if (cards.filter(d => d && d.product !== 'none' && d.bank === c.bank).length > MAX_CARDS_PER_BANK) {
+      return c.bank + ": at most " + MAX_CARDS_PER_BANK + " cards per bank.";
+    }
     for (const d of [c.closeDay, c.dueDay]) {
       if (d !== null && d !== undefined && d !== '' && !(Number(d) >= 1 && Number(d) <= 31)) {
         return c.bank + ": statement and payment days must be between 1 and 31.";
@@ -5561,6 +5610,10 @@ const DASH_DEFAULT_RATES = { usd: 59.50, eur: 64.00, cop: 0.0150 }; // seeded 23
 const CARD_NOTES = {
   LAFISE: '10/10: 10% in 10 categories, each only from a minimum spend per billing cycle, ' +
     'with caps per category and RD$7,000/month in total. See "Which card for what" below.',
+  // v1.1.78: the same 10/10 program on the Visa Gold, with its own categories, minimums and caps (its terms)
+  LAFISE_GOLD: '10/10: 10% in 10 categories (supermarkets, gas, Amazon, restaurants & fast food, telecom, insurance, ' +
+    'tickets, salons, laundries, streaming), each only from a minimum spend per billing cycle, with caps per category ' +
+    'and RD$10,000/month in total. See "Which card for what" below.',
   BANESCO: 'SuperCashBack: 7% in supermarkets & liquor stores (cap RD$5,000), fast food (cap RD$500), ' +
     'electricity, water & public services (cap RD$2,000), salons, barbershops & spa (cap RD$1,000). No minimum spend.',
   BHD: 'Visa Mi País: 5% in pharmacies, restaurants and fast food (nationwide); 8% Ferretería Listo and ' +
@@ -5581,6 +5634,7 @@ const OLD_DEFAULT_CARD_NOTES = [
  */
 const CARD_PRODUCTS = {
   LAFISE_CLASICA:        { bank: 'LAFISE',  name: 'Clásica Mastercard', cashback: 0.10, note: CARD_NOTES.LAFISE },
+  LAFISE_VISA_GOLD:      { bank: 'LAFISE',  name: 'Visa Gold',          cashback: 0.10, note: CARD_NOTES.LAFISE_GOLD },   // v1.1.78
   BANESCO_SUPERCASHBACK: { bank: 'BANESCO', name: 'Super Cashback',     cashback: 0.07, note: CARD_NOTES.BANESCO },
   BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD },
   // v1.1.60: public product facts (each bank's site, Sept 2026). The rate is the BASE cashback every purchase earns —
@@ -5687,6 +5741,63 @@ const CASHBACK_NOTES = [
   'All three programs pay by the merchant\'s MCC, which bank emails don\'t include — the tracker\'s categories are an approximation. ' +
     'Cashback arrives as a statement credit, never by email.'
 ];
+
+/**
+ * v1.1.78: the same table for the LAFISE Visa Gold (its 10/10 terms): supermarkets, Amazon, insurance and laundries
+ * earn; restaurants and fast food share one minimum and one cap; taxi apps, gyms and couriers don't (they fall under
+ * "Everything else"). Same columns as CASHBACK_MATRIX; rows with the same name are the same kind of spending.
+ */
+const CASHBACK_MATRIX_LAFISE_GOLD = [
+  ['Supermarkets', '5411', '10% if ≥ RD$10,000 · cap RD$4,000', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'LAFISE once the cycle reaches RD$10,000; otherwise BANESCO', 'Groceries'],
+  ['Pharmacies', '—', '—', '—', '5%', 'BHD', 'Health & pharmacy'],
+  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO', 'Utilities'],
+  ['Restaurants', '5812', '10% if ≥ RD$3,000 (with fast food) · cap RD$1,000 (shared)', '—', '5%', 'LAFISE once the cycle reaches RD$3,000; otherwise BHD', 'Restaurants & cafés'],
+  ['Fast food', '5814', '10% if ≥ RD$3,000 (with restaurants) · cap RD$1,000 (shared)', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$3,000; otherwise BANESCO', 'Restaurants & cafés'],
+  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)', 'Fuel & vehicle'],
+  ['Telecommunications', '4814, 4899', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$1,500)', 'Phone & internet'],
+  ['Amazon', 'name "AMAZON"', '10% if ≥ US$100 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below US$100)', 'Shopping & home'],
+  ['Insurance', '6300', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (if the insurer takes the card)', 'Insurance'],
+  ['Salons & barbershops', '7230', '10% if ≥ RD$500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$500; otherwise BANESCO', 'Personal care'],
+  ['Laundries', '7210, 7211, 7216', '10% if ≥ RD$500 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$500)', 'Shopping & home'],
+  ['Streaming', '5815, 5968', '10% if ≥ RD$500 · cap RD$500', '—', 'Stars', 'LAFISE', 'Subscriptions'],
+  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Leisure & going out'],
+  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO', 'Personal care'],
+  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD', 'Shopping & home'],
+  ['Everything else (vet, clothing, taxi apps, gyms…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)', 'Pets, Shopping & home and the rest']
+];
+const CASHBACK_NOTE_LAFISE_GOLD = 'LAFISE Visa Gold 10/10 — all or nothing per category: below the minimum in a billing cycle ' +
+  'that category earns RD$0. Total cap RD$10,000/month. Amazon counts by the merchant name ("AMAZON"), not its MCC. ' +
+  'Credited on the next statement. Excludes cash advances, taxes & government services, fees, gambling, balance transfers.';
+
+/**
+ * v1.1.78: "Which card for what" follows the LAFISE card you set up — { header, rows, notes }. The Visa Gold alone:
+ * its table. Both cards: each kind of spending once, the LAFISE cell naming each card where their terms differ, and
+ * the pick of the card that earns there (the Gold's where both do). Otherwise (the Clásica, no LAFISE card, no
+ * configuration yet): the Clásica's table, as before.
+ */
+function cashbackMatrixFor(config) {
+  const products = (config && Array.isArray(config.cards) ? config.cards : []).map(c => c && c.product);
+  const gold = products.indexOf('LAFISE_VISA_GOLD') !== -1, clasica = products.indexOf('LAFISE_CLASICA') !== -1;
+  if (!gold) return { header: 'LAFISE 10/10', rows: CASHBACK_MATRIX, notes: CASHBACK_NOTES };
+  if (!clasica) return { header: 'LAFISE Visa Gold 10/10', rows: CASHBACK_MATRIX_LAFISE_GOLD,
+    notes: [CASHBACK_NOTE_LAFISE_GOLD].concat(CASHBACK_NOTES.slice(1)) };
+  const earns = cell => !/^—/.test(cell);
+  const byName = {};
+  CASHBACK_MATRIX.forEach(r => { byName[r[0]] = r; });
+  const rows = CASHBACK_MATRIX_LAFISE_GOLD.slice(0, -1).map(g => {
+    const c = byName[g[0]];
+    if (!c || c[2] === g[2]) return g;
+    const lafise = earns(c[2]) && earns(g[2]) ? 'Clásica: ' + c[2] + '\nGold: ' + g[2] : (earns(g[2]) ? 'Gold: ' + g[2] : 'Clásica: ' + c[2]);
+    return [g[0], g[1], lafise, g[3], g[4], earns(g[2]) ? g[5] : c[5], g[6]];
+  });
+  const names = CASHBACK_MATRIX_LAFISE_GOLD.map(r => r[0]);
+  const onlyClasica = CASHBACK_MATRIX.slice(0, -1).filter(r => names.indexOf(r[0]) === -1)
+    .map(r => [r[0], r[1], 'Clásica: ' + r[2]].concat(r.slice(3)));
+  const rest = ['Everything else (vet, clothing…)'].concat(CASHBACK_MATRIX_LAFISE_GOLD[CASHBACK_MATRIX_LAFISE_GOLD.length - 1].slice(1));
+  return { header: 'LAFISE 10/10 (Clásica · Gold)', rows: rows.concat(onlyClasica, [rest]),
+    notes: [CASHBACK_NOTES[0], CASHBACK_NOTE_LAFISE_GOLD].concat(CASHBACK_NOTES.slice(1)) };
+}
 
 /**
  * v1.1.70: "Money that moves but isn't spent" — what the Dashboard leaves out of spending, by kind, for the month.
@@ -5846,11 +5957,12 @@ function buildOrRefreshDashboard() {
   R.gridLastCat = R.gridFirst + n - 1; R.gridTransfers = R.gridLastCat + 1; R.gridTotal = R.gridTransfers + 1;
   R.gridPct = R.gridTotal + 1; R.gridFixed = R.gridPct + 1; R.gridVar = R.gridFixed + 1;
   const cardRows = dashboardCardRows(config, inputs.cards);       // v1.1.27: from the Setup Wizard
+  const mx = cashbackMatrixFor(config);                             // v1.1.78: follows your LAFISE card
   R.cardsHead = R.gridVar + 2; R.cardsCols = R.cardsHead + 1; R.cardsFirst = R.cardsCols + 1;
   R.cardsLast = R.cardsFirst + cardRows.length - 1; R.cardsHint = R.cardsLast + 1;
   R.mxHead = R.cardsHint + 2; R.mxCols = R.mxHead + 1; R.mxFirst = R.mxCols + 1;
-  R.mxLast = R.mxFirst + CASHBACK_MATRIX.length - 1;
-  R.notesFirst = R.mxLast + 2; R.notesLast = R.notesFirst + CASHBACK_NOTES.length - 1;
+  R.mxLast = R.mxFirst + mx.rows.length - 1;
+  R.notesFirst = R.mxLast + 2; R.notesLast = R.notesFirst + mx.notes.length - 1;
   ensureRowCapacity(sheet, R.notesLast + 2);
 
   const USD = '$K$4', EUR = '$M$4', COP = '$O$4', MONTH_NUM = '$C$3', PERIOD = '$D$3', NET_DOP = `$N$${R.netDop}`;
@@ -6181,31 +6293,32 @@ function buildOrRefreshDashboard() {
   // ---- which card for what (v1.1.22 — replaces the LAFISE-only table of v1.1.21)
   section(R.mxHead, 2, 15, '🧭  Which card for what — cashback by kind of spending (per each program\'s terms)');
   // B spending · C MCC · D:E LAFISE · F:G BANESCO · H:I BHD · J:O best per the terms
-  sheet.getRange(R.mxCols, 2, 1, 14).setValues([['Spending', 'MCC', 'LAFISE 10/10', '', 'BANESCO SuperCashBack', '',
+  sheet.getRange(R.mxCols, 2, 1, 14).setValues([['Spending', 'MCC', mx.header, '', 'BANESCO SuperCashBack', '',
     'BHD Visa Mi País', '', 'Best per the terms', '', '', '', '', '']])
     .setFontWeight('bold').setFontSize(8).setFontColor(T.muted).setBackground(T.soft)
     .setBorder(null, null, true, null, null, null, T.line, border.SOLID);
-  const mxRows = CASHBACK_MATRIX.length + 1;                       // header + data
+  const mxRows = mx.rows.length + 1;                       // header + data
   sheet.getRange(R.mxCols, 4, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 6, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 8, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 10, mxRows, 6).mergeAcross();
-  CASHBACK_MATRIX.forEach((row, i) => {
+  mx.rows.forEach((row, i) => {
     const r = R.mxFirst + i;
     [[2, row[0] + '\n→ ' + row[6]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]   // v1.1.70: + category
       .forEach(([c, v]) => sheet.getRange(r, c).setValue(v));
   });
-  stripe(R.mxFirst, 2, CASHBACK_MATRIX.length, 14);
-  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
-  sheet.getRange(R.mxFirst, 3, CASHBACK_MATRIX.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
-  sheet.getRange(R.mxFirst, 4, CASHBACK_MATRIX.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
-  sheet.getRange(R.mxFirst, 10, CASHBACK_MATRIX.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
-  sheet.setRowHeights(R.mxFirst, CASHBACK_MATRIX.length, 32);
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 14).mergeAcross();
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 1).setValues(CASHBACK_NOTES.map(t => ['•  ' + t]));
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 14).setWrap(true).setFontSize(8)
+  stripe(R.mxFirst, 2, mx.rows.length, 14);
+  sheet.getRange(R.mxFirst, 2, mx.rows.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
+  sheet.getRange(R.mxFirst, 3, mx.rows.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
+  sheet.getRange(R.mxFirst, 4, mx.rows.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
+  sheet.getRange(R.mxFirst, 10, mx.rows.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
+  sheet.setRowHeights(R.mxFirst, mx.rows.length, 32);
+  mx.rows.forEach((row, i) => { if (/\n/.test(row[2])) sheet.setRowHeight(R.mxFirst + i, 56); });   // v1.1.78: both LAFISE cards
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 14).mergeAcross();
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 1).setValues(mx.notes.map(t => ['•  ' + t]));
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 14).setWrap(true).setFontSize(8)
     .setFontStyle('italic').setFontColor(T.muted);
-  sheet.setRowHeights(R.notesFirst, CASHBACK_NOTES.length, 32);
+  sheet.setRowHeights(R.notesFirst, mx.notes.length, 32);
 
   // ---- conditional formatting (replaces every rule on the sheet)
   const cf = () => SpreadsheetApp.newConditionalFormatRule();
@@ -6225,11 +6338,11 @@ function buildOrRefreshDashboard() {
       .setRanges(groupRows.map(r => rng(r + 1, 3, lines[r - R.gridFirst].cats, 12))).build(),
     // v1.1.22: in "Which card for what", tint the cell of the card named first in the pick
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},6)="LAFISE"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 4, CASHBACK_MATRIX.length, 1)]).build(),
+      .setRanges([rng(R.mxFirst, 4, mx.rows.length, 1)]).build(),
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},7)="BANESCO"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 6, CASHBACK_MATRIX.length, 1)]).build(),
+      .setRanges([rng(R.mxFirst, 6, mx.rows.length, 1)]).build(),
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},3)="BHD"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 8, CASHBACK_MATRIX.length, 1)]).build()
+      .setRanges([rng(R.mxFirst, 8, mx.rows.length, 1)]).build()
   ]);
 
   // ---- finish
@@ -6976,7 +7089,8 @@ function summaryTypicalView(s) {
 /** Card tips for yesterday's purchases, only for banks with a cashback rate in the card table. */
 function summaryCardTips(items, cards) {
   const rateByBank = {}, nameByBank = {};
-  cards.forEach(c => { if (c.rate > 0) { rateByBank[c.bank] = c.rate; nameByBank[c.bank] = c.name || ''; } });
+  // v1.1.78: with several cards from one bank, the one with the best rate
+  cards.forEach(c => { if (c.rate > (rateByBank[c.bank] || 0)) { rateByBank[c.bank] = c.rate; nameByBank[c.bank] = c.name || ''; } });
   const tips = [];
   const seen = {};
   items.forEach(it => {
@@ -7513,7 +7627,8 @@ function computeMonthlySummary(values, opts) {
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const toDop = (amount, cur) => (Number(amount) || 0) * ({ USD: rates.USD, EUR: rates.EUR, COP: rates.COP }[cur] || 1);
   const cardRate = {}, cardName = {};
-  (opts.cards || []).forEach(c => { if (c.rate > 0) { cardRate[c.bank] = c.rate; cardName[c.bank] = c.name || ''; } });
+  // v1.1.78: with several cards from one bank, the one with the best rate
+  (opts.cards || []).forEach(c => { if (c.rate > (cardRate[c.bank] || 0)) { cardRate[c.bank] = c.rate; cardName[c.bank] = c.name || ''; } });
 
   const m = {
     month: month, monthKey: monthKey, prevMonth: prevMonth, daysInMonth: daysInMonth,

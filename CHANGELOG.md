@@ -2,6 +2,25 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.78 (Oct 29, 2026) — LAFISE Visa Gold in the card catalogue; several cards per bank
+- **Asked for:** setting up a new card (the LAFISE Visa Gold, replacing the Clásica Mastercard) without redoing the
+  Setup Wizard, and the tracker allowing more than one card from the same bank.
+- **Catalogue:** `LAFISE_VISA_GOLD` (Visa Gold, 10%), from its 10/10 terms: 10% in supermarkets (from RD$10,000, cap
+  RD$4,000), gas, Amazon (by merchant name, from US$100), restaurants & fast food (one minimum and one cap), telecom,
+  insurance, tickets, salons, laundries and streaming, each from a minimum spend per billing cycle, RD$10,000/month in
+  total. Changing cards needs no new setup: the wizard opens with the saved configuration (since v1.1.59).
+- **Several cards per bank:** the wizard had one row per bank. Each bank now has "+ Another <BANK> card" (shown once
+  every row of that bank has a card, up to 4). The same card twice in a bank is refused, in the window and on the
+  server; "No credit card" removes a row. The configuration already stored a list, so a saved setup reads as before.
+  The Dashboard's card table shows one row per card. With two cards from one bank, the cashback tips (daily email)
+  and "cashback left on the table" (monthly) use the one with the better rate — they took whichever came last.
+- **"Which card for what"** was written for the Clásica's 10/10 terms. It now follows the LAFISE card you set up:
+  the Visa Gold alone shows its terms (Amazon, insurance and laundries added; taxi apps, gyms and couriers fall under
+  "Everything else", where the Gold pays nothing); both cards show each kind of spending once, naming each card where
+  their terms differ; otherwise (Clásica, no LAFISE card) the table is as before.
+- Purchases are still not told apart by card within a bank: the bank emails name the product and the last four digits,
+  but no column keeps them yet.
+
 ### v1.1.77 (Oct 29, 2026) — A result window left open no longer holds the run lock
 - **Reported:** a manual 🔁 Recategorize showed as "Timed Out" in Executions ("Exceeded maximum execution time" at 6
   minutes), although its log said "✅ Recategorized — … | Rebuilt: …" one minute in. Its work was done; the "✅ Done"

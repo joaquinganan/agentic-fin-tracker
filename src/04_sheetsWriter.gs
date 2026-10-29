@@ -1152,6 +1152,10 @@ const DASH_DEFAULT_RATES = { usd: 59.50, eur: 64.00, cop: 0.0150 }; // seeded 23
 const CARD_NOTES = {
   LAFISE: '10/10: 10% in 10 categories, each only from a minimum spend per billing cycle, ' +
     'with caps per category and RD$7,000/month in total. See "Which card for what" below.',
+  // v1.1.78: the same 10/10 program on the Visa Gold, with its own categories, minimums and caps (its terms)
+  LAFISE_GOLD: '10/10: 10% in 10 categories (supermarkets, gas, Amazon, restaurants & fast food, telecom, insurance, ' +
+    'tickets, salons, laundries, streaming), each only from a minimum spend per billing cycle, with caps per category ' +
+    'and RD$10,000/month in total. See "Which card for what" below.',
   BANESCO: 'SuperCashBack: 7% in supermarkets & liquor stores (cap RD$5,000), fast food (cap RD$500), ' +
     'electricity, water & public services (cap RD$2,000), salons, barbershops & spa (cap RD$1,000). No minimum spend.',
   BHD: 'Visa Mi País: 5% in pharmacies, restaurants and fast food (nationwide); 8% Ferretería Listo and ' +
@@ -1172,6 +1176,7 @@ const OLD_DEFAULT_CARD_NOTES = [
  */
 const CARD_PRODUCTS = {
   LAFISE_CLASICA:        { bank: 'LAFISE',  name: 'Clásica Mastercard', cashback: 0.10, note: CARD_NOTES.LAFISE },
+  LAFISE_VISA_GOLD:      { bank: 'LAFISE',  name: 'Visa Gold',          cashback: 0.10, note: CARD_NOTES.LAFISE_GOLD },   // v1.1.78
   BANESCO_SUPERCASHBACK: { bank: 'BANESCO', name: 'Super Cashback',     cashback: 0.07, note: CARD_NOTES.BANESCO },
   BHD_MIPAIS:            { bank: 'BHD',     name: 'Mi País',            cashback: 0.05, note: CARD_NOTES.BHD },
   // v1.1.60: public product facts (each bank's site, Sept 2026). The rate is the BASE cashback every purchase earns —
@@ -1278,6 +1283,63 @@ const CASHBACK_NOTES = [
   'All three programs pay by the merchant\'s MCC, which bank emails don\'t include — the tracker\'s categories are an approximation. ' +
     'Cashback arrives as a statement credit, never by email.'
 ];
+
+/**
+ * v1.1.78: the same table for the LAFISE Visa Gold (its 10/10 terms): supermarkets, Amazon, insurance and laundries
+ * earn; restaurants and fast food share one minimum and one cap; taxi apps, gyms and couriers don't (they fall under
+ * "Everything else"). Same columns as CASHBACK_MATRIX; rows with the same name are the same kind of spending.
+ */
+const CASHBACK_MATRIX_LAFISE_GOLD = [
+  ['Supermarkets', '5411', '10% if ≥ RD$10,000 · cap RD$4,000', '7% · cap RD$5,000 (shared with liquor)', 'Stars', 'LAFISE once the cycle reaches RD$10,000; otherwise BANESCO', 'Groceries'],
+  ['Pharmacies', '—', '—', '—', '5%', 'BHD', 'Health & pharmacy'],
+  ['Electricity, water, public services', '4900, 9399', '— (excluded)', '7% · cap RD$2,000', 'Stars', 'BANESCO', 'Utilities'],
+  ['Restaurants', '5812', '10% if ≥ RD$3,000 (with fast food) · cap RD$1,000 (shared)', '—', '5%', 'LAFISE once the cycle reaches RD$3,000; otherwise BHD', 'Restaurants & cafés'],
+  ['Fast food', '5814', '10% if ≥ RD$3,000 (with restaurants) · cap RD$1,000 (shared)', '7% · cap RD$500', '5%', 'LAFISE once the cycle reaches RD$3,000; otherwise BANESCO', 'Restaurants & cafés'],
+  ['Gas stations', '5541, 5542', '10% if ≥ RD$5,000 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below RD$5,000)', 'Fuel & vehicle'],
+  ['Telecommunications', '4814, 4899', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$1,500)', 'Phone & internet'],
+  ['Amazon', 'name "AMAZON"', '10% if ≥ US$100 · cap RD$1,000', '—', 'Stars', 'LAFISE (pays nothing below US$100)', 'Shopping & home'],
+  ['Insurance', '6300', '10% if ≥ RD$1,500 · cap RD$500', '—', 'Stars', 'LAFISE (if the insurer takes the card)', 'Insurance'],
+  ['Salons & barbershops', '7230', '10% if ≥ RD$500 · cap RD$500', '7% · cap RD$1,000 (with spa)', 'Stars', 'LAFISE once the cycle reaches RD$500; otherwise BANESCO', 'Personal care'],
+  ['Laundries', '7210, 7211, 7216', '10% if ≥ RD$500 · cap RD$500', '—', 'Stars', 'LAFISE (pays nothing below RD$500)', 'Shopping & home'],
+  ['Streaming', '5815, 5968', '10% if ≥ RD$500 · cap RD$500', '—', 'Stars', 'LAFISE', 'Subscriptions'],
+  ['Cinema', '7832, 7922', '10% if ≥ RD$1,000 · cap RD$500', '—', 'Stars', 'LAFISE', 'Leisure & going out'],
+  ['Liquor stores', '5921', '—', '7% (supermarket cap)', 'Stars', 'BANESCO', 'Groceries'],
+  ['Spa', '7298', '—', '7% (salon cap)', 'Stars', 'BANESCO', 'Personal care'],
+  ['Ferretería Listo · Tiendas Corripio', '—', '—', '—', '8% · 6% (incl. 3% off at checkout)', 'BHD', 'Shopping & home'],
+  ['Everything else (vet, clothing, taxi apps, gyms…)', '—', '—', '—', 'Stars', 'BHD (Stars — value not in the terms shared)', 'Pets, Shopping & home and the rest']
+];
+const CASHBACK_NOTE_LAFISE_GOLD = 'LAFISE Visa Gold 10/10 — all or nothing per category: below the minimum in a billing cycle ' +
+  'that category earns RD$0. Total cap RD$10,000/month. Amazon counts by the merchant name ("AMAZON"), not its MCC. ' +
+  'Credited on the next statement. Excludes cash advances, taxes & government services, fees, gambling, balance transfers.';
+
+/**
+ * v1.1.78: "Which card for what" follows the LAFISE card you set up — { header, rows, notes }. The Visa Gold alone:
+ * its table. Both cards: each kind of spending once, the LAFISE cell naming each card where their terms differ, and
+ * the pick of the card that earns there (the Gold's where both do). Otherwise (the Clásica, no LAFISE card, no
+ * configuration yet): the Clásica's table, as before.
+ */
+function cashbackMatrixFor(config) {
+  const products = (config && Array.isArray(config.cards) ? config.cards : []).map(c => c && c.product);
+  const gold = products.indexOf('LAFISE_VISA_GOLD') !== -1, clasica = products.indexOf('LAFISE_CLASICA') !== -1;
+  if (!gold) return { header: 'LAFISE 10/10', rows: CASHBACK_MATRIX, notes: CASHBACK_NOTES };
+  if (!clasica) return { header: 'LAFISE Visa Gold 10/10', rows: CASHBACK_MATRIX_LAFISE_GOLD,
+    notes: [CASHBACK_NOTE_LAFISE_GOLD].concat(CASHBACK_NOTES.slice(1)) };
+  const earns = cell => !/^—/.test(cell);
+  const byName = {};
+  CASHBACK_MATRIX.forEach(r => { byName[r[0]] = r; });
+  const rows = CASHBACK_MATRIX_LAFISE_GOLD.slice(0, -1).map(g => {
+    const c = byName[g[0]];
+    if (!c || c[2] === g[2]) return g;
+    const lafise = earns(c[2]) && earns(g[2]) ? 'Clásica: ' + c[2] + '\nGold: ' + g[2] : (earns(g[2]) ? 'Gold: ' + g[2] : 'Clásica: ' + c[2]);
+    return [g[0], g[1], lafise, g[3], g[4], earns(g[2]) ? g[5] : c[5], g[6]];
+  });
+  const names = CASHBACK_MATRIX_LAFISE_GOLD.map(r => r[0]);
+  const onlyClasica = CASHBACK_MATRIX.slice(0, -1).filter(r => names.indexOf(r[0]) === -1)
+    .map(r => [r[0], r[1], 'Clásica: ' + r[2]].concat(r.slice(3)));
+  const rest = ['Everything else (vet, clothing…)'].concat(CASHBACK_MATRIX_LAFISE_GOLD[CASHBACK_MATRIX_LAFISE_GOLD.length - 1].slice(1));
+  return { header: 'LAFISE 10/10 (Clásica · Gold)', rows: rows.concat(onlyClasica, [rest]),
+    notes: [CASHBACK_NOTES[0], CASHBACK_NOTE_LAFISE_GOLD].concat(CASHBACK_NOTES.slice(1)) };
+}
 
 /**
  * v1.1.70: "Money that moves but isn't spent" — what the Dashboard leaves out of spending, by kind, for the month.
@@ -1437,11 +1499,12 @@ function buildOrRefreshDashboard() {
   R.gridLastCat = R.gridFirst + n - 1; R.gridTransfers = R.gridLastCat + 1; R.gridTotal = R.gridTransfers + 1;
   R.gridPct = R.gridTotal + 1; R.gridFixed = R.gridPct + 1; R.gridVar = R.gridFixed + 1;
   const cardRows = dashboardCardRows(config, inputs.cards);       // v1.1.27: from the Setup Wizard
+  const mx = cashbackMatrixFor(config);                             // v1.1.78: follows your LAFISE card
   R.cardsHead = R.gridVar + 2; R.cardsCols = R.cardsHead + 1; R.cardsFirst = R.cardsCols + 1;
   R.cardsLast = R.cardsFirst + cardRows.length - 1; R.cardsHint = R.cardsLast + 1;
   R.mxHead = R.cardsHint + 2; R.mxCols = R.mxHead + 1; R.mxFirst = R.mxCols + 1;
-  R.mxLast = R.mxFirst + CASHBACK_MATRIX.length - 1;
-  R.notesFirst = R.mxLast + 2; R.notesLast = R.notesFirst + CASHBACK_NOTES.length - 1;
+  R.mxLast = R.mxFirst + mx.rows.length - 1;
+  R.notesFirst = R.mxLast + 2; R.notesLast = R.notesFirst + mx.notes.length - 1;
   ensureRowCapacity(sheet, R.notesLast + 2);
 
   const USD = '$K$4', EUR = '$M$4', COP = '$O$4', MONTH_NUM = '$C$3', PERIOD = '$D$3', NET_DOP = `$N$${R.netDop}`;
@@ -1772,31 +1835,32 @@ function buildOrRefreshDashboard() {
   // ---- which card for what (v1.1.22 — replaces the LAFISE-only table of v1.1.21)
   section(R.mxHead, 2, 15, '🧭  Which card for what — cashback by kind of spending (per each program\'s terms)');
   // B spending · C MCC · D:E LAFISE · F:G BANESCO · H:I BHD · J:O best per the terms
-  sheet.getRange(R.mxCols, 2, 1, 14).setValues([['Spending', 'MCC', 'LAFISE 10/10', '', 'BANESCO SuperCashBack', '',
+  sheet.getRange(R.mxCols, 2, 1, 14).setValues([['Spending', 'MCC', mx.header, '', 'BANESCO SuperCashBack', '',
     'BHD Visa Mi País', '', 'Best per the terms', '', '', '', '', '']])
     .setFontWeight('bold').setFontSize(8).setFontColor(T.muted).setBackground(T.soft)
     .setBorder(null, null, true, null, null, null, T.line, border.SOLID);
-  const mxRows = CASHBACK_MATRIX.length + 1;                       // header + data
+  const mxRows = mx.rows.length + 1;                       // header + data
   sheet.getRange(R.mxCols, 4, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 6, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 8, mxRows, 2).mergeAcross();
   sheet.getRange(R.mxCols, 10, mxRows, 6).mergeAcross();
-  CASHBACK_MATRIX.forEach((row, i) => {
+  mx.rows.forEach((row, i) => {
     const r = R.mxFirst + i;
     [[2, row[0] + '\n→ ' + row[6]], [3, row[1]], [4, row[2]], [6, row[3]], [8, row[4]], [10, row[5]]]   // v1.1.70: + category
       .forEach(([c, v]) => sheet.getRange(r, c).setValue(v));
   });
-  stripe(R.mxFirst, 2, CASHBACK_MATRIX.length, 14);
-  sheet.getRange(R.mxFirst, 2, CASHBACK_MATRIX.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
-  sheet.getRange(R.mxFirst, 3, CASHBACK_MATRIX.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
-  sheet.getRange(R.mxFirst, 4, CASHBACK_MATRIX.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
-  sheet.getRange(R.mxFirst, 10, CASHBACK_MATRIX.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
-  sheet.setRowHeights(R.mxFirst, CASHBACK_MATRIX.length, 32);
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 14).mergeAcross();
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 1).setValues(CASHBACK_NOTES.map(t => ['•  ' + t]));
-  sheet.getRange(R.notesFirst, 2, CASHBACK_NOTES.length, 14).setWrap(true).setFontSize(8)
+  stripe(R.mxFirst, 2, mx.rows.length, 14);
+  sheet.getRange(R.mxFirst, 2, mx.rows.length, 1).setFontWeight('bold').setFontSize(9).setWrap(true);
+  sheet.getRange(R.mxFirst, 3, mx.rows.length, 1).setFontSize(8).setFontColor(T.muted).setHorizontalAlignment('center');
+  sheet.getRange(R.mxFirst, 4, mx.rows.length, 6).setFontSize(9).setWrap(true).setHorizontalAlignment('center');
+  sheet.getRange(R.mxFirst, 10, mx.rows.length, 1).setFontSize(9).setWrap(true).setFontWeight('bold').setFontColor(T.navy);
+  sheet.setRowHeights(R.mxFirst, mx.rows.length, 32);
+  mx.rows.forEach((row, i) => { if (/\n/.test(row[2])) sheet.setRowHeight(R.mxFirst + i, 56); });   // v1.1.78: both LAFISE cards
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 14).mergeAcross();
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 1).setValues(mx.notes.map(t => ['•  ' + t]));
+  sheet.getRange(R.notesFirst, 2, mx.notes.length, 14).setWrap(true).setFontSize(8)
     .setFontStyle('italic').setFontColor(T.muted);
-  sheet.setRowHeights(R.notesFirst, CASHBACK_NOTES.length, 32);
+  sheet.setRowHeights(R.notesFirst, mx.notes.length, 32);
 
   // ---- conditional formatting (replaces every rule on the sheet)
   const cf = () => SpreadsheetApp.newConditionalFormatRule();
@@ -1816,11 +1880,11 @@ function buildOrRefreshDashboard() {
       .setRanges(groupRows.map(r => rng(r + 1, 3, lines[r - R.gridFirst].cats, 12))).build(),
     // v1.1.22: in "Which card for what", tint the cell of the card named first in the pick
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},6)="LAFISE"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 4, CASHBACK_MATRIX.length, 1)]).build(),
+      .setRanges([rng(R.mxFirst, 4, mx.rows.length, 1)]).build(),
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},7)="BANESCO"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 6, CASHBACK_MATRIX.length, 1)]).build(),
+      .setRanges([rng(R.mxFirst, 6, mx.rows.length, 1)]).build(),
     cf().whenFormulaSatisfied(`=LEFT($J${R.mxFirst},3)="BHD"`).setBackground('#E2EFDA')
-      .setRanges([rng(R.mxFirst, 8, CASHBACK_MATRIX.length, 1)]).build()
+      .setRanges([rng(R.mxFirst, 8, mx.rows.length, 1)]).build()
   ]);
 
   // ---- finish
