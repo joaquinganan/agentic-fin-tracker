@@ -2,7 +2,7 @@
 
 > **Este archivo es el contexto compartido del proyecto.** Claude Code lo carga automáticamente al abrir el
 > repositorio; en una conversación de Claude, adjúntalo (o agrégalo al conocimiento de un Proyecto) y pide que lo lea
-> antes de cualquier cambio. Está al día con la **v1.1.78** (29 de octubre de 2026). **Se actualiza en cada versión,
+> antes de cualquier cambio. Está al día con la **v1.1.79** (30 de octubre de 2026). **Se actualiza en cada versión,
 > junto con el CHANGELOG** (ver sección 10). El código, el historial de cada cambio y las guías de uso están en el
 > repositorio; este archivo cubre lo que **no** está ahí: las reglas de trabajo, las trampas conocidas y los pendientes.
 > Las preferencias personales de cada uno (rutas locales, forma de trabajar) van en `CLAUDE.local.md`, que no se sube.
@@ -23,12 +23,12 @@
 Un sistema en **Google Apps Script** pegado a una hoja de Google Sheets. Lee las alertas bancarias de Gmail (bancos
 dominicanos), registra cada consumo y transferencia en la hoja **Transactions**, categoriza, arma un **Dashboard**, y
 envía un resumen diario y otro mensual por correo. También lleva inversiones (órdenes y dividendos de HAPI desde sus
-correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco) y tiene un panel **📘 Start here** que
+correos, fondos y pensión por saldo), lee estados de cuenta en PDF (Banesco, QIK y LAFISE) y tiene un panel **📘 Start here** que
 verifica la configuración. Es de un solo usuario por hoja: cada persona instala su propia copia en su cuenta de Google.
 
-## 2. Estado actual (v1.1.78)
+## 2. Estado actual (v1.1.79)
 
-- **349 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
+- **357 pruebas** en Node (sin dependencias), que corren dos veces: sobre `src/` y sobre el archivo único `dist/`.
 - **CI** (GitHub Actions, Node 22 y 24): pruebas, verificación de que `dist/` corresponde a `src/`, y pruebas sobre `dist/`.
 
 | Archivo (`src/`) | Responsabilidad |
@@ -53,7 +53,7 @@ verifica la configuración. Es de un solo usuario por hoja: cada persona instala
 
 | Banco | Qué lee | Remitente |
 |---|---|---|
-| LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app —"¡Transferencia exitosa!", solo HTML; "entre tus cuentas", Exclude— y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com |
+| LAFISE | Consumos (dos plantillas), pagos de tarjeta, transferencias enviadas (app —"¡Transferencia exitosa!", solo HTML; "entre tus cuentas", Exclude— y "Aviso de transferencia en banco local" de la banca en línea: los fallidos se descartan; a una cuenta propia, Exclude), transferencias entrantes (Pagos al Instante), **estado de cuenta de la tarjeta en PDF** (dólares y pesos; lo ya guardado por su alerta no se repite, como en QIK; v1.1.79) | bancolafise.com, digital@ y bancanet@notificaciones.lafise.com, notificacioneslafisedo@lafise.com.do, PagosAlInstanteMT103@lafise.com, info@lafise.com.do (solo el estado de cuenta) |
 | BANESCO | Consumos, transferencias enviadas y recibidas (el correo no nombra al remitente, solo su banco), **estado de cuenta de ahorros en PDF** (todos los créditos; uno ya avisado por correo no se guarda otra vez, v1.1.66; formato de sept. 2026 con `RD$` en cada monto, v1.1.68) | notificaciones@banesco.com.do, estadodecuenta@banesco.com.do |
 | BHD | Consumos (tabla con varias filas; "Denegada- …" se filtra como rechazada, v1.1.69), transferencias | bhd.com.do |
 | POPULAR | Consumos (el comercio puede caer en la línea siguiente a la fecha: el texto se corta a ~76 columnas; v1.1.71), Código Cash | popularenlinea.com |
@@ -207,12 +207,22 @@ git push
 
 ## 9. Pendientes y limitaciones conocidas
 
-- **Estado de cuenta de Popular:** el lector de PDF ya lee su formato, pero falta un **correo original** con el estado
-  adjunto para saber el remitente y el asunto. Mientras tanto, sus créditos y débitos se pueden pegar a mano en
-  Incoming Transfers y Bank Transfers.
+- **Estado de cuenta de Popular (cuenta corriente):** ya hay una muestra (oct. 2026). Remitente
+  `estados@popularenlinea.com`, asunto "Cuenta: XXXX-<últimos 3> | Fecha: dd/mm/yyyy |", y el PDF está **cifrado con
+  la cédula** (RC4 de 40 bits, *Standard security handler* V1/R2: MD5 + RC4, lo más simple de PDF; se puede escribir
+  en JS puro). Falta: el descifrado, un lugar para guardar la cédula y el lector de su formato. El formato todavía no se
+  ha visto descifrado: para verlo hace falta la cédula del titular en un archivo local fuera del repo, y que el script
+  la lea sin imprimirla. Mientras tanto, sus créditos y débitos se pueden pegar a mano en Incoming Transfers y Bank
+  Transfers.
 - **PDF protegidos con contraseña** (algunos bancos usan la cédula): hoy se detectan y aparecen en Unrecognized como
-  *password-protected*. Implementar el descifrado necesita una muestra real. Si se hace, la cédula se guarda en las
-  propiedades privadas del script, **nunca** en la hoja, los registros ni el repo.
+  *password-protected*. La cédula se guardaría en las propiedades privadas del script, **nunca** en la hoja, los
+  registros ni el repo.
+- **Estado de cuenta de la tarjeta LAFISE (v1.1.79):** una sola muestra (Mastercard Clásica). En pesos, el balance
+  anterior (0.00) no cierra con el balance al corte, aunque las filas cuadran con los dos totales (la línea "Total
+  transacciones" y el resumen de arriba). Por eso no se exige la cadena de balances; con otro estado se puede revisar
+  si el "0.00" era un saldo a favor. "Fondos Administrativos de Crédito" fue un cashback que el banco dio a mano; si
+  aparece con otro sentido, cambiarlo en `parseLAFISECardStatement`. Falta ver un estado de la Visa Gold (se supone el
+  mismo formato) y un pago a la tarjeta en pesos (hoy se reconoce "ABONO A SU CUENTA" o "PAGO…").
 - **Transferencias de Banesco contadas dos veces antes de v1.1.66:** una transferencia recibida por correo (desde
   v1.1.62) y la misma en el estado de cuenta se guardaban ambas. Desde v1.1.66 se emparejan (banco, moneda, monto, ±5
   días, `STATEMENT_MATCH_DAYS`), pero los pares ya guardados no se borran: buscar en Incoming Transfers filas iguales

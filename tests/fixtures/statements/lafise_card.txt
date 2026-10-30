@@ -1,0 +1,81 @@
+Hoja: 1
+NOMBRE APELLIDO EJEMPLO Tipo de tarjeta: MASTERCARD STANDARD
+No. de tarjeta: XXXXXXXXXXXX0000
+USER@EXAMPLE.COM
+Fecha de corte: 20/10/2026
+Visitanos en: https://www.lafise.com/BLRD
+ESTADO DE CUENTA
+Crédito Balance
+Moneda Pagos/créditos Compras/Débito Balance al corte Pague antes del
+disponible anterior
+RD$ 30,000.00 0.00 870.00 6,650.00 5,780.00
+16/11/26
+US$ 200.00 20.00 22.50 52.98 50.48
+Fecha No de
+Fecha entrada Concepto Débito Crédito
+transacción Referencia
+XXXXXXXXXXXX0000
+Transacciones de Dólares US$
+15/09/2026 15/9/2026 ABONO A SU CUENTA 0.00 20.00
+21/09/2026 21/9/2026 Amazon.com*1A2B3C4D5 SEATTLE WAUSA 40.00 0.00
+04/10/2026 4/10/2026 SPOTIFY*P0000000AA SPOTIFY.COM ABSWE 4.99 0.00
+11/10/2026 11/10/2026 Purchase Returns - AMAZON PRIME PMTS SEATTLE WAUSA 0.00 1.50
+12/10/2026 12/10/2026 NETFLIX.COM LOS GATOS CAUSA 7.99 0.00
+14/10/2026 14/10/2026 Reembolso en efectivo - DESCUENTO CASHBACK STREAMING 0.00 1.00
+**Total transacciones en Dólares US$** 52.98 22.50
+Transacciones en Pesos RD$
+12/09/2026 12/9/2026 RESTAURANTE EJEMPLO SANTO DOMINGODODOM 500.00 0.00
+12/09/2026 12/9/2026 UBER*EATS SANTO DOMINGODODOM 650.00 0.00
+15/09/2026 15/9/2026 UBER RIDES-*UBER RIDES SANTO DOMINGODODOM 200.00 0.00
+15/09/2026 15/9/2026 Fondos Administrativos de CrÃ©dito 0.00 750.00
+17/09/2026 17/9/2026 CLARO PAGO 8090000000 SANTO DOMINGODODOM 2,400.00 0.00
+20/09/2026 20/9/2026 UBER*RIDES SANTO DOMINGODODOM 150.00 0.00
+20/09/2026 20/9/2026 UBER*RIDES SANTO DOMINGODODOM 150.00 0.00
+
+Hoja: 2
+NOMBRE APELLIDO EJEMPLO Tipo de tarjeta: MASTERCARD STANDARD
+No. de tarjeta: XXXXXXXXXXXX0000
+USER@EXAMPLE.COM
+Fecha de corte: 20/10/2026
+Visitanos en: https://www.lafise.com/BLRD
+ESTADO DE CUENTA
+Crédito Balance
+Moneda Pagos/créditos Compras/Débito Balance al corte Pague antes del
+disponible anterior
+RD$ 30,000.00 0.00 870.00 6,650.00 5,780.00
+16/11/26
+US$ 200.00 20.00 22.50 52.98 50.48
+Fecha No de
+Fecha entrada Concepto Débito Crédito
+transacción Referencia
+30/09/2026 30/9/2026 GIMNASIO EJEMPLO DISTRITO NACISDDOM 600.00 0.00
+03/10/2026 3/10/2026 ESTACION EJEMPLO SANTO DOMINGODODOM 2,000.00 0.00
+14/10/2026 14/10/2026 Reembolso en efectivo - DESCUENTO CASH BACK TELECOMUNICACIONES 0.00 120.00
+**Total transacciones en pesos RD$** 6,650.00 870.00
+
+Hoja: 3
+NOMBRE APELLIDO EJEMPLO Tipo de tarjeta: MASTERCARD STANDARD
+No. de tarjeta: XXXXXXXXXXXX0000
+USER@EXAMPLE.COM
+Fecha de corte: 20/10/2026
+Visitanos en: https://www.lafise.com/BLRD
+ESTADO DE CUENTA
+Crédito Balance
+Moneda Pagos/créditos Compras/Débito Balance al corte Pague antes del
+disponible anterior
+RD$ 30,000.00 0.00 870.00 6,650.00 5,780.00
+16/11/26
+US$ 200.00 20.00 22.50 52.98 50.48
+Fecha No de
+Fecha entrada Concepto Débito Crédito
+transacción Referencia
+***INFORMACION PUNTOS*** BALANCES PROMEDIOS
+Puntos ganados del mes 0 Balance Promedio consumo mes anterior en RD$ 0.00
+Puntos vencidos/canjeados 0 Balance Promedio consumo del mes RD$ 1,000.00
+Puntos disponible 0 Balance Promedio consumo mes anterior en U$ 0.00
+Balance Promedio consumo del mes U$ 10.00
+Moneda Tasa anual Cuotas Interés si opta por
+Monto vencido Pago mínimo Balance total a pagar
+interés vencidas financiamiento
+RD$ 60.00 % 0 0.00 300.00 100.00 5,780.00
+US$ 60.00 % 0 0.00 15.00 1.00 50.48

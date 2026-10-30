@@ -274,6 +274,12 @@ credited** (*Cashback*) and any merchant **refund** (taken off that merchant's c
 up to the statement's totals, or nothing is taken and it shows in Unrecognized. The execution log names every purchase
 found only in the statement ("Only in the statement").
 
+LAFISE (v1.1.79): the **credit card statement** works like QIK's, with its two sections (dollars and pesos). Purchases
+already saved from their alerts and the card payment notified by email are not saved again. "ABONO A SU CUENTA" is the
+card payment; "Reembolso en efectivo - DESCUENTO CASHBACK …" and "Fondos Administrativos de Crédito" (a cashback the
+bank grants by hand) are *Cashback*; "Purchase Returns" is a refund. Each currency must add up to its total and to the
+summary at the top of the statement.
+
 A category typed in Incoming Transfers or Bank Transfers applies at once (the Dashboard doesn't wait for the next
 update); each transfer counts in the month of its date. A transfer the tracker didn't see can be typed in an empty row
 of Incoming Transfers (received) or Bank Transfers (sent) — date (yyyy-mm-dd), bank (optional), from, category, amount (positive; DOP if no currency) — and

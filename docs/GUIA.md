@@ -144,6 +144,12 @@ guarda el **pago a la tarjeta** (*Card Payment*, nunca es gasto), el **cashback 
 totales del estado; si no, no toma nada y lo avisa en Unrecognized. El registro de ejecución nombra cada consumo que
 solo estaba en el estado ("Only in the statement").
 
+**LAFISE** (desde v1.1.79): el **estado de cuenta de la tarjeta de crédito** funciona igual que el de QIK, con sus dos
+secciones (dólares y pesos). Los consumos ya guardados por su alerta y el pago a la tarjeta avisado por correo no se
+repiten. "ABONO A SU CUENTA" es el pago a la tarjeta; "Reembolso en efectivo - DESCUENTO CASHBACK …" y "Fondos
+Administrativos de Crédito" (un cashback que el banco da a mano) son *Cashback*; "Purchase Returns" es un reembolso. Cada
+moneda debe cuadrar con su total y con el resumen de arriba del estado.
+
 ## 7. Inversiones
 
 ### HAPI: primeros pasos

@@ -73,9 +73,12 @@ const BANK_PATTERNS = {
     // v1.1.61: two more, from real samples: card payments (bancanet@notificaciones.lafise.com) and a second card-alert
     // template (notificacioneslafisedo@lafise.com.do). Neither was searched, so neither ever reached the sheet.
     searchQuery: 'from:notificaciones@bancolafise.com OR from:digital@notificaciones.lafise.com OR from:PagosAlInstanteMT103@lafise.com' +
-      ' OR from:bancanet@notificaciones.lafise.com OR from:notificacioneslafisedo@lafise.com.do',
+      ' OR from:bancanet@notificaciones.lafise.com OR from:notificacioneslafisedo@lafise.com.do' +
+      ' OR (from:info@lafise.com.do subject:"Estado de Cuenta de Tarjeta")',   // v1.1.79: the card statement only (info@ also advertises)
     extractors: { consumo: extractLAFISEAnyConsumo, transfer: extractLAFISEAnyTransfer, incoming: extractLAFISEIncomingTransactions,
       cardPayment: extractLAFISECardPaymentTransactions },
+    // v1.1.79: the credit card statement (a PDF): purchases without an alert, the card payment, cashback, refunds
+    statement: { subject: /Estado de Cuenta de Tarjeta BANCO LAFISE/i, parse: parseLAFISECardStatement },
     keywords: ['LAFISE', 'LAFISE BANCO'],
     merchantPattern: /(?:en|en el|en\s+)([^\n]{10,50})/i
   },
@@ -1589,7 +1592,8 @@ const SPANISH_MONTHS = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7,
 
 /** "Tienda Ejemplo Santo Domingododom" → "Tienda Ejemplo Santo Domingo": the card network glues the region and
  *  the country code ("do" + "dom", "sd" + "dom", "pa" + "pan") to the city; a last word that is only those goes. */
-const CARD_REGION_COUNTRY_RE = /^(.*?)[A-Za-z]{2}(?:dom|usa|pan|col|esp|mex|pri|can|gbr|irl|nld|fra|deu|ita|prt|che|chl|per|bra|arg|cri|gtm|ecu)$/;
+// v1.1.79: either case (LAFISE writes "SANTO DOMINGODODOM", "SEATTLE WAUSA"); Sweden and Lithuania added
+const CARD_REGION_COUNTRY_RE = /^(.*?)[A-Za-z]{2}(?:dom|usa|pan|col|esp|mex|pri|can|gbr|irl|nld|fra|deu|ita|prt|che|chl|per|bra|arg|cri|gtm|ecu|swe|ltu)$/i;
 function cleanCardStatementMerchant(description) {
   const words = String(description || '').replace(/(?:\s+-)+$/, '').trim().split(/\s+/);
   const m = words.length > 1 ? words[words.length - 1].match(CARD_REGION_COUNTRY_RE) : null;
@@ -1645,16 +1649,90 @@ function parseQIKCardStatement(text) {
       ', the statement says ' + purchases.toFixed(2) + ' and ' + payments.toFixed(2));
   }
   if (out.problems.length) return out;
+  out.entries = cardStatementEntries(out.cut, out.rows, 'QIK cashback (statement)');
+  return out;
+}
+
+/** A card statement's rows (each with its kind: purchase, payment, cashback, refund) → the entries saved: every
+ *  purchase (Transaction), the card payment (Card Payment), the cashback (Cashback) and a refund as a negative
+ *  Transaction. The reference: the cut, the day, the kind (and the currency when it's not pesos, v1.1.79), the amount. */
+function cardStatementEntries(cut, rows, cashbackName) {
   const seen = {};
-  out.rows.forEach(r => {
+  return rows.map(r => {
     const type = r.kind === 'payment' ? 'Card Payment' : r.kind === 'cashback' ? 'Cashback' : 'Transaction';
-    const merchant = r.kind === 'payment' ? r.description : r.kind === 'cashback' ? 'QIK cashback (statement)' : cleanCardStatementMerchant(r.description);
+    const merchant = r.kind === 'payment' ? r.description : r.kind === 'cashback' ? cashbackName : cleanCardStatementMerchant(r.description);
     const sign = r.kind === 'refund' ? -1 : 1;
-    const key = r.day + ':' + { purchase: 'P', payment: 'Y', cashback: 'C', refund: 'R' }[r.kind] + ':' + Math.round(r.amount * 100);
+    const key = r.day + ':' + { purchase: 'P', payment: 'Y', cashback: 'C', refund: 'R' }[r.kind] + (r.currency === 'DOP' ? '' : r.currency) +
+      ':' + Math.round(r.amount * 100);
     seen[key] = (seen[key] || 0) + 1;   // two equal rows on one day (two metro rides) are two rows
-    out.entries.push({ day: r.day, amount: sign * r.amount, currency: r.currency, merchant: merchant || r.description, type: type,
-      refund: r.kind === 'refund', ref: out.cut.replace(/-/g, '') + ':' + key + ':' + seen[key] });
+    return { day: r.day, amount: sign * r.amount, currency: r.currency, merchant: merchant || r.description, type: type,
+      refund: r.kind === 'refund', ref: cut.replace(/-/g, '') + ':' + key + ':' + seen[key] };
   });
+}
+
+/**
+ * v1.1.79: LAFISE credit card statement (text of its PDF) → { cut, rows, entries, problems }, the same entries as QIK's.
+ * Two sections, "Transacciones de Dólares US$" and "Transacciones en Pesos RD$" (a page goes on with the section of the
+ * page before), each row "dd/mm/yyyy d/m/yyyy <concepto> <débito> <crédito>" and each section closed by its
+ * "Total transacciones en … <débitos> <créditos>". Each currency's rows must add up to that line and to the summary at
+ * the top of every page ("RD$ <disponible> <balance anterior> <pagos/créditos> <compras/débito> <balance al corte>"),
+ * or nothing is taken. The balance chain is not checked: in the real sample the pesos one doesn't close (balance
+ * anterior 0.00) while the rows match both totals. Credits: "ABONO A SU CUENTA" is the card payment; "Reembolso en
+ * efectivo - DESCUENTO CASHBACK …" and "Fondos Administrativos de Crédito" (a cashback the bank grants by hand) are
+ * cashback; any other ("Purchase Returns - …") is a refund. Pure.
+ */
+const LAFISE_STMT_ROW_RE = /^(\d{2})\/(\d{2})\/(\d{4}) \d{1,2}\/\d{1,2}\/\d{4} (.+?) ([\d,]+\.\d{2}) ([\d,]+\.\d{2})$/;
+const LAFISE_STMT_SUMMARY_RE = /^(RD|US)\$ [\d,]+\.\d{2} [\d,]+\.\d{2} ([\d,]+\.\d{2}) ([\d,]+\.\d{2}) [\d,]+\.\d{2}$/;
+const LAFISE_STMT_TOTAL_RE = /^\W*Total transacciones (?:de|en) (D\S*lares|Pesos)\b\D*([\d,]+\.\d{2}) ([\d,]+\.\d{2})$/i;
+function parseLAFISECardStatement(text) {
+  const lines = String(text || '').replace(/ /g, ' ').split('\n').map(l => l.replace(/\s+/g, ' ').trim());
+  const out = { holder: '', currency: 'DOP', cut: '', rows: [], incoming: [], entries: [], problems: [] };
+  const num = s => Number(String(s).replace(/,/g, ''));
+  const cut = lines.join(' ').match(/Fecha de corte:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (cut) out.cut = cut[3] + '-' + cut[2] + '-' + cut[1];
+  const summary = {}, totals = {};
+  let currency = null;
+  lines.forEach(line => {
+    let m = line.match(LAFISE_STMT_SUMMARY_RE);
+    if (m) {   // repeated on every page: the first one counts
+      const cur = m[1].toUpperCase() === 'US' ? 'USD' : 'DOP';
+      if (!summary[cur]) summary[cur] = { credits: num(m[2]), debits: num(m[3]) };
+      return;
+    }
+    if (/^Transacciones (?:de|en) D\S*lares\b/i.test(line)) { currency = 'USD'; return; }
+    if (/^Transacciones (?:de|en) Pesos\b/i.test(line)) { currency = 'DOP'; return; }
+    m = line.match(LAFISE_STMT_TOTAL_RE);
+    if (m) { totals[/^P/i.test(m[1]) ? 'DOP' : 'USD'] = { debits: num(m[2]), credits: num(m[3]) }; return; }
+    m = line.match(LAFISE_STMT_ROW_RE);
+    if (!m) return;
+    const debit = num(m[5]), credit = num(m[6]), description = m[4].trim();
+    if (!currency || (debit > 0) === (credit > 0)) {
+      out.problems.push('row ' + m[1] + '/' + m[2] + ' "' + description + '" ' + (currency ? 'is not one debit or one credit' : 'comes before any currency section'));
+      return;
+    }
+    out.rows.push({ day: m[3] + '-' + m[2] + '-' + m[1], description: description, amount: debit || credit, currency: currency,
+      direction: debit ? 'debit' : 'credit',
+      kind: debit ? 'purchase' : /^ABONO A SU CUENTA\b|^PAGO\b/i.test(description) ? 'payment' :
+        /^Reembolso en efectivo\b|^Fondos Administrativos\b/i.test(description) ? 'cashback' : 'refund' });
+  });
+  if (!out.cut) out.problems.push('the statement\'s cut date was not found');
+  if (!out.rows.length) out.problems.push('no transactions found');
+  const near = (a, b) => Math.abs(a - b) < 0.01;
+  ['DOP', 'USD'].forEach(cur => {
+    const rows = out.rows.filter(r => r.currency === cur);
+    if (!rows.length && !totals[cur]) return;   // no movements in that currency: no section
+    const debits = +rows.filter(r => r.direction === 'debit').reduce((s, r) => s + r.amount, 0).toFixed(2);
+    const credits = +rows.filter(r => r.direction === 'credit').reduce((s, r) => s + r.amount, 0).toFixed(2);
+    [['the section total', totals[cur]], ['the summary', summary[cur]]].forEach(([what, t]) => {
+      if (!t) out.problems.push(cur + ': ' + what + ' was not found');
+      else if (!near(debits, t.debits) || !near(credits, t.credits)) {
+        out.problems.push(cur + ' rows add up to ' + debits.toFixed(2) + ' in debits and ' + credits.toFixed(2) + ' in credits, ' +
+          what + ' says ' + t.debits.toFixed(2) + ' and ' + t.credits.toFixed(2));
+      }
+    });
+  });
+  if (out.problems.length) return out;
+  out.entries = cardStatementEntries(out.cut, out.rows, 'LAFISE cashback (statement)');
   return out;
 }
 

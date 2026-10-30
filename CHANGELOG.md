@@ -2,6 +2,28 @@
 
 Every release, newest first. Each entry says what was wrong, how it was found and what changed.
 
+### v1.1.79 (Oct 30, 2026) — The LAFISE credit card statement (PDF)
+- **Asked for:** reading the LAFISE card statement, which lists every purchase of the period, like QIK's (v1.1.72).
+  It comes from `info@lafise.com.do` ("Estado de Cuenta de Tarjeta BANCO LAFISE - <last 4> - Fecha de corte …"), a PDF
+  without a password.
+- **Read:** two sections, dollars and pesos (a page goes on with the section of the page before), each row with its
+  debit or credit. Each currency's rows must add up to its "Total transacciones" line and to the summary at the top
+  ("Pagos/créditos", "Compras/Débito"), or nothing is taken from the statement. The balance chain (previous − credits +
+  purchases = balance at the cut) is not checked: in the real sample the pesos one doesn't close (previous balance
+  0.00) while every row matches both totals.
+- **Each credit as what it is:** "ABONO A SU CUENTA" is the card payment (Exclude); "Reembolso en efectivo - DESCUENTO
+  CASHBACK …" is cashback, and so is "Fondos Administrativos de Crédito" — in the real sample, a cashback the bank
+  granted by hand (confirmed by the bank's email); "Purchase Returns - …" is a refund (a negative purchase).
+- **Not saved twice:** purchases already saved from their alerts, in pesos or dollars, and the card payment notified by
+  email pair with the statement's rows as QIK's do (same bank, type, amount and currency, ±3 days). A dollar row's
+  reference names its currency (`…:PUSD:…`), so a peso row and a dollar row of the same amount on the same day are two.
+- **Search:** `info@lafise.com.do` also sends advertising and LAFISE is not a strict bank (an email no extractor reads
+  goes to the generic amount reader), so it is searched only for "Estado de Cuenta de Tarjeta".
+- The card network's region and country glued to the city are taken off in capitals too ("SANTO DOMINGODODOM",
+  "SEATTLE WAUSA"), and Sweden and Lithuania were added. The QIK and LAFISE readers share how rows become entries.
+- **Popular** (`estados@popularenlinea.com`, checking account) sent its statement too, but its PDF is encrypted with the
+  holder's cédula (RC4 40-bit, standard security handler revision 2). Left for a later version.
+
 ### v1.1.78 (Oct 29, 2026) — LAFISE Visa Gold in the card catalogue; several cards per bank
 - **Asked for:** setting up a new card (the LAFISE Visa Gold, replacing the Clásica Mastercard) without redoing the
   Setup Wizard, and the tracker allowing more than one card from the same bank.
